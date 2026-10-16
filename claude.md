@@ -10,6 +10,7 @@ The problem is that the diffs are usually presented as standard colored
 unified diffs. This is far from ideal presentation of diffs because all
 the changes have the same level of importance and are mixed together.
 
+
 Some examples of it would be:
 
 ### White space
@@ -122,9 +123,10 @@ to be fine-tuned later. But it could be something like
    - Added/removed types
    - Adding exceptions to methods
 4. Implementation changes. E.g. changes of implementation of a method or field initializer
-5. Plain renames
-6. Cosmetic code changes - pure rename of field, method parameter or local variable
-7. White space
+5. Local renames
+6. Necessary refactoring changes e.g. imports or calls to renamed method
+7. Cosmetic code changes - pure rename of field, method parameter or local variable
+8. White space
 
 ## Possible implementation
 
@@ -164,23 +166,51 @@ incompatible from the API perspective would be marked as such with a badge. E.g
 * Widening return type or narrowing parameter type 
 * ...
 
+### Rating changes
+
+Changes which make API more strict will be rated positive and changes
+which make the API less strict or are incompatible would get negative rating.
+We could potetially compute rate for the whole diff
+
 ## Implementation plan
 
 Everything should be implemented in java and the product should be one 
 .jar containing all dependencies.
 
-### Phase 1 : basic tests
+### Phase 0 : necessary infrastructure
 
-We will create unit tests for the individual use cases of the product. E.g.
-The tests should:
-- create temp folder
-- initialize a git repo in the folder
-- create commit with the initial version e.g. add a .java file
-- do changes to the file. e.g. rename a method
-- compute the change categories using jgit and javac 
-- make sure the categories of changes do contain what they are supposed to contain.
+We need some basic infrastructure. I.e. something what is
+capable of :
+- querying git (using jgit) decide if there are changes in the working copy. 
+   If so use them. If not use latest commit.
+- Do a structured diff of the files. Usinf jGit's DiffFormatter
+- Load a attributed AST of all the changed files including the positions
+  and the comments 
 
-### Phase 2 : watch the folder and use jgit
+We also need some basic tests support e.g. something what is capable of:
+- create a git repo in a temporary folder
+- create initial commit to the repo
+- do predefined changes of the files in the working copy (probably specified
+  as new content of the file or a patch)
+
+We need to add tests for the infrastructure and the test support itself
+  
+### Phase 1 : basic functionality and tests
+
+Create first implemtation of inspecting the diffs and looking deciding about
+which category given change fits in
+
+Create unit tests using the test infrastructure from the phase 0 and create 
+sample data for the change categories. Test if the changes are categorized 
+correctly.
+
+### Phase 2 : maven
+
+* After starting the app we should look for pom.xml and try to guess the 
+  classpath using the maven API. In order not to have to specify it in
+  using CLI options.
+
+### Phase 3 : watch the folder and use jgit
 
 * After the app is tarted it should watch current folder recursively and
   after each change show the change categories of the changed file in console
@@ -189,13 +219,10 @@ The tests should:
   we should use picocli for parsing them. This can include specifying the
   class path of the project
 
-### Step 3 : maven
+After finishing this change we can start using the project for the project
+itself.
 
-* After starting the app we should look for pom.xml and try to guess the 
-  classpath using the maven API. In order not to have to specify it in
-  using CLI options.
-
-### Step 4 : add web server
+### Phase 4 : add web server
 
 * After starting the app should start internal web server and open the page in
   browser. After changes of the a file the page should be reloaded and show the 
@@ -203,10 +230,24 @@ The tests should:
 * Maybe the categories of changes should be interactively switched for individual
   classes. This is TBD and will require "testing on humans"
 
+### Phase 5: more advanced features POC
+
+Pick some types of refactorings e.g. rename and try to recgonize them. 
+E.g. when renaming the method the rename itself will be in the API category
+but all calls to the method would be in "Necessary Refactoring Changes."
+
+### Phase 6 : additional features POC
+
+Try flagging backward incomatibilies and rating of the API changes. 
+
 ## Out of scope
+
+This project is purely experimental POC. We do not need take into account
+all complexities of real wold projects. I.e.:
 
 * No other languages than Java
 * Only simple maven project - no fancy maven configurations
+* For now no support for Java modules
 
 ## Coding rules
 
@@ -215,3 +256,9 @@ The tests should:
 - Do NOT add ANSI colors to the commit messages
 - If possible write use one agent to write implementation and other agent 
   to write the tests.
+- Will only be run on Java 25+ so it is fine to use latest Java features.
+- Try to make the public interfaces of the types as minimal as possible
+- Try to keep things simple
+- Do not add any dependencies to the project without explicite approval.
+
+  
