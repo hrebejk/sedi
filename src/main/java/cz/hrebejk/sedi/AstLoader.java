@@ -9,7 +9,9 @@
 package cz.hrebejk.sedi;
 
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.util.DocTrees;
 import com.sun.source.util.JavacTask;
+import com.sun.source.util.Trees;
 
 import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
@@ -33,6 +35,22 @@ public class AstLoader {
      * @throws IOException if an I/O error occurs
      */
     public List<CompilationUnitTree> loadAst(List<Path> sourcePaths) throws IOException {
+        List<CompilationAnalysis> analyses = loadCompilationAnalyses(sourcePaths);
+        List<CompilationUnitTree> cuts = new ArrayList<>();
+        for (CompilationAnalysis analysis : analyses) {
+            cuts.add(analysis.compilationUnit());
+        }
+        return cuts;
+    }
+
+    /**
+     * Loads compilation analyses containing compilation units, trees, and doc trees.
+     *
+     * @param sourcePaths list of paths to Java source files
+     * @return list of CompilationAnalysis
+     * @throws IOException if an I/O error occurs
+     */
+    public List<CompilationAnalysis> loadCompilationAnalyses(List<Path> sourcePaths) throws IOException {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         if (compiler == null) {
             throw new IllegalStateException("System Java compiler not found. Ensure running on a JDK, not a JRE.");
@@ -52,11 +70,14 @@ public class AstLoader {
 
             JavacTask javacTask = (JavacTask) task;
             Iterable<? extends CompilationUnitTree> compilationUnits = javacTask.parse();
-            javacTask.analyze(); // Attributed AST
+            javacTask.analyze();
 
-            List<CompilationUnitTree> list = new ArrayList<>();
+            Trees trees = Trees.instance(javacTask);
+            DocTrees docTrees = DocTrees.instance(javacTask);
+
+            List<CompilationAnalysis> list = new ArrayList<>();
             for (CompilationUnitTree cut : compilationUnits) {
-                list.add(cut);
+                list.add(new CompilationAnalysis(cut, trees, docTrees));
             }
             return list;
         }
