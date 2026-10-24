@@ -12,16 +12,16 @@ package cz.hrebejk.sedi;
  * Context passed along the AST scan to track the current ReducedAstNode being built
  * and update its message digests.
  */
-public class ShaContext {
+public class HashContext {
 
-    private ReducedAstNode currentNode;
+    private ElementInfo currentNode;
 
     /**
      * Creates a new ShaContext.
      *
      * @param initialNode initial ReducedAstNode
      */
-    public ShaContext(ReducedAstNode initialNode) {
+    public HashContext(ElementInfo initialNode) {
         this.currentNode = initialNode;
     }
 
@@ -30,7 +30,7 @@ public class ShaContext {
      *
      * @return current ReducedAstNode
      */
-    public ReducedAstNode getCurrentNode() {
+    public ElementInfo getCurrentNode() {
         return currentNode;
     }
 
@@ -39,7 +39,7 @@ public class ShaContext {
      *
      * @param currentNode target ReducedAstNode
      */
-    public void setCurrentNode(ReducedAstNode currentNode) {
+    public void setCurrentNode(ElementInfo currentNode) {
         this.currentNode = currentNode;
     }
 
@@ -50,7 +50,7 @@ public class ShaContext {
      */
     public void updateDigest(String attribute) {
         if (currentNode != null) {
-            currentNode.updateDigest(ShaCategory.FULL, attribute);
+            currentNode.updateDigest(ChangeCategory.FULL, attribute);
         }
     }
 }

@@ -15,7 +15,7 @@ import java.util.List;
 /**
  * Unit test for MemberShaCalculator and ShaContext.
  */
-public class MemberShaCalculatorTest extends TestCase {
+public class ElementHashCalculatorTest extends TestCase {
 
     /**
      * Tests calculating reduced AST and member SHAs via ShaContext without toString().
@@ -28,19 +28,19 @@ public class MemberShaCalculatorTest extends TestCase {
             List<CompilationAnalysis> analyses = loader.loadCompilationAnalyses(List.of(sourceFile));
             assertFalse(analyses.isEmpty());
 
-            MemberShaCalculator calculator = new MemberShaCalculator(analyses.get(0).trees());
-            ReducedAstNode root = calculator.calculate(analyses.get(0).compilationUnit());
+            ElementHashCalculator calculator = new ElementHashCalculator(analyses.get(0).trees());
+            ElementInfo root = calculator.calculate(analyses.get(0).compilationUnit());
 
             assertNotNull(root);
             assertEquals(1, root.getChildren().size());
-            ReducedAstNode typeNode = root.getChildren().get(0);
+            ElementInfo typeNode = root.getChildren().get(0);
             assertEquals("Data", typeNode.getName());
             assertFalse(typeNode.getChildren().isEmpty());
 
-            for (ReducedAstNode child : typeNode.getChildren()) {
+            for (ElementInfo child : typeNode.getChildren()) {
                 assertNotNull(child.getOriginalTree());
                 assertFalse(child.getMessageDigests().isEmpty());
-                String sha = child.getSha(ShaCategory.FULL);
+                String sha = child.getSha(ChangeCategory.FULL);
                 assertNotNull(sha);
                 assertEquals(64, sha.length()); // SHA-256 hex string length
             }
@@ -180,20 +180,20 @@ public class MemberShaCalculatorTest extends TestCase {
             AstLoader loader = new AstLoader();
 
             List<CompilationAnalysis> analyses1 = loader.loadCompilationAnalyses(List.of(file1));
-            MemberShaCalculator calc1 = new MemberShaCalculator(analyses1.get(0).trees());
-            ReducedAstNode root1 = calc1.calculate(analyses1.get(0).compilationUnit());
-            String sha1Cat0 = root1.getSha(ShaCategory.FULL);
-            String sha1Cat1 = root1.getSha(ShaCategory.IGNORE_LOCAL_NAMES);
+            ElementHashCalculator calc1 = new ElementHashCalculator(analyses1.get(0).trees());
+            ElementInfo root1 = calc1.calculate(analyses1.get(0).compilationUnit());
+            String sha1Cat0 = root1.getSha(ChangeCategory.FULL);
+            String sha1Cat1 = root1.getSha(ChangeCategory.IGNORE_LOCAL_NAMES);
 
             // Change parameter 'a' to 'x', local variable 'res' to 'total', and their usages
             String code2 = "package cz.hrebejk.sedi;\n\npublic class Calc {\n    public int compute(int x) {\n        int total = x * 2;\n        return total;\n    }\n}\n";
             Path file2 = helper.writeFile("Calc.java", code2);
 
             List<CompilationAnalysis> analyses2 = loader.loadCompilationAnalyses(List.of(file2));
-            MemberShaCalculator calc2 = new MemberShaCalculator(analyses2.get(0).trees());
-            ReducedAstNode root2 = calc2.calculate(analyses2.get(0).compilationUnit());
-            String sha2Cat0 = root2.getSha(ShaCategory.FULL);
-            String sha2Cat1 = root2.getSha(ShaCategory.IGNORE_LOCAL_NAMES);
+            ElementHashCalculator calc2 = new ElementHashCalculator(analyses2.get(0).trees());
+            ElementInfo root2 = calc2.calculate(analyses2.get(0).compilationUnit());
+            String sha2Cat0 = root2.getSha(ChangeCategory.FULL);
+            String sha2Cat1 = root2.getSha(ChangeCategory.IGNORE_LOCAL_NAMES);
 
             // Category 0 SHA should change because parameter and local variable names changed
             assertFalse("Category 0 SHA should change when local/param names change", sha1Cat0.equals(sha2Cat0));
@@ -210,13 +210,13 @@ public class MemberShaCalculatorTest extends TestCase {
         try (GitTestHelper helper = new GitTestHelper()) {
             AstLoader loader = new AstLoader();
             String tpl = "package cz.hrebejk.sedi;\n\npublic class S {\n    private int f = %s;\n    @Deprecated\n    public %s run(int p) throws Exception {\n        int l = %s;\n        return l;\n    }\n    static { System.out.println(%s); }\n}\n";
-            ReducedAstNode base = calc(loader, helper.writeFile("S.java", String.format(tpl, "1", "int", "1", "1")));
-            ReducedAstNode bodyChange = calc(loader, helper.writeFile("S.java", String.format(tpl, "2", "int", "2", "2")));
-            ReducedAstNode sigChange = calc(loader, helper.writeFile("S.java", String.format(tpl, "1", "long", "1", "1")));
+            ElementInfo base = calc(loader, helper.writeFile("S.java", String.format(tpl, "1", "int", "1", "1")));
+            ElementInfo bodyChange = calc(loader, helper.writeFile("S.java", String.format(tpl, "2", "int", "2", "2")));
+            ElementInfo sigChange = calc(loader, helper.writeFile("S.java", String.format(tpl, "1", "long", "1", "1")));
 
-            ShaCategory sig = ShaCategory.SIGNATURE;
+            ChangeCategory sig = ChangeCategory.SIGNATURE;
             assertEquals("Bodies and initializers must not affect SIGNATURE", base.getSha(sig), bodyChange.getSha(sig));
-            assertFalse("FULL must see body changes", base.getSha(ShaCategory.FULL).equals(bodyChange.getSha(ShaCategory.FULL)));
+            assertFalse("FULL must see body changes", base.getSha(ChangeCategory.FULL).equals(bodyChange.getSha(ChangeCategory.FULL)));
             assertFalse("Return type change must change SIGNATURE of the CU member",
                     base.getChildren().get(0).getChildren().get(2).getSha(sig)
                             .equals(sigChange.getChildren().get(0).getChildren().get(2).getSha(sig)));
@@ -225,16 +225,16 @@ public class MemberShaCalculatorTest extends TestCase {
         }
     }
 
-    private ReducedAstNode calc(AstLoader loader, Path file) throws Exception {
+    private ElementInfo calc(AstLoader loader, Path file) throws Exception {
         List<CompilationAnalysis> analyses = loader.loadCompilationAnalyses(List.of(file));
-        return new MemberShaCalculator(analyses.get(0).trees()).calculate(analyses.get(0).compilationUnit());
+        return new ElementHashCalculator(analyses.get(0).trees()).calculate(analyses.get(0).compilationUnit());
     }
 
     private String calculateCompilationUnitSha(AstLoader loader, Path file) throws Exception {
         List<CompilationAnalysis> analyses = loader.loadCompilationAnalyses(List.of(file));
         assertFalse(analyses.isEmpty());
-        MemberShaCalculator calculator = new MemberShaCalculator(analyses.get(0).trees());
-        ReducedAstNode root = calculator.calculate(analyses.get(0).compilationUnit());
-        return root.getSha(ShaCategory.FULL);
+        ElementHashCalculator calculator = new ElementHashCalculator(analyses.get(0).trees());
+        ElementInfo root = calculator.calculate(analyses.get(0).compilationUnit());
+        return root.getSha(ChangeCategory.FULL);
     }
 }

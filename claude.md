@@ -240,38 +240,6 @@ but all calls to the method would be in "Necessary Refactoring Changes."
 
 Try flagging backward incomatibilies and rating of the API changes. 
 
-## Current status
-
-Phase 0 (infrastructure) is done: `GitInspector` (jgit), `AstLoader` (attributed AST,
-`CompilationAnalysis`), `GitTestHelper` (temp repos for tests) and their tests.
-
-Phase 1 is in progress. Implemented so far:
-
-- `DiffAstAnalyzer` / `FileDiffAnalysis`: initial loading and diffing of the ASTs.
-- `MemberShaCalculator` builds a tree of `ReducedAstNode`s (compilation unit, types,
-  methods, fields) from the attributed AST and computes SHAs for them.
-- SHA categories are the enum `ShaCategory`. Each constant implements `ShaCalculation`,
-  which decides what the category contributes for declaration attributes, local
-  variables, identifiers and completed child nodes (`onChildCompleted`, which by default
-  folds the child SHA into the parent). `ReducedAstNode` keeps an `EnumMap` of digests.
-  Adding a category means adding an enum constant; the calculator iterates over
-  `ShaCategory.values()`.
-- Current categories:
-  - `FULL`: everything.
-  - `IGNORE_LOCAL_NAMES`: ignores names of locals/parameters and their usages.
-  - `SIGNATURE`: only the signature of an element (modifiers, annotations, names, types,
-    type parameters, parameters, throws). Ignores method bodies, field initializers,
-    initializer blocks, and does not cascade members into the enclosing type.
-  The calculator tracks a `Region` (SIGNATURE/BODY) so categories can tell header from body.
-
-Not done yet:
-
-- SHAs are only computed for one revision; comparing current vs. previous revision
-  per member and mapping the differences to the change categories (list above) is next.
-- Further SHA categories (e.g. ignoring whitespace/comments, ignoring imports, types),
-  needed to separate the change categories.
-- Phases 2 - 6.
-
 ## Out of scope
 
 This project is purely experimental POC. We do not need take into account

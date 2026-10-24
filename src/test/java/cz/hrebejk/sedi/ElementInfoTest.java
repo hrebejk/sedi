@@ -15,7 +15,7 @@ import java.util.List;
 /**
  * Unit test for ReducedAstNode and MemberShaCalculator.calculate, including digest cascading and imports.
  */
-public class ReducedAstTest extends TestCase {
+public class ElementInfoTest extends TestCase {
 
     /**
      * Tests building reduced AST dynamically with original tree pointers and message digests.
@@ -28,33 +28,33 @@ public class ReducedAstTest extends TestCase {
             List<CompilationAnalysis> analyses = loader.loadCompilationAnalyses(List.of(sourceFile));
             assertFalse(analyses.isEmpty());
 
-            MemberShaCalculator calculator = new MemberShaCalculator(analyses.get(0).trees());
-            ReducedAstNode root = calculator.calculate(analyses.get(0).compilationUnit());
+            ElementHashCalculator calculator = new ElementHashCalculator(analyses.get(0).trees());
+            ElementInfo root = calculator.calculate(analyses.get(0).compilationUnit());
 
             assertNotNull(root);
-            assertEquals(ReducedAstNode.NodeType.COMPILATION_UNIT, root.getNodeType());
+            assertEquals(ElementInfo.NodeType.COMPILATION_UNIT, root.getNodeType());
             assertNotNull(root.getOriginalTree());
             assertFalse(root.getMessageDigests().isEmpty());
 
             assertEquals(1, root.getChildren().size());
-            ReducedAstNode typeNode = root.getChildren().get(0);
+            ElementInfo typeNode = root.getChildren().get(0);
             assertEquals("User", typeNode.getName());
-            assertEquals(ReducedAstNode.NodeType.TYPE, typeNode.getNodeType());
+            assertEquals(ElementInfo.NodeType.TYPE, typeNode.getNodeType());
             assertNotNull(typeNode.getOriginalTree());
             assertFalse(typeNode.getMessageDigests().isEmpty());
 
             // Default constructor (<init>), field (username), method (getUsername) = 3 members
             assertEquals(3, typeNode.getChildren().size());
-            ReducedAstNode fieldNode = typeNode.getChildren().get(1);
+            ElementInfo fieldNode = typeNode.getChildren().get(1);
             assertEquals("username", fieldNode.getName());
-            assertEquals(ReducedAstNode.NodeType.FIELD, fieldNode.getNodeType());
+            assertEquals(ElementInfo.NodeType.FIELD, fieldNode.getNodeType());
             assertNotNull(fieldNode.getOriginalTree());
             assertFalse(fieldNode.getMessageDigests().isEmpty());
-            assertEquals(ShaCategory.values().length, fieldNode.getMessageDigests().size());
-            assertNotNull(fieldNode.getSha(ShaCategory.FULL));
-            assertEquals(64, fieldNode.getSha(ShaCategory.FULL).length());
-            assertNotNull(fieldNode.getSha(ShaCategory.IGNORE_LOCAL_NAMES));
-            assertEquals(64, fieldNode.getSha(ShaCategory.IGNORE_LOCAL_NAMES).length());
+            assertEquals(ChangeCategory.values().length, fieldNode.getMessageDigests().size());
+            assertNotNull(fieldNode.getSha(ChangeCategory.FULL));
+            assertEquals(64, fieldNode.getSha(ChangeCategory.FULL).length());
+            assertNotNull(fieldNode.getSha(ChangeCategory.IGNORE_LOCAL_NAMES));
+            assertEquals(64, fieldNode.getSha(ChangeCategory.IGNORE_LOCAL_NAMES).length());
         }
     }
 
@@ -70,13 +70,13 @@ public class ReducedAstTest extends TestCase {
             List<CompilationAnalysis> analysesV1 = loader.loadCompilationAnalyses(List.of(fileV1));
             List<CompilationAnalysis> analysesV2 = loader.loadCompilationAnalyses(List.of(fileV2));
 
-            MemberShaCalculator calcV1 = new MemberShaCalculator(analysesV1.get(0).trees());
-            ReducedAstNode rootV1 = calcV1.calculate(analysesV1.get(0).compilationUnit());
-            String classShaV1 = rootV1.getChildren().get(0).getSha(ShaCategory.FULL);
+            ElementHashCalculator calcV1 = new ElementHashCalculator(analysesV1.get(0).trees());
+            ElementInfo rootV1 = calcV1.calculate(analysesV1.get(0).compilationUnit());
+            String classShaV1 = rootV1.getChildren().get(0).getSha(ChangeCategory.FULL);
 
-            MemberShaCalculator calcV2 = new MemberShaCalculator(analysesV2.get(0).trees());
-            ReducedAstNode rootV2 = calcV2.calculate(analysesV2.get(0).compilationUnit());
-            String classShaV2 = rootV2.getChildren().get(0).getSha(ShaCategory.FULL);
+            ElementHashCalculator calcV2 = new ElementHashCalculator(analysesV2.get(0).trees());
+            ElementInfo rootV2 = calcV2.calculate(analysesV2.get(0).compilationUnit());
+            String classShaV2 = rootV2.getChildren().get(0).getSha(ChangeCategory.FULL);
 
             // Enclosing class SHA must change because the method SHA cascaded into it
             assertNotSame(classShaV1, classShaV2);
@@ -95,14 +95,14 @@ public class ReducedAstTest extends TestCase {
             List<CompilationAnalysis> analysesV1 = loader.loadCompilationAnalyses(List.of(fileV1));
             List<CompilationAnalysis> analysesV2 = loader.loadCompilationAnalyses(List.of(fileV2));
 
-            MemberShaCalculator calcV1 = new MemberShaCalculator(analysesV1.get(0).trees());
-            ReducedAstNode rootV1 = calcV1.calculate(analysesV1.get(0).compilationUnit());
+            ElementHashCalculator calcV1 = new ElementHashCalculator(analysesV1.get(0).trees());
+            ElementInfo rootV1 = calcV1.calculate(analysesV1.get(0).compilationUnit());
 
-            MemberShaCalculator calcV2 = new MemberShaCalculator(analysesV2.get(0).trees());
-            ReducedAstNode rootV2 = calcV2.calculate(analysesV2.get(0).compilationUnit());
+            ElementHashCalculator calcV2 = new ElementHashCalculator(analysesV2.get(0).trees());
+            ElementInfo rootV2 = calcV2.calculate(analysesV2.get(0).compilationUnit());
 
-            String shaV1 = rootV1.getSha(ShaCategory.FULL);
-            String shaV2 = rootV2.getSha(ShaCategory.FULL);
+            String shaV1 = rootV1.getSha(ChangeCategory.FULL);
+            String shaV2 = rootV2.getSha(ChangeCategory.FULL);
 
             assertNotSame(shaV1, shaV2);
         }

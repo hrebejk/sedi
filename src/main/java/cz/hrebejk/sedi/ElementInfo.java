@@ -20,15 +20,15 @@ import java.util.Map;
 
 /**
  * A reduced AST node representing a compilation unit, type, or member, containing
- * a pointer to the original tree, a map of MessageDigests per {@link ShaCategory}, and child nodes.
+ * a pointer to the original tree, a map of MessageDigests per {@link ChangeCategory}, and child nodes.
  */
-public class ReducedAstNode {
+public class ElementInfo {
 
     private final Tree originalTree;
     private final String name;
     private final NodeType nodeType;
-    private final Map<ShaCategory, MessageDigest> messageDigests;
-    private final List<ReducedAstNode> children;
+    private final Map<ChangeCategory, MessageDigest> messageDigests;
+    private final List<ElementInfo> children;
 
     /**
      * Enum defining the type of reduced AST node.
@@ -47,12 +47,12 @@ public class ReducedAstNode {
      * @param name         name of the entity
      * @param nodeType     type of node
      */
-    public ReducedAstNode(Tree originalTree, String name, NodeType nodeType) {
+    public ElementInfo(Tree originalTree, String name, NodeType nodeType) {
         this.originalTree = originalTree;
         this.name = name;
         this.nodeType = nodeType;
-        this.messageDigests = new EnumMap<>(ShaCategory.class);
-        for (ShaCategory category : ShaCategory.values()) {
+        this.messageDigests = new EnumMap<>(ChangeCategory.class);
+        for (ChangeCategory category : ChangeCategory.values()) {
             try {
                 this.messageDigests.put(category, MessageDigest.getInstance("SHA-256"));
             } catch (NoSuchAlgorithmException e) {
@@ -67,7 +67,7 @@ public class ReducedAstNode {
      *
      * @param child child ReducedAstNode
      */
-    public void addChild(ReducedAstNode child) {
+    public void addChild(ElementInfo child) {
         this.children.add(child);
     }
 
@@ -77,7 +77,7 @@ public class ReducedAstNode {
      * @param category      the category
      * @param attribute     attribute string
      */
-    public void updateDigest(ShaCategory category, String attribute) {
+    public void updateDigest(ChangeCategory category, String attribute) {
         if (attribute != null) {
             MessageDigest md = messageDigests.get(category);
             synchronized (md) {
@@ -92,7 +92,7 @@ public class ReducedAstNode {
      * @param category the category
      * @return hex SHA string
      */
-    public String getSha(ShaCategory category) {
+    public String getSha(ChangeCategory category) {
         MessageDigest md = messageDigests.get(category);
         synchronized (md) {
             try {
@@ -150,7 +150,7 @@ public class ReducedAstNode {
      *
      * @return map of MessageDigests
      */
-    public Map<ShaCategory, MessageDigest> getMessageDigests() {
+    public Map<ChangeCategory, MessageDigest> getMessageDigests() {
         return messageDigests;
     }
 
@@ -159,7 +159,7 @@ public class ReducedAstNode {
      *
      * @return list of child ReducedAstNodes
      */
-    public List<ReducedAstNode> getChildren() {
+    public List<ElementInfo> getChildren() {
         return children;
     }
 }

@@ -23,12 +23,7 @@ import java.util.Deque;
 import java.util.HashSet;
 import java.util.Set;
 
-/**
- * Calculates SHA hashes for types and members by dynamically building the reduced AST
- * during visitor traversal using ShaContext and attributed AST type information (Trees),
- * incorporating FQNs, primitive types, packages, and imports without toString().
- */
-public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
+public class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
 
     private final Trees trees;
     private final Deque<Set<String>> localScopeStack = new ArrayDeque<>();
@@ -40,7 +35,7 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
      *
      * @param trees Trees utility instance
      */
-    public MemberShaCalculator(Trees trees) {
+    public ElementHashCalculator(Trees trees) {
         if (trees == null) {
             throw new IllegalArgumentException("Trees must not be null");
         }
@@ -54,24 +49,24 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
      * @param compilationUnit the CompilationUnitTree to analyze
      * @return the root ReducedAstNode
      */
-    public ReducedAstNode calculate(CompilationUnitTree compilationUnit) {
+    public ElementInfo calculate(CompilationUnitTree compilationUnit) {
         if (compilationUnit == null) {
-            return new ReducedAstNode(null, "ROOT", ReducedAstNode.NodeType.COMPILATION_UNIT);
+            return new ElementInfo(null, "ROOT", ElementInfo.NodeType.COMPILATION_UNIT);
         }
 
-        ReducedAstNode rootNode = new ReducedAstNode(
+        ElementInfo rootNode = new ElementInfo(
                 compilationUnit,
                 compilationUnit.getPackageName() != null ? compilationUnit.getPackageName().toString() : "default",
-                ReducedAstNode.NodeType.COMPILATION_UNIT
+                ElementInfo.NodeType.COMPILATION_UNIT
         );
 
-        ShaContext context = new ShaContext(rootNode);
+        HashContext context = new HashContext(rootNode);
         scan(compilationUnit, context);
         return rootNode;
     }
 
     @Override
-    public Void visitCompilationUnit(CompilationUnitTree node, ShaContext context) {
+    public Void visitCompilationUnit(CompilationUnitTree node, HashContext context) {
         updateAllCategories(context, "KIND:" + node.getKind());
         if (node.getPackageName() != null) {
             updateAllCategories(context, "PACKAGE:" + node.getPackageName());
@@ -83,10 +78,10 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
     }
 
     @Override
-    public Void visitClass(ClassTree node, ShaContext context) {
-        ReducedAstNode parentNode = context.getCurrentNode();
+    public Void visitClass(ClassTree node, HashContext context) {
+        ElementInfo parentNode = context.getCurrentNode();
         String className = node.getSimpleName() != null ? node.getSimpleName().toString() : "";
-        ReducedAstNode typeNode = new ReducedAstNode(node, className, ReducedAstNode.NodeType.TYPE);
+        ElementInfo typeNode = new ElementInfo(node, className, ElementInfo.NodeType.TYPE);
         parentNode.addChild(typeNode);
 
         context.setCurrentNode(typeNode);
@@ -107,7 +102,7 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
     }
 
     @Override
-    public Void visitMethod(MethodTree node, ShaContext context) {
+    public Void visitMethod(MethodTree node, HashContext context) {
         localScopeStack.push(new HashSet<>());
         try {
             for (var param : node.getParameters()) {
@@ -116,9 +111,9 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
                 }
             }
 
-            ReducedAstNode parentNode = context.getCurrentNode();
+            ElementInfo parentNode = context.getCurrentNode();
             String methodName = node.getName() != null ? node.getName().toString() : "";
-            ReducedAstNode methodNode = new ReducedAstNode(node, methodName, ReducedAstNode.NodeType.METHOD);
+            ElementInfo methodNode = new ElementInfo(node, methodName, ElementInfo.NodeType.METHOD);
             parentNode.addChild(methodNode);
 
             context.setCurrentNode(methodNode);
@@ -152,13 +147,13 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
     }
 
     @Override
-    public Void visitVariable(VariableTree node, ShaContext context) {
+    public Void visitVariable(VariableTree node, HashContext context) {
         TreePath path = getCurrentPath();
         if (path != null && path.getParentPath() != null && path.getParentPath().getLeaf() instanceof ClassTree) {
             // Field
-            ReducedAstNode parentNode = context.getCurrentNode();
+            ElementInfo parentNode = context.getCurrentNode();
             String varName = node.getName() != null ? node.getName().toString() : "";
-            ReducedAstNode varNode = new ReducedAstNode(node, varName, ReducedAstNode.NodeType.FIELD);
+            ElementInfo varNode = new ElementInfo(node, varName, ElementInfo.NodeType.FIELD);
             parentNode.addChild(varNode);
 
             context.setCurrentNode(varNode);
@@ -185,7 +180,7 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
                 localScopeStack.peek().add(node.getName().toString());
             }
             if (context.getCurrentNode() != null) {
-                for (ShaCategory category : ShaCategory.values()) {
+                for (ChangeCategory category : ChangeCategory.values()) {
                     category.onLocalVariable(category, context.getCurrentNode(), node, region());
                 }
             }
@@ -194,7 +189,7 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
     }
 
     @Override
-    public Void visitBlock(BlockTree node, ShaContext context) {
+    public Void visitBlock(BlockTree node, HashContext context) {
         Tree parent = getCurrentPath().getParentPath() != null ? getCurrentPath().getParentPath().getLeaf() : null;
         if (parent instanceof ClassTree) {
             // Initializer block
@@ -209,7 +204,7 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
     }
 
     @Override
-    public Void visitLiteral(LiteralTree node, ShaContext context) {
+    public Void visitLiteral(LiteralTree node, HashContext context) {
         updateAllCategories(context, "KIND:" + node.getKind());
         Object val = node.getValue();
         if (val != null) {
@@ -219,8 +214,8 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
     }
 
     @Override
-    public Void visitIdentifier(IdentifierTree node, ShaContext context) {
-        ReducedAstNode current = context.getCurrentNode();
+    public Void visitIdentifier(IdentifierTree node, HashContext context) {
+        ElementInfo current = context.getCurrentNode();
         if (current != null) {
             boolean isLocalOrParam = false;
             Name name = node.getName();
@@ -233,7 +228,7 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
                     }
                 }
             }
-            for (ShaCategory category : ShaCategory.values()) {
+            for (ChangeCategory category : ChangeCategory.values()) {
                 category.onIdentifier(category, current, node, isLocalOrParam, region());
             }
         }
@@ -241,29 +236,29 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
     }
 
     @Override
-    public Void visitModifiers(ModifiersTree node, ShaContext context) {
+    public Void visitModifiers(ModifiersTree node, HashContext context) {
         updateAllCategories(context, "KIND:" + node.getKind());
         updateAllCategories(context, "MODIFIERS:" + node.getFlags());
         return super.visitModifiers(node, context);
     }
 
-    private void updateAllCategories(ShaContext context, String attribute) {
+    private void updateAllCategories(HashContext context, String attribute) {
         if (context.getCurrentNode() != null) {
             updateAttribute(context.getCurrentNode(), attribute);
         }
     }
 
-    private void updateAttribute(ReducedAstNode node, String attribute) {
-        for (ShaCategory category : ShaCategory.values()) {
+    private void updateAttribute(ElementInfo node, String attribute) {
+        for (ChangeCategory category : ChangeCategory.values()) {
             category.onAttribute(category, node, attribute, region());
         }
     }
 
-    private ShaCalculation.Region region() {
-        return bodyDepth > 0 ? ShaCalculation.Region.BODY : ShaCalculation.Region.SIGNATURE;
+    private HashCalculation.Region region() {
+        return bodyDepth > 0 ? HashCalculation.Region.BODY : HashCalculation.Region.SIGNATURE;
     }
 
-    private void scanBody(Tree body, ShaContext context) {
+    private void scanBody(Tree body, HashContext context) {
         bodyDepth++;
         try {
             scan(body, context);
@@ -272,8 +267,8 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
         }
     }
 
-    private static void cascade(ReducedAstNode parent, ReducedAstNode child) {
-        for (ShaCategory category : ShaCategory.values()) {
+    private static void cascade(ElementInfo parent, ElementInfo child) {
+        for (ChangeCategory category : ChangeCategory.values()) {
             category.onChildCompleted(category, parent, child);
         }
     }
