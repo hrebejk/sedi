@@ -52,4 +52,47 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <!-- to create libraries in mreb/lib
+             invoke mvn install dependency:copy-dependencies -->
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <version>3.8.1</version>
+        <executions>
+          <execution>
+            <id>copy-dependencies</id>
+            <phase>install</phase>
+            <goals>
+              <goal>copy-dependencies</goal>
+            </goals>
+            <configuration>
+              <outputDirectory>sedi/lib</outputDirectory>
+              <!--excludeArtifactIds>
+                maraboo.vm,
+                maraboo.commons.kvs,
+                maraboo.interpreter,
+                maraboo.src.ast,
+                maraboo.runtime,
+                maraboo.src.compiler.javac
+              </excludeArtifactIds -->
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.8.1</version>
+        <configuration>
+          <compilerArgs>
+            <arg>--enable-preview</arg>
+          </compilerArgs>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
 </project>
