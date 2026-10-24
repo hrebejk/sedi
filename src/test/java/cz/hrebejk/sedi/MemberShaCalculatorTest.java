@@ -40,7 +40,7 @@ public class MemberShaCalculatorTest extends TestCase {
             for (ReducedAstNode child : typeNode.getChildren()) {
                 assertNotNull(child.getOriginalTree());
                 assertFalse(child.getMessageDigests().isEmpty());
-                String sha = child.getSha(0);
+                String sha = child.getSha(ShaCategory.FULL);
                 assertNotNull(sha);
                 assertEquals(64, sha.length()); // SHA-256 hex string length
             }
@@ -182,8 +182,8 @@ public class MemberShaCalculatorTest extends TestCase {
             List<CompilationAnalysis> analyses1 = loader.loadCompilationAnalyses(List.of(file1));
             MemberShaCalculator calc1 = new MemberShaCalculator(analyses1.get(0).trees());
             ReducedAstNode root1 = calc1.calculate(analyses1.get(0).compilationUnit());
-            String sha1Cat0 = root1.getSha(0);
-            String sha1Cat1 = root1.getSha(1);
+            String sha1Cat0 = root1.getSha(ShaCategory.FULL);
+            String sha1Cat1 = root1.getSha(ShaCategory.IGNORE_LOCAL_NAMES);
 
             // Change parameter 'a' to 'x', local variable 'res' to 'total', and their usages
             String code2 = "package cz.hrebejk.sedi;\n\npublic class Calc {\n    public int compute(int x) {\n        int total = x * 2;\n        return total;\n    }\n}\n";
@@ -192,8 +192,8 @@ public class MemberShaCalculatorTest extends TestCase {
             List<CompilationAnalysis> analyses2 = loader.loadCompilationAnalyses(List.of(file2));
             MemberShaCalculator calc2 = new MemberShaCalculator(analyses2.get(0).trees());
             ReducedAstNode root2 = calc2.calculate(analyses2.get(0).compilationUnit());
-            String sha2Cat0 = root2.getSha(0);
-            String sha2Cat1 = root2.getSha(1);
+            String sha2Cat0 = root2.getSha(ShaCategory.FULL);
+            String sha2Cat1 = root2.getSha(ShaCategory.IGNORE_LOCAL_NAMES);
 
             // Category 0 SHA should change because parameter and local variable names changed
             assertFalse("Category 0 SHA should change when local/param names change", sha1Cat0.equals(sha2Cat0));
@@ -207,6 +207,6 @@ public class MemberShaCalculatorTest extends TestCase {
         assertFalse(analyses.isEmpty());
         MemberShaCalculator calculator = new MemberShaCalculator(analyses.get(0).trees());
         ReducedAstNode root = calculator.calculate(analyses.get(0).compilationUnit());
-        return root.getSha(0);
+        return root.getSha(ShaCategory.FULL);
     }
 }

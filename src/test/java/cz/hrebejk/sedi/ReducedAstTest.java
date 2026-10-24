@@ -50,11 +50,11 @@ public class ReducedAstTest extends TestCase {
             assertEquals(ReducedAstNode.NodeType.FIELD, fieldNode.getNodeType());
             assertNotNull(fieldNode.getOriginalTree());
             assertFalse(fieldNode.getMessageDigests().isEmpty());
-            assertEquals(2, fieldNode.getMessageDigests().size());
-            assertNotNull(fieldNode.getSha(0));
-            assertEquals(64, fieldNode.getSha(0).length());
-            assertNotNull(fieldNode.getSha(1));
-            assertEquals(64, fieldNode.getSha(1).length());
+            assertEquals(ShaCategory.values().length, fieldNode.getMessageDigests().size());
+            assertNotNull(fieldNode.getSha(ShaCategory.FULL));
+            assertEquals(64, fieldNode.getSha(ShaCategory.FULL).length());
+            assertNotNull(fieldNode.getSha(ShaCategory.IGNORE_LOCAL_NAMES));
+            assertEquals(64, fieldNode.getSha(ShaCategory.IGNORE_LOCAL_NAMES).length());
         }
     }
 
@@ -72,11 +72,11 @@ public class ReducedAstTest extends TestCase {
 
             MemberShaCalculator calcV1 = new MemberShaCalculator(analysesV1.get(0).trees());
             ReducedAstNode rootV1 = calcV1.calculate(analysesV1.get(0).compilationUnit());
-            String classShaV1 = rootV1.getChildren().get(0).getSha(0);
+            String classShaV1 = rootV1.getChildren().get(0).getSha(ShaCategory.FULL);
 
             MemberShaCalculator calcV2 = new MemberShaCalculator(analysesV2.get(0).trees());
             ReducedAstNode rootV2 = calcV2.calculate(analysesV2.get(0).compilationUnit());
-            String classShaV2 = rootV2.getChildren().get(0).getSha(0);
+            String classShaV2 = rootV2.getChildren().get(0).getSha(ShaCategory.FULL);
 
             // Enclosing class SHA must change because the method SHA cascaded into it
             assertNotSame(classShaV1, classShaV2);
@@ -101,8 +101,8 @@ public class ReducedAstTest extends TestCase {
             MemberShaCalculator calcV2 = new MemberShaCalculator(analysesV2.get(0).trees());
             ReducedAstNode rootV2 = calcV2.calculate(analysesV2.get(0).compilationUnit());
 
-            String shaV1 = rootV1.getSha(0);
-            String shaV2 = rootV2.getSha(0);
+            String shaV1 = rootV1.getSha(ShaCategory.FULL);
+            String shaV2 = rootV2.getSha(ShaCategory.FULL);
 
             assertNotSame(shaV1, shaV2);
         }

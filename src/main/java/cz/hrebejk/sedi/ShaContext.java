@@ -44,13 +44,13 @@ public class ShaContext {
     }
 
     /**
-     * Updates the current node's message digest at category 0 with an attribute string.
+     * Updates the current node's message digest at FULL category with an attribute string.
      *
      * @param attribute attribute text
      */
     public void updateDigest(String attribute) {
         if (currentNode != null) {
-            currentNode.updateDigest(0, attribute);
+            currentNode.updateDigest(ShaCategory.FULL, attribute);
         }
     }
 }

@@ -14,18 +14,20 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * A reduced AST node representing a compilation unit, type, or member, containing
- * a pointer to the original tree, a list of MessageDigests (categories), and child nodes.
+ * a pointer to the original tree, a map of MessageDigests per {@link ShaCategory}, and child nodes.
  */
 public class ReducedAstNode {
 
     private final Tree originalTree;
     private final String name;
     private final NodeType nodeType;
-    private final List<MessageDigest> messageDigests;
+    private final Map<ShaCategory, MessageDigest> messageDigests;
     private final List<ReducedAstNode> children;
 
     /**
@@ -39,7 +41,7 @@ public class ReducedAstNode {
     }
 
     /**
-     * Creates a new ReducedAstNode with an initial MessageDigest category.
+     * Creates a new ReducedAstNode with a MessageDigest for every category.
      *
      * @param originalTree pointer to the original javac AST tree node
      * @param name         name of the entity
@@ -49,11 +51,13 @@ public class ReducedAstNode {
         this.originalTree = originalTree;
         this.name = name;
         this.nodeType = nodeType;
-        this.messageDigests = new ArrayList<>();
-        try {
-            this.messageDigests.add(MessageDigest.getInstance("SHA-256"));
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("SHA-256 algorithm not available", e);
+        this.messageDigests = new EnumMap<>(ShaCategory.class);
+        for (ShaCategory category : ShaCategory.values()) {
+            try {
+                this.messageDigests.put(category, MessageDigest.getInstance("SHA-256"));
+            } catch (NoSuchAlgorithmException e) {
+                throw new RuntimeException("SHA-256 algorithm not available", e);
+            }
         }
         this.children = new ArrayList<>();
     }
@@ -68,21 +72,14 @@ public class ReducedAstNode {
     }
 
     /**
-     * Updates the message digest at the specified category index with an attribute string.
+     * Updates the message digest of the specified category with an attribute string.
      *
-     * @param categoryIndex index of the category digest
+     * @param category      the category
      * @param attribute     attribute string
      */
-    public void updateDigest(int categoryIndex, String attribute) {
+    public void updateDigest(ShaCategory category, String attribute) {
         if (attribute != null) {
-            while (messageDigests.size() <= categoryIndex) {
-                try {
-                    messageDigests.add(MessageDigest.getInstance("SHA-256"));
-                } catch (NoSuchAlgorithmException e) {
-                    throw new RuntimeException("SHA-256 algorithm not available", e);
-                }
-            }
-            MessageDigest md = messageDigests.get(categoryIndex);
+            MessageDigest md = messageDigests.get(category);
             synchronized (md) {
                 md.update(attribute.getBytes(StandardCharsets.UTF_8));
             }
@@ -90,16 +87,13 @@ public class ReducedAstNode {
     }
 
     /**
-     * Computes and returns the hex SHA string for the digest at the specified category index.
+     * Computes and returns the hex SHA string for the digest of the specified category.
      *
-     * @param categoryIndex index of the category digest
+     * @param category the category
      * @return hex SHA string
      */
-    public String getSha(int categoryIndex) {
-        if (categoryIndex < 0 || categoryIndex >= messageDigests.size()) {
-            return "";
-        }
-        MessageDigest md = messageDigests.get(categoryIndex);
+    public String getSha(ShaCategory category) {
+        MessageDigest md = messageDigests.get(category);
         synchronized (md) {
             try {
                 MessageDigest clone = (MessageDigest) md.clone();
@@ -152,11 +146,11 @@ public class ReducedAstNode {
     }
 
     /**
-     * Returns the list of MessageDigests (categories).
+     * Returns the MessageDigests by category.
      *
-     * @return list of MessageDigests
+     * @return map of MessageDigests
      */
-    public List<MessageDigest> getMessageDigests() {
+    public Map<ShaCategory, MessageDigest> getMessageDigests() {
         return messageDigests;
     }
 

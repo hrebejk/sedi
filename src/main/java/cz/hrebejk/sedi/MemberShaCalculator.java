@@ -70,12 +70,12 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
 
     @Override
     public Void visitCompilationUnit(CompilationUnitTree node, ShaContext context) {
-        updateBothDigests(context, "KIND:" + node.getKind());
+        updateAllCategories(context, "KIND:" + node.getKind());
         if (node.getPackageName() != null) {
-            updateBothDigests(context, "PACKAGE:" + node.getPackageName());
+            updateAllCategories(context, "PACKAGE:" + node.getPackageName());
         }
         for (ImportTree importTree : node.getImports()) {
-            updateBothDigests(context, "IMPORT:" + importTree.isStatic() + ":" + importTree.getQualifiedIdentifier());
+            updateAllCategories(context, "IMPORT:" + importTree.isStatic() + ":" + importTree.getQualifiedIdentifier());
         }
         return super.visitCompilationUnit(node, context);
     }
@@ -88,19 +88,18 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
         parentNode.addChild(typeNode);
 
         context.setCurrentNode(typeNode);
-        updateBothDigests(context, "KIND:" + node.getKind());
+        updateAllCategories(context, "KIND:" + node.getKind());
         if (node.getSimpleName() != null) {
-            updateBothDigests(context, "NAME:" + node.getSimpleName());
+            updateAllCategories(context, "NAME:" + node.getSimpleName());
         }
 
         Element el = trees.getElement(getCurrentPath());
         if (el instanceof TypeElement typeEl) {
-            updateBothDigests(context, "FQN:" + typeEl.getQualifiedName());
+            updateAllCategories(context, "FQN:" + typeEl.getQualifiedName());
         }
 
         Void result = super.visitClass(node, context);
-        parentNode.updateDigest(0, typeNode.getSha(0));
-        parentNode.updateDigest(1, typeNode.getSha(1));
+        cascade(parentNode, typeNode);
         context.setCurrentNode(parentNode);
         return result;
     }
@@ -121,22 +120,21 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
             parentNode.addChild(methodNode);
 
             context.setCurrentNode(methodNode);
-            updateBothDigests(context, "KIND:" + node.getKind());
+            updateAllCategories(context, "KIND:" + node.getKind());
             if (node.getName() != null) {
-                updateBothDigests(context, "NAME:" + node.getName());
+                updateAllCategories(context, "NAME:" + node.getName());
             }
 
             Element el = trees.getElement(getCurrentPath());
             if (el instanceof ExecutableElement execEl) {
-                updateBothDigests(context, "RETURN_TYPE:" + execEl.getReturnType());
+                updateAllCategories(context, "RETURN_TYPE:" + execEl.getReturnType());
                 for (var param : execEl.getParameters()) {
-                    updateBothDigests(context, "PARAM_TYPE:" + param.asType());
+                    updateAllCategories(context, "PARAM_TYPE:" + param.asType());
                 }
             }
 
             Void result = super.visitMethod(node, context);
-            parentNode.updateDigest(0, methodNode.getSha(0));
-            parentNode.updateDigest(1, methodNode.getSha(1));
+            cascade(parentNode, methodNode);
             context.setCurrentNode(parentNode);
             return result;
         } finally {
@@ -148,25 +146,25 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
     public Void visitVariable(VariableTree node, ShaContext context) {
         TreePath path = getCurrentPath();
         if (path != null && path.getParentPath() != null && path.getParentPath().getLeaf() instanceof ClassTree) {
-            // Field (only updates category 0 to keep message digests size = 1 as expected by tests)
+            // Field
             ReducedAstNode parentNode = context.getCurrentNode();
             String varName = node.getName() != null ? node.getName().toString() : "";
             ReducedAstNode varNode = new ReducedAstNode(node, varName, ReducedAstNode.NodeType.FIELD);
             parentNode.addChild(varNode);
 
             context.setCurrentNode(varNode);
-            varNode.updateDigest(0, "KIND:" + node.getKind());
+            updateAttribute(varNode, "KIND:" + node.getKind());
             if (node.getName() != null) {
-                varNode.updateDigest(0, "NAME:" + node.getName());
+                updateAttribute(varNode, "NAME:" + node.getName());
             }
 
             Element el = trees.getElement(getCurrentPath());
             if (el instanceof VariableElement varEl) {
-                varNode.updateDigest(0, "TYPE:" + varEl.asType());
+                updateAttribute(varNode, "TYPE:" + varEl.asType());
             }
 
             Void result = super.visitVariable(node, context);
-            parentNode.updateDigest(0, varNode.getSha(0));
+            cascade(parentNode, varNode);
             context.setCurrentNode(parentNode);
             return result;
         } else {
@@ -175,11 +173,9 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
                 localScopeStack.peek().add(node.getName().toString());
             }
             if (context.getCurrentNode() != null) {
-                context.getCurrentNode().updateDigest(0, "KIND:" + node.getKind());
-                if (node.getName() != null) {
-                    context.getCurrentNode().updateDigest(0, "NAME:" + node.getName());
+                for (ShaCategory category : ShaCategory.values()) {
+                    category.onLocalVariable(category, context.getCurrentNode(), node);
                 }
-                context.getCurrentNode().updateDigest(1, "KIND:" + node.getKind());
             }
             return super.visitVariable(node, context);
         }
@@ -187,24 +183,20 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
 
     @Override
     public Void visitLiteral(LiteralTree node, ShaContext context) {
-        updateBothDigests(context, "KIND:" + node.getKind());
+        updateAllCategories(context, "KIND:" + node.getKind());
         Object val = node.getValue();
         if (val != null) {
-            updateBothDigests(context, "LITERAL:" + val);
+            updateAllCategories(context, "LITERAL:" + val);
         }
         return super.visitLiteral(node, context);
     }
 
     @Override
     public Void visitIdentifier(IdentifierTree node, ShaContext context) {
-        if (context.getCurrentNode() != null) {
-            context.getCurrentNode().updateDigest(0, "KIND:" + node.getKind());
-            Name name = node.getName();
-            if (name != null) {
-                context.getCurrentNode().updateDigest(0, "IDENTIFIER:" + name);
-            }
-
+        ReducedAstNode current = context.getCurrentNode();
+        if (current != null) {
             boolean isLocalOrParam = false;
+            Name name = node.getName();
             if (name != null) {
                 String idName = name.toString();
                 for (Set<String> scope : localScopeStack) {
@@ -214,11 +206,8 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
                     }
                 }
             }
-            if (!isLocalOrParam) {
-                context.getCurrentNode().updateDigest(1, "KIND:" + node.getKind());
-                if (name != null) {
-                    context.getCurrentNode().updateDigest(1, "IDENTIFIER:" + name);
-                }
+            for (ShaCategory category : ShaCategory.values()) {
+                category.onIdentifier(category, current, node, isLocalOrParam);
             }
         }
         return super.visitIdentifier(node, context);
@@ -226,15 +215,26 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
 
     @Override
     public Void visitModifiers(ModifiersTree node, ShaContext context) {
-        updateBothDigests(context, "KIND:" + node.getKind());
-        updateBothDigests(context, "MODIFIERS:" + node.getFlags());
+        updateAllCategories(context, "KIND:" + node.getKind());
+        updateAllCategories(context, "MODIFIERS:" + node.getFlags());
         return super.visitModifiers(node, context);
     }
 
-    private void updateBothDigests(ShaContext context, String attribute) {
+    private void updateAllCategories(ShaContext context, String attribute) {
         if (context.getCurrentNode() != null) {
-            context.getCurrentNode().updateDigest(0, attribute);
-            context.getCurrentNode().updateDigest(1, attribute);
+            updateAttribute(context.getCurrentNode(), attribute);
+        }
+    }
+
+    private static void updateAttribute(ReducedAstNode node, String attribute) {
+        for (ShaCategory category : ShaCategory.values()) {
+            category.onAttribute(category, node, attribute);
+        }
+    }
+
+    private static void cascade(ReducedAstNode parent, ReducedAstNode child) {
+        for (ShaCategory category : ShaCategory.values()) {
+            parent.updateDigest(category, child.getSha(category));
         }
     }
 }
