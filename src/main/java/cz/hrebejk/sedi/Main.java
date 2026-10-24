@@ -12,11 +12,13 @@ import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.stream.Collectors;
 
 /**
  * Entry point of the application.
@@ -49,8 +51,9 @@ public class Main implements Callable<Integer> {
         } else {
             System.err.println("No pom.xml found in " + projectDir + ", using JDK classpath only.");
         }
-        System.out.println("Classpath (" + classpath.size() + " entries):");
-        classpath.forEach(p -> System.out.println("  " + p));
+        System.out.println(classpath.stream()
+                .map(p -> p.getFileName().toString())
+                .collect(Collectors.joining(File.pathSeparator)));
         return 0;
     }
 }
