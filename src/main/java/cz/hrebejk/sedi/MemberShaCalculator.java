@@ -32,6 +32,8 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
 
     private final Trees trees;
     private final Deque<Set<String>> localScopeStack = new ArrayDeque<>();
+    /** Greater than zero while scanning method bodies, field initializers and initializer blocks. */
+    private int bodyDepth;
 
     /**
      * Creates a new MemberShaCalculator with required Trees utility for attributed FQN resolution.
@@ -133,10 +135,17 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
                 }
             }
 
-            Void result = super.visitMethod(node, context);
+            scan(node.getModifiers(), context);
+            scan(node.getReturnType(), context);
+            scan(node.getTypeParameters(), context);
+            scan(node.getParameters(), context);
+            scan(node.getReceiverParameter(), context);
+            scan(node.getThrows(), context);
+            scan(node.getDefaultValue(), context);
+            scanBody(node.getBody(), context);
             cascade(parentNode, methodNode);
             context.setCurrentNode(parentNode);
-            return result;
+            return null;
         } finally {
             localScopeStack.pop();
         }
@@ -163,10 +172,13 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
                 updateAttribute(varNode, "TYPE:" + varEl.asType());
             }
 
-            Void result = super.visitVariable(node, context);
+            scan(node.getModifiers(), context);
+            scan(node.getType(), context);
+            scan(node.getNameExpression(), context);
+            scanBody(node.getInitializer(), context);
             cascade(parentNode, varNode);
             context.setCurrentNode(parentNode);
-            return result;
+            return null;
         } else {
             // Local variable or parameter
             if (node.getName() != null && !localScopeStack.isEmpty()) {
@@ -174,11 +186,26 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
             }
             if (context.getCurrentNode() != null) {
                 for (ShaCategory category : ShaCategory.values()) {
-                    category.onLocalVariable(category, context.getCurrentNode(), node);
+                    category.onLocalVariable(category, context.getCurrentNode(), node, region());
                 }
             }
             return super.visitVariable(node, context);
         }
+    }
+
+    @Override
+    public Void visitBlock(BlockTree node, ShaContext context) {
+        Tree parent = getCurrentPath().getParentPath() != null ? getCurrentPath().getParentPath().getLeaf() : null;
+        if (parent instanceof ClassTree) {
+            // Initializer block
+            bodyDepth++;
+            try {
+                return super.visitBlock(node, context);
+            } finally {
+                bodyDepth--;
+            }
+        }
+        return super.visitBlock(node, context);
     }
 
     @Override
@@ -207,7 +234,7 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
                 }
             }
             for (ShaCategory category : ShaCategory.values()) {
-                category.onIdentifier(category, current, node, isLocalOrParam);
+                category.onIdentifier(category, current, node, isLocalOrParam, region());
             }
         }
         return super.visitIdentifier(node, context);
@@ -226,15 +253,28 @@ public class MemberShaCalculator extends TreePathScanner<Void, ShaContext> {
         }
     }
 
-    private static void updateAttribute(ReducedAstNode node, String attribute) {
+    private void updateAttribute(ReducedAstNode node, String attribute) {
         for (ShaCategory category : ShaCategory.values()) {
-            category.onAttribute(category, node, attribute);
+            category.onAttribute(category, node, attribute, region());
+        }
+    }
+
+    private ShaCalculation.Region region() {
+        return bodyDepth > 0 ? ShaCalculation.Region.BODY : ShaCalculation.Region.SIGNATURE;
+    }
+
+    private void scanBody(Tree body, ShaContext context) {
+        bodyDepth++;
+        try {
+            scan(body, context);
+        } finally {
+            bodyDepth--;
         }
     }
 
     private static void cascade(ReducedAstNode parent, ReducedAstNode child) {
         for (ShaCategory category : ShaCategory.values()) {
-            parent.updateDigest(category, child.getSha(category));
+            category.onChildCompleted(category, parent, child);
         }
     }
 }

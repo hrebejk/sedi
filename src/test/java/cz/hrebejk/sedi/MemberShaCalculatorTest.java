@@ -202,6 +202,34 @@ public class MemberShaCalculatorTest extends TestCase {
         }
     }
 
+    /**
+     * Tests that the SIGNATURE SHA ignores method bodies, field initializers and local names,
+     * but changes when a signature changes.
+     */
+    public void testSignatureCategory() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            AstLoader loader = new AstLoader();
+            String tpl = "package cz.hrebejk.sedi;\n\npublic class S {\n    private int f = %s;\n    @Deprecated\n    public %s run(int p) throws Exception {\n        int l = %s;\n        return l;\n    }\n    static { System.out.println(%s); }\n}\n";
+            ReducedAstNode base = calc(loader, helper.writeFile("S.java", String.format(tpl, "1", "int", "1", "1")));
+            ReducedAstNode bodyChange = calc(loader, helper.writeFile("S.java", String.format(tpl, "2", "int", "2", "2")));
+            ReducedAstNode sigChange = calc(loader, helper.writeFile("S.java", String.format(tpl, "1", "long", "1", "1")));
+
+            ShaCategory sig = ShaCategory.SIGNATURE;
+            assertEquals("Bodies and initializers must not affect SIGNATURE", base.getSha(sig), bodyChange.getSha(sig));
+            assertFalse("FULL must see body changes", base.getSha(ShaCategory.FULL).equals(bodyChange.getSha(ShaCategory.FULL)));
+            assertFalse("Return type change must change SIGNATURE of the CU member",
+                    base.getChildren().get(0).getChildren().get(2).getSha(sig)
+                            .equals(sigChange.getChildren().get(0).getChildren().get(2).getSha(sig)));
+            // Members do not cascade into the type
+            assertEquals(base.getChildren().get(0).getSha(sig), sigChange.getChildren().get(0).getSha(sig));
+        }
+    }
+
+    private ReducedAstNode calc(AstLoader loader, Path file) throws Exception {
+        List<CompilationAnalysis> analyses = loader.loadCompilationAnalyses(List.of(file));
+        return new MemberShaCalculator(analyses.get(0).trees()).calculate(analyses.get(0).compilationUnit());
+    }
+
     private String calculateCompilationUnitSha(AstLoader loader, Path file) throws Exception {
         List<CompilationAnalysis> analyses = loader.loadCompilationAnalyses(List.of(file));
         assertFalse(analyses.isEmpty());

@@ -18,14 +18,23 @@ import com.sun.source.tree.VariableTree;
  */
 public interface ShaCalculation {
 
+    /** Part of a member the scanner is currently in. */
+    enum Region {
+        /** Declaration header: modifiers, annotations, types, names, parameters, throws, ... */
+        SIGNATURE,
+        /** Method bodies, initializers of fields and blocks. */
+        BODY
+    }
+
     /**
      * A declaration level attribute (kind, name, FQN, types, modifiers, literals, package, imports).
      *
      * @param category  the category this calculation belongs to
      * @param node      node to update
      * @param attribute attribute text
+     * @param region    part of the member the attribute comes from
      */
-    void onAttribute(ShaCategory category, ReducedAstNode node, String attribute);
+    void onAttribute(ShaCategory category, ReducedAstNode node, String attribute, Region region);
 
     /**
      * A local variable or parameter declaration found inside a member.
@@ -33,8 +42,9 @@ public interface ShaCalculation {
      * @param category the category this calculation belongs to
      * @param node     node to update
      * @param variable the declared variable
+     * @param region   part of the member the variable is declared in
      */
-    void onLocalVariable(ShaCategory category, ReducedAstNode node, VariableTree variable);
+    void onLocalVariable(ShaCategory category, ReducedAstNode node, VariableTree variable, Region region);
 
     /**
      * An identifier usage found inside a member.
@@ -43,6 +53,19 @@ public interface ShaCalculation {
      * @param node     node to update
      * @param id       the identifier
      * @param isLocal  true if the identifier refers to a local variable or parameter
+     * @param region   part of the member the identifier is used in
      */
-    void onIdentifier(ShaCategory category, ReducedAstNode node, IdentifierTree id, boolean isLocal);
+    void onIdentifier(ShaCategory category, ReducedAstNode node, IdentifierTree id, boolean isLocal, Region region);
+
+    /**
+     * A nested node (type, method or field) has been completely scanned. By default its digest
+     * is folded into the digest of its parent.
+     *
+     * @param category the category this calculation belongs to
+     * @param parent   enclosing node
+     * @param child    completed nested node
+     */
+    default void onChildCompleted(ShaCategory category, ReducedAstNode parent, ReducedAstNode child) {
+        parent.updateDigest(category, child.getSha(category));
+    }
 }
