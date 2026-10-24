@@ -37,4 +37,19 @@ public class AstLoaderTest extends TestCase {
             assertFalse(cut.getTypeDecls().isEmpty());
         }
     }
+
+    /**
+     * Tests that types from the classpath resolve, i.e. attribution reports no errors.
+     */
+    public void testClasspathResolvesLibraryTypes() throws Exception {
+        Path jar = Path.of(org.junit.Assert.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+        try (GitTestHelper helper = new GitTestHelper()) {
+            Path sourceFile = helper.writeFile("Lib.java", "public class Lib {\n    void m() { org.junit.Assert.assertTrue(true); }\n}\n");
+
+            CompilationAnalysis analysis = new AstLoader(List.of(jar)).loadCompilationAnalyses(List.of(sourceFile)).get(0);
+            var method = ((com.sun.source.tree.ClassTree) analysis.compilationUnit().getTypeDecls().get(0)).getMembers().get(1);
+            var path = analysis.trees().getPath(analysis.compilationUnit(), method);
+            assertNotNull(analysis.trees().getElement(path));
+        }
+    }
 }

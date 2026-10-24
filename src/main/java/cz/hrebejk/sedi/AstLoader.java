@@ -16,6 +16,7 @@ import com.sun.source.util.Trees;
 import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
+import javax.tools.StandardLocation;
 import javax.tools.ToolProvider;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -26,6 +27,24 @@ import java.util.List;
  * Loader for attributed Abstract Syntax Trees (AST) of Java source files using the JDK Compiler API.
  */
 public class AstLoader {
+
+    private final List<Path> classpath;
+
+    /**
+     * Creates a loader which resolves types only against the JDK.
+     */
+    public AstLoader() {
+        this(List.of());
+    }
+
+    /**
+     * Creates a loader which resolves types against the JDK and the given classpath.
+     *
+     * @param classpath jars and class directories used to resolve library types
+     */
+    public AstLoader(List<Path> classpath) {
+        this.classpath = List.copyOf(classpath);
+    }
 
     /**
      * Loads the compiled compilation units (AST) for the given Java source files.
@@ -57,6 +76,9 @@ public class AstLoader {
         }
 
         try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
+            if (!classpath.isEmpty()) {
+                fileManager.setLocationFromPaths(StandardLocation.CLASS_PATH, classpath);
+            }
             Iterable<? extends JavaFileObject> fileObjects = fileManager.getJavaFileObjectsFromPaths(sourcePaths);
 
             JavaCompiler.CompilationTask task = compiler.getTask(
