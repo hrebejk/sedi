@@ -17,10 +17,12 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Name;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.element.TypeParameterElement;
 import javax.lang.model.element.VariableElement;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 public class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
@@ -93,7 +95,9 @@ public class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
         Element el = trees.getElement(getCurrentPath());
         if (el instanceof TypeElement typeEl) {
             updateAllCategories(context, "FQN:" + typeEl.getQualifiedName());
+            updateTypeParams(typeNode, typeEl.getTypeParameters());
         }
+        updateCommonFacets(typeNode, className, node.getModifiers());
 
         Void result = super.visitClass(node, context);
         cascade(parentNode, typeNode);
@@ -123,11 +127,18 @@ public class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
             }
 
             Element el = trees.getElement(getCurrentPath());
+            updateCommonFacets(methodNode, methodName, node.getModifiers());
             if (el instanceof ExecutableElement execEl) {
                 updateAllCategories(context, "RETURN_TYPE:" + execEl.getReturnType());
+                methodNode.updateFacet(Facet.RETURN_TYPE, String.valueOf(execEl.getReturnType()));
                 for (var param : execEl.getParameters()) {
                     updateAllCategories(context, "PARAM_TYPE:" + param.asType());
+                    methodNode.updateFacet(Facet.PARAM_TYPES, String.valueOf(param.asType()));
                 }
+                methodNode.setParamCount(execEl.getParameters().size());
+                updateTypeParams(methodNode, execEl.getTypeParameters());
+                execEl.getThrownTypes().stream().map(String::valueOf).sorted()
+                        .forEach(t -> methodNode.updateFacet(Facet.THROWS, t));
             }
 
             scan(node.getModifiers(), context);
@@ -163,8 +174,10 @@ public class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
             }
 
             Element el = trees.getElement(getCurrentPath());
+            updateCommonFacets(varNode, varName, node.getModifiers());
             if (el instanceof VariableElement varEl) {
                 updateAttribute(varNode, "TYPE:" + varEl.asType());
+                varNode.updateFacet(Facet.RETURN_TYPE, String.valueOf(varEl.asType()));
             }
 
             scan(node.getModifiers(), context);
@@ -240,6 +253,20 @@ public class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
         updateAllCategories(context, "KIND:" + node.getKind());
         updateAllCategories(context, "MODIFIERS:" + node.getFlags());
         return super.visitModifiers(node, context);
+    }
+
+    private static void updateCommonFacets(ElementInfo info, String name, ModifiersTree modifiers) {
+        info.updateFacet(Facet.NAME, name);
+        info.updateFacet(Facet.MODIFIERS, String.valueOf(modifiers.getFlags()));
+        for (AnnotationTree annotation : modifiers.getAnnotations()) {
+            info.updateFacet(Facet.ANNOTATIONS, annotation.toString());
+        }
+    }
+
+    private static void updateTypeParams(ElementInfo info, List<? extends TypeParameterElement> typeParams) {
+        for (TypeParameterElement tp : typeParams) {
+            info.updateFacet(Facet.TYPE_PARAMS, tp + ":" + tp.getBounds());
+        }
     }
 
     private void updateAllCategories(HashContext context, String attribute) {

@@ -29,6 +29,8 @@ public class ElementInfo {
     private final NodeType nodeType;
     private final Map<ChangeCategory, MessageDigest> messageDigests;
     private final List<ElementInfo> children;
+    private final Map<Facet, MessageDigest> facetDigests;
+    private int paramCount;
 
     /**
      * Enum defining the type of reduced AST node.
@@ -53,13 +55,65 @@ public class ElementInfo {
         this.nodeType = nodeType;
         this.messageDigests = new EnumMap<>(ChangeCategory.class);
         for (ChangeCategory category : ChangeCategory.values()) {
-            try {
-                this.messageDigests.put(category, MessageDigest.getInstance("SHA-256"));
-            } catch (NoSuchAlgorithmException e) {
-                throw new RuntimeException("SHA-256 algorithm not available", e);
-            }
+            this.messageDigests.put(category, newDigest());
+        }
+        this.facetDigests = new EnumMap<>(Facet.class);
+        for (Facet facet : Facet.values()) {
+            this.facetDigests.put(facet, newDigest());
         }
         this.children = new ArrayList<>();
+    }
+
+    private static MessageDigest newDigest() {
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA-256 algorithm not available", e);
+        }
+    }
+
+    /**
+     * Updates the digest of the specified signature facet with an attribute string.
+     *
+     * @param facet     the facet
+     * @param attribute attribute string
+     */
+    public void updateFacet(Facet facet, String attribute) {
+        if (attribute != null) {
+            MessageDigest md = facetDigests.get(facet);
+            synchronized (md) {
+                md.update(attribute.getBytes(StandardCharsets.UTF_8));
+                md.update((byte) 0);
+            }
+        }
+    }
+
+    /**
+     * Computes and returns the hex SHA string for the specified facet.
+     *
+     * @param facet the facet
+     * @return hex SHA string
+     */
+    public String getFacetSha(Facet facet) {
+        return sha(facetDigests.get(facet));
+    }
+
+    /**
+     * Returns the number of parameters of a method; zero for other elements.
+     *
+     * @return parameter count
+     */
+    public int getParamCount() {
+        return paramCount;
+    }
+
+    /**
+     * Sets the number of parameters of a method.
+     *
+     * @param paramCount parameter count
+     */
+    public void setParamCount(int paramCount) {
+        this.paramCount = paramCount;
     }
 
     /**
@@ -93,7 +147,10 @@ public class ElementInfo {
      * @return hex SHA string
      */
     public String getSha(ChangeCategory category) {
-        MessageDigest md = messageDigests.get(category);
+        return sha(messageDigests.get(category));
+    }
+
+    private static String sha(MessageDigest md) {
         synchronized (md) {
             try {
                 MessageDigest clone = (MessageDigest) md.clone();
