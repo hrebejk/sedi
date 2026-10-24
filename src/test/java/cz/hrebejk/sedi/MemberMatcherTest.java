@@ -63,6 +63,18 @@ public class MemberMatcherTest extends TestCase {
         assertTrue(pairs.get(0).changedFacets().isEmpty());
     }
 
+    public void testEqualIgnoreLocalNamesHashPairsMembers() throws Exception {
+        List<ElementPair> pairs = match("void a(int x) { int i = x; } void a(String s) { String t = s; }",
+                "void a(String q) { String r = q; } void a(int y) { int j = y; }");
+        assertEquals(2, pairs.size());
+        for (ElementPair pair : pairs) {
+            assertNotNull(pair.oldElement());
+            assertNotNull(pair.newElement());
+            assertEquals(pair.oldElement().getSha(ChangeCategory.IGNORE_LOCAL_NAMES),
+                    pair.newElement().getSha(ChangeCategory.IGNORE_LOCAL_NAMES));
+        }
+    }
+
     public void testChangedOverloadPairsByName() throws Exception {
         List<ElementPair> pairs = match("void a(int x) {}", "void a(String x) {}");
         assertEquals(1, pairs.size());

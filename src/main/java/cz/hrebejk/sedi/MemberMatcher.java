@@ -24,6 +24,7 @@ import java.util.function.Function;
  * Elements with an equal {@link ChangeCategory#SIGNATURE} hash are considered unchanged and dropped.
  * The remaining elements are paired in passes of decreasing confidence:
  * <ol>
+ *   <li>equal {@link ChangeCategory#IGNORE_LOCAL_NAMES} hash (only names of locals and parameters differ),</li>
  *   <li>same name, parameter types and type parameters (modifiers, annotations, throws or return type changed),</li>
  *   <li>same name, different parameters (changed overload),</li>
  *   <li>same parameter types, type parameters and return type, different name (rename, unique candidates only).</li>
@@ -53,16 +54,19 @@ public final class MemberMatcher {
         // Pass 0: unchanged members.
         pass(oldRest, newRest, null, e -> kind(e) + "|" + e.getSha(ChangeCategory.SIGNATURE), false, false);
 
-        // Pass 1: same identity, other facets changed.
+        // Pass 1: same code up to names of locals and parameters; the same element whatever else changed.
+        pass(oldRest, newRest, pairs, e -> kind(e) + "|" + e.getSha(ChangeCategory.IGNORE_LOCAL_NAMES), false, false);
+
+        // Pass 2: same identity, other facets changed.
         pass(oldRest, newRest, pairs,
                 e -> kind(e) + "|" + e.getName() + "|" + e.getFacetSha(Facet.PARAM_TYPES)
                         + "|" + e.getFacetSha(Facet.TYPE_PARAMS),
                 false, false);
 
-        // Pass 2: changed overload (same name, different parameters).
+        // Pass 3: changed overload (same name, different parameters).
         pass(oldRest, newRest, pairs, e -> kind(e) + "|" + e.getName(), false, true);
 
-        // Pass 3: rename of a method (same parameters and return type), only if unambiguous.
+        // Pass 4: rename of a method (same parameters and return type), only if unambiguous.
         pass(oldRest, newRest, pairs,
                 e -> e.getNodeType() != ElementInfo.NodeType.METHOD ? null
                         : kind(e) + "|" + e.getFacetSha(Facet.PARAM_TYPES) + "|" + e.getFacetSha(Facet.TYPE_PARAMS)
