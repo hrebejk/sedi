@@ -95,7 +95,27 @@ public class DiffAstAnalyzer implements AutoCloseable {
      */
     public List<FileDiffAnalysis> analyzeChanges(Predicate<String> filter) throws IOException, GitAPIException {
         GitInspector inspector = new GitInspector(repositoryPath);
-        List<DiffEntry> diffs = inspector.getChanges().stream()
+        return analyze(inspector, inspector.getChanges(), filter, true);
+    }
+
+    /**
+     * Analyzes the Java files changed by a commit (compared with its first parent).
+     * Both versions of every file are read from the git objects, never from the working tree.
+     *
+     * @param revision any revision git understands: SHA, abbreviated SHA, tag, branch, {@code HEAD~2}, ...
+     * @param filter   accepts repository relative paths ({@code /} separated)
+     * @return list of FileDiffAnalysis containing old/new files, diffs, and ASTs
+     * @throws IOException              if an I/O error occurs
+     * @throws IllegalArgumentException if the revision cannot be resolved to a commit
+     */
+    public List<FileDiffAnalysis> analyzeCommit(String revision, Predicate<String> filter) throws IOException {
+        GitInspector inspector = new GitInspector(repositoryPath);
+        return analyze(inspector, inspector.getChanges(revision), filter, false);
+    }
+
+    private List<FileDiffAnalysis> analyze(GitInspector inspector, List<DiffEntry> allDiffs,
+                                           Predicate<String> filter, boolean preferWorkingTree) throws IOException {
+        List<DiffEntry> diffs = allDiffs.stream()
                 .filter(d -> filter.test(d.getOldPath()) || filter.test(d.getNewPath()))
                 .toList();
 
@@ -108,7 +128,7 @@ public class DiffAstAnalyzer implements AutoCloseable {
 
             for (DiffEntry diff : diffs) {
                 Path oldFile = extractBlob(repo, diff.getOldId(), diff.getOldPath(), oldTempDir);
-                Path newFile = resolveNewFile(diff, newTempDir, repo);
+                Path newFile = resolveNewFile(diff, newTempDir, repo, preferWorkingTree);
 
                 CompilationUnitResult oldResult = analyzeFile(oldFile);
                 CompilationUnitResult newResult = analyzeFile(newFile);
@@ -144,13 +164,14 @@ public class DiffAstAnalyzer implements AutoCloseable {
         return target;
     }
 
-    private Path resolveNewFile(DiffEntry diff, Path tempDir, Repository repo) throws IOException {
+    private Path resolveNewFile(DiffEntry diff, Path tempDir, Repository repo,
+                                boolean preferWorkingTree) throws IOException {
         String newPath = diff.getNewPath();
         if ("/dev/null".equals(newPath)) {
             return null;
         }
         Path workingTreeFile = repositoryPath.resolve(newPath);
-        if (Files.exists(workingTreeFile)) {
+        if (preferWorkingTree && Files.exists(workingTreeFile)) {
             return workingTreeFile;
         }
         return extractBlob(repo, diff.getNewId(), newPath, tempDir);
