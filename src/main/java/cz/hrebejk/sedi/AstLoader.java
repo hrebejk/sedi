@@ -84,7 +84,7 @@ public class AstLoader {
             JavaCompiler.CompilationTask task = compiler.getTask(
                     null,
                     fileManager,
-                    null,
+                    diagnostic -> { },
                     null,
                     null,
                     fileObjects

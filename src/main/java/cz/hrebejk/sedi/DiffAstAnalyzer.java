@@ -10,7 +10,6 @@ package cz.hrebejk.sedi;
 
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.DocTrees;
-import com.sun.source.util.JavacTask;
 import com.sun.source.util.Trees;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.diff.DiffEntry;
@@ -19,24 +18,24 @@ import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectLoader;
 import org.eclipse.jgit.lib.Repository;
 
-import javax.tools.JavaCompiler;
-import javax.tools.JavaFileObject;
-import javax.tools.StandardJavaFileManager;
-import javax.tools.ToolProvider;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.function.Predicate;
 
 /**
  * Analyzer that inspects a Git repository, finds changed files, parses and analyzes
  * both old and new versions into attributed ASTs (CompilationUnitTree, Trees, DocTrees).
  */
-public class DiffAstAnalyzer {
+public class DiffAstAnalyzer implements AutoCloseable {
 
     private final Path repositoryPath;
+    private final AstLoader astLoader;
+    private final List<Path> tempDirs = new ArrayList<>();
 
     /**
      * Creates a new DiffAstAnalyzer for the given repository path.
@@ -44,7 +43,34 @@ public class DiffAstAnalyzer {
      * @param repositoryPath path to the Git repository
      */
     public DiffAstAnalyzer(Path repositoryPath) {
+        this(repositoryPath, new AstLoader());
+    }
+
+    /**
+     * Creates a new DiffAstAnalyzer which attributes the sources using the given loader.
+     *
+     * @param repositoryPath path to the Git repository
+     * @param astLoader      loader used to parse and attribute the old and new versions of files
+     */
+    public DiffAstAnalyzer(Path repositoryPath, AstLoader astLoader) {
         this.repositoryPath = repositoryPath;
+        this.astLoader = astLoader;
+    }
+
+    /**
+     * Deletes the temporary copies of old file versions created by the analyses.
+     * The ASTs returned earlier must not be used afterwards.
+     */
+    @Override
+    public void close() throws IOException {
+        for (Path dir : tempDirs) {
+            try (var paths = Files.walk(dir)) {
+                for (Path p : paths.sorted(Comparator.reverseOrder()).toList()) {
+                    Files.deleteIfExists(p);
+                }
+            }
+        }
+        tempDirs.clear();
     }
 
     /**
@@ -55,12 +81,29 @@ public class DiffAstAnalyzer {
      * @throws GitAPIException if a Git API error occurs
      */
     public List<FileDiffAnalysis> analyzeChanges() throws IOException, GitAPIException {
+        return analyzeChanges(path -> true);
+    }
+
+    /**
+     * Analyzes the changed files accepted by the filter.
+     *
+     * @param filter accepts repository relative paths ({@code /} separated); a change is analyzed if
+     *               either its old or new path is accepted
+     * @return list of FileDiffAnalysis containing old/new files, diffs, and ASTs
+     * @throws IOException     if an I/O error occurs
+     * @throws GitAPIException if a Git API error occurs
+     */
+    public List<FileDiffAnalysis> analyzeChanges(Predicate<String> filter) throws IOException, GitAPIException {
         GitInspector inspector = new GitInspector(repositoryPath);
-        List<DiffEntry> diffs = inspector.getChanges();
+        List<DiffEntry> diffs = inspector.getChanges().stream()
+                .filter(d -> filter.test(d.getOldPath()) || filter.test(d.getNewPath()))
+                .toList();
 
         try (Repository repo = inspector.openRepository()) {
             Path oldTempDir = Files.createTempDirectory("sedi-old-ast");
             Path newTempDir = Files.createTempDirectory("sedi-new-ast");
+            tempDirs.add(oldTempDir);
+            tempDirs.add(newTempDir);
             List<FileDiffAnalysis> results = new ArrayList<>();
 
             for (DiffEntry diff : diffs) {
@@ -117,25 +160,8 @@ public class DiffAstAnalyzer {
         if (filePath == null || !Files.exists(filePath)) {
             return new CompilationUnitResult(null, null, null);
         }
-
-        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-        if (compiler == null) {
-            throw new IllegalStateException("System Java compiler not found.");
-        }
-
-        try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null)) {
-            Iterable<? extends JavaFileObject> fileObjects = fileManager.getJavaFileObjectsFromPaths(List.of(filePath));
-            JavaCompiler.CompilationTask task = compiler.getTask(null, fileManager, null, null, null, fileObjects);
-            JavacTask javacTask = (JavacTask) task;
-            Iterable<? extends CompilationUnitTree> cuts = javacTask.parse();
-            javacTask.analyze();
-
-            CompilationUnitTree cut = cuts.iterator().hasNext() ? cuts.iterator().next() : null;
-            Trees trees = Trees.instance(javacTask);
-            DocTrees docTrees = DocTrees.instance(javacTask);
-
-            return new CompilationUnitResult(cut, trees, docTrees);
-        }
+        CompilationAnalysis analysis = astLoader.loadCompilationAnalyses(List.of(filePath)).getFirst();
+        return new CompilationUnitResult(analysis.compilationUnit(), analysis.trees(), analysis.docTrees());
     }
 
     /**

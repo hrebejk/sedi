@@ -8,16 +8,20 @@
  */
 package cz.hrebejk.sedi;
 
+import org.eclipse.jgit.api.errors.GitAPIException;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
+import java.io.Console;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
@@ -44,6 +48,7 @@ public class Main implements Callable<Integer> {
 
     @Override
     public Integer call() throws IOException {
+        projectDir = projectDir.toAbsolutePath().normalize();
         Path pom = projectDir.resolve("pom.xml");
         if (Files.isRegularFile(pom)) {
             classpath = MavenClasspath.resolve(projectDir);
@@ -54,6 +59,35 @@ public class Main implements Callable<Integer> {
         System.out.println(classpath.stream()
                 .map(p -> p.getFileName().toString())
                 .collect(Collectors.joining(File.pathSeparator)));
+
+        Console console = System.console();
+        ApiDiffReporter reporter = new ApiDiffReporter(console != null && console.isTerminal());
+        report(reporter, path -> path.endsWith(".java"));
+        System.out.println("Watching " + projectDir + " ...");
+        try (DirectoryWatcher watcher = new DirectoryWatcher(projectDir)) {
+            watcher.run(changed -> {
+                Set<String> relative = changed.stream()
+                        .map(p -> projectDir.relativize(p).toString().replace(File.separatorChar, '/'))
+                        .collect(Collectors.toSet());
+                report(reporter, relative::contains);
+            });
+        }
         return 0;
+    }
+
+    /** Prints the API changes of the changed files accepted by the filter. */
+    private void report(ApiDiffReporter reporter, Predicate<String> filter) {
+        try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader)) {
+            for (FileDiffAnalysis analysis : analyzer.analyzeChanges(filter)) {
+                List<String> lines = reporter.report(analysis);
+                if (!lines.isEmpty()) {
+                    System.out.println(analysis.diff().getNewPath().equals("/dev/null")
+                            ? analysis.diff().getOldPath() : analysis.diff().getNewPath());
+                    lines.forEach(System.out::println);
+                }
+            }
+        } catch (IOException | GitAPIException e) {
+            System.err.println("Cannot analyze changes: " + e.getMessage());
+        }
     }
 }
