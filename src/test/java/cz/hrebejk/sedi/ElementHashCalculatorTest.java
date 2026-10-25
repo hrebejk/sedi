@@ -237,4 +237,172 @@ public class ElementHashCalculatorTest extends TestCase {
         ElementInfo root = calculator.calculate(analyses.get(0).compilationUnit());
         return root.getSha(ChangeCategory.FULL);
     }
+
+    /**
+     * Tests that bodies which differ only in the kinds of their trees, not in any name or literal, hash differently.
+     */
+    public void testEveryTreeKindIsHashed() throws Exception {
+        String[][] pairs = {
+                {"return a + b;", "return a - b;"},
+                {"return a + b * 1;", "return (a + b) * 1;"},
+                {"a += b; return a;", "a -= b; return a;"},
+                {"a++; return a;", "a--; return a;"},
+                {"return -a;", "return ~a;"},
+                {"if (c) return a; return b;", "while (c) return a; return b;"},
+                {"for (;;) { break; }", "for (;;) { continue; }"},
+                {"return a;", "throw new RuntimeException();"},
+                {"int x = 1; return x;", "long x = 1; return (int) x;"},
+                {"int x = 1; return x;", "short x = 1; return x;"},
+                {"return c ? a : b;", "return c ? b : a;"},
+                {"{ { a++; } b++; } return a;", "{ { a++; b++; } } return a;"},
+                {"l.forEach(x -> x.length()); return a;", "l.forEach(String::length); return a;"},
+                {"Object o = l; return o instanceof String ? a : b;", "Object o = l; return o != null ? a : b;"},
+                {"int[] x = new int[1]; return x[0];", "int[] x = {1}; return x[0];"},
+                {"outer: for (;;) { break outer; }", "other: for (;;) { break other; }"},
+                {"switch (a) { case 1: return a; default: return b; }", "switch (a) { case 1 -> { return a; } default -> { return b; } }"},
+                {"try { return a; } catch (RuntimeException e) { return b; }", "try { return a; } finally { b++; }"},
+                {"synchronized (this) { return a; }", "{ return a; }"},
+                {"assert c; return a;", "return a;"},
+                {"int[] x = new int[]{1}; return x[0];", "int[] x = new int[1]; return x[0];"},
+                {"int[][] x = new int[1][]; return a;", "int[][] x = new int[][]{}; return a;"},
+                {"return a;", "do { a++; } while (c); return a;"},
+                {"while (c) { a++; }", "do { a++; } while (c);"},
+                {"for (;;a++) { }", "for (;a++;) { }"},
+                {"for (String s : l) { }", "for (String s = null; ; ) { }"},
+                {"l.forEach(x -> { });", "l.forEach((String x) -> { });"},
+                {"l.forEach(x -> x.length());", "l.forEach(x -> { x.length(); });"},
+                {"Runnable r = String::new; return a;", "Runnable r = String::valueOf; return a;"},
+                {"java.util.function.Supplier<Object> s = Object::new; return a;",
+                        "java.util.function.Function<Object, Object> s = Object::toString; return a;"},
+                {"this.<String>g(); return a;", "this.g(); return a;"},
+                {"Object o = new Object(); return a;", "Object o = new Object() { }; return a;"},
+                {"java.util.List<String> x = new java.util.ArrayList<>(); return a;",
+                        "java.util.List<String> x = new java.util.ArrayList<String>(); return a;"},
+                {"Object o = l; if (o instanceof String s) { return a; } return b;",
+                        "Object o = l; if (o instanceof String) { return a; } return b;"},
+                {"Object o = l; return switch (o) { case String s -> a; default -> b; };",
+                        "Object o = l; return switch (o) { case Integer s -> a; default -> b; };"},
+                {"return switch (a) { case 1 -> { yield a; } default -> b; };",
+                        "return switch (a) { case 1 -> { yield b; } default -> b; };"},
+                {"try (java.io.StringReader r = new java.io.StringReader(\"\")) { } return a;", "try { } finally { } return a;"},
+                {"try { } catch (IllegalStateException | IllegalArgumentException e) { } return a;",
+                        "try { } catch (IllegalStateException e) { } return a;"},
+                {"int x = 1; return x;", "final int x = 1; return x;"},
+                {"return;", "return a;"},
+                {"return (a);", "return a;"},
+                {"return a < b ? 1 : 2;", "return a > b ? 1 : 2;"},
+                {"return a == b ? 1 : 2;", "return a != b ? 1 : 2;"},
+                {"return a << b;", "return a >> b;"},
+                {"return a >> b;", "return a >>> b;"},
+                {"return a & b;", "return a | b;"},
+                {"return c && c;", "return c || c;"},
+                {"Object o = (Object) l; return a;", "Object o = l; return a;"},
+                {"java.util.List<? extends Number> x = null; return a;", "java.util.List<? super Number> x = null; return a;"},
+                {"java.util.List<?> x = null; return a;", "java.util.List<Object> x = null; return a;"},
+                {"@SuppressWarnings(\"a\") int x = 1; return x;", "int x = 1; return x;"},
+                {"@SuppressWarnings(\"a\") int x = 1; return x;", "@SuppressWarnings(\"b\") int x = 1; return x;"},
+                {"class L { } return a;", "interface L { } return a;"},
+                {"l.size(); return a;", "l.isEmpty(); return a;"},
+                {"return l.size();", "return l.size() + 0;"},
+                {"return a;", "; return a;"},
+        };
+        try (GitTestHelper helper = new GitTestHelper()) {
+            AstLoader loader = new AstLoader();
+            StringBuilder failures = new StringBuilder();
+            for (String[] pair : pairs) {
+                String first = methodSha(loader, helper, pair[0]);
+                String second = methodSha(loader, helper, pair[1]);
+                if (first.equals(second)) {
+                    failures.append("\n  ").append(pair[0]).append("  ==  ").append(pair[1]);
+                }
+            }
+            assertEquals("Equal hashes of different code:", "", failures.toString());
+        }
+    }
+
+    /**
+     * Tests that members of a type which differ in trees of their own, or in initializer blocks, hash differently.
+     */
+    public void testMemberLevelTreesAreHashed() throws Exception {
+        String[][] pairs = {
+                {"{ a++; }", "static { a++; }"},
+                {"int a; { a = 1; }", "int a; { a = 2; }"},
+                {"int f = 1;", "int f;"},
+                {"int f = 1 + 2;", "int f = 1 - 2;"},
+                {"Runnable r = () -> { };", "Runnable r = () -> { ; };"},
+                {"int[] f = new int[]{1};", "int[] f = new int[1];"},
+                {"int m() { return 1; }", "int m() { return -1; }"},
+                {"abstract int m();", "int m() { return 0; }"},
+                {"<T> void m(T t) { }", "<U> void m(U t) { }"},
+        };
+        try (GitTestHelper helper = new GitTestHelper()) {
+            AstLoader loader = new AstLoader();
+            StringBuilder failures = new StringBuilder();
+            for (String[] pair : pairs) {
+                if (typeSha(loader, helper, pair[0]).equals(typeSha(loader, helper, pair[1]))) {
+                    failures.append("\n  ").append(pair[0]).append("  ==  ").append(pair[1]);
+                }
+            }
+            assertEquals("Equal hashes of different code:", "", failures.toString());
+        }
+    }
+
+    /**
+     * Tests that module declarations and their directives are hashed.
+     */
+    public void testModuleDeclarationIsHashed() throws Exception {
+        String[][] pairs = {
+                {"module m { requires java.sql; }", "module m { requires static java.sql; }"},
+                {"module m { requires static java.sql; }", "module m { requires transitive java.sql; }"},
+                {"module m { requires java.sql; }", "module m { requires java.xml; }"},
+                {"module m { requires java.sql; }", "open module m { requires java.sql; }"},
+                {"module m { exports p; }", "module m { opens p; }"},
+                {"module m { exports p; }", "module m { exports q; }"},
+                {"module m { exports p to a; }", "module m { exports p to a, b; }"},
+                {"module m { uses p.S; }", "module m { provides p.S with p.I; }"},
+        };
+        try (GitTestHelper helper = new GitTestHelper()) {
+            AstLoader loader = new AstLoader();
+            StringBuilder failures = new StringBuilder();
+            for (String[] pair : pairs) {
+                String first = calc(loader, helper.writeFile("module-info.java", pair[0])).getSha(ChangeCategory.FULL);
+                String second = calc(loader, helper.writeFile("module-info.java", pair[1])).getSha(ChangeCategory.FULL);
+                if (first.equals(second)) {
+                    failures.append("\n  ").append(pair[0]).append("  ==  ").append(pair[1]);
+                }
+            }
+            assertEquals("Equal hashes of different code:", "", failures.toString());
+        }
+    }
+
+    /**
+     * Tests that the members of a type, initializer blocks included, are not part of its signature hash.
+     */
+    public void testMembersAreNotPartOfTypeSignature() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            AstLoader loader = new AstLoader();
+            String base = signatureOfType(loader, helper, "int a;");
+            assertEquals(base, signatureOfType(loader, helper, "int a; void m() { a++; }"));
+            assertEquals(base, signatureOfType(loader, helper, "int a; { a = 1; } static { }"));
+            assertEquals(base, signatureOfType(loader, helper, ""));
+        }
+    }
+
+    private String signatureOfType(AstLoader loader, GitTestHelper helper, String members) throws Exception {
+        Path file = helper.writeFile("T.java", "abstract class T {\n  " + members + "\n}\n");
+        return calc(loader, file).getChildren().get(0).getSha(ChangeCategory.SIGNATURE);
+    }
+
+    private String typeSha(AstLoader loader, GitTestHelper helper, String members) throws Exception {
+        Path file = helper.writeFile("T.java", "abstract class T {\n  " + members + "\n}\n");
+        return calc(loader, file).getChildren().get(0).getSha(ChangeCategory.FULL);
+    }
+
+    private String methodSha(AstLoader loader, GitTestHelper helper, String body) throws Exception {
+        Path file = helper.writeFile("T.java", "class T {\n  void g() { }\n  int m(int a, int b, boolean c, java.util.List<String> l) { "
+                + body + " }\n}\n");
+        ElementInfo root = calc(loader, file);
+        return root.getChildren().get(0).getChildren().stream()
+                .filter(c -> c.getName().equals("m")).findFirst().orElseThrow().getSha(ChangeCategory.FULL);
+    }
 }

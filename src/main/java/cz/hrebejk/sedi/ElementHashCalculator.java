@@ -87,6 +87,109 @@ public class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
         return rootNode;
     }
 
+    /**
+     * Puts every tree into the digests of the member being scanned: its kind, whatever else identifies it
+     * (see {@link #identity}), then its children, then an end marker. The markers make the sequence a
+     * bracketed one, so different nesting of the same trees gives a different hash. An absent optional child
+     * (such as the expression of {@code return;}) is marked too, so it can't be mistaken for another child.
+     * Types, methods and fields are left out: they are elements with digests of their own.
+     */
+    @Override
+    public Void scan(Tree tree, HashContext context) {
+        ElementInfo current = context.getCurrentNode();
+        if (current == null) {
+            return super.scan(tree, context);
+        }
+        if (tree == null) {
+            updateAttribute(current, "NULL");
+            return null;
+        }
+        if (isElement(tree)) {
+            return super.scan(tree, context);
+        }
+        // An initializer block is a part of the body of its type, not of the signature.
+        boolean initializer = tree instanceof BlockTree && getCurrentPath() != null
+                && getCurrentPath().getLeaf() instanceof ClassTree;
+        if (initializer) {
+            bodyDepth++;
+        }
+        try {
+            updateAttribute(current, "KIND:" + tree.getKind());
+            String identity = identity(tree);
+            if (identity != null) {
+                updateAttribute(current, "TREE:" + identity);
+            }
+            Void result = super.scan(tree, context);
+            updateAttribute(current, "END:" + tree.getKind());
+            return result;
+        } finally {
+            if (initializer) {
+                bodyDepth--;
+            }
+        }
+    }
+
+    /**
+     * Marks the length of every list of children (parameters, arguments, cases, ...) so a child can't move
+     * from one list to the next unnoticed. The members of a type and the types of a file are not marked: they
+     * are elements and do not belong to the signature of their parent.
+     */
+    @Override
+    public Void scan(Iterable<? extends Tree> nodes, HashContext context) {
+        ElementInfo current = context.getCurrentNode();
+        if (current != null && !isElementList(nodes)) {
+            int size = 0;
+            if (nodes != null) {
+                for (Tree ignored : nodes) {
+                    size++;
+                }
+            }
+            updateAttribute(current, nodes == null ? "NULL" : "LIST:" + size);
+        }
+        return super.scan(nodes, context);
+    }
+
+    private boolean isElementList(Iterable<? extends Tree> nodes) {
+        Tree owner = getCurrentPath() == null ? null : getCurrentPath().getLeaf();
+        return owner instanceof ClassTree c && c.getMembers() == nodes
+                || owner instanceof CompilationUnitTree u && u.getTypeDecls() == nodes;
+    }
+
+    private boolean isElement(Tree tree) {
+        if (tree instanceof ClassTree || tree instanceof MethodTree || tree instanceof CompilationUnitTree) {
+            return true;
+        }
+        if (tree instanceof VariableTree) {
+            TreePath parent = getCurrentPath();
+            return parent != null && parent.getLeaf() instanceof ClassTree;
+        }
+        return false;
+    }
+
+    /**
+     * What identifies a tree besides its kind and children, for the trees whose kind alone does not say
+     * (names are hashed by {@code visitIdentifier} and the like): the primitive type, labels, names of type
+     * parameters, the form of a case, static initializers, the mode of a method reference, flags of module
+     * directives.
+     */
+    private static String identity(Tree tree) {
+        return switch (tree) {
+            case PrimitiveTypeTree t -> t.getPrimitiveTypeKind().toString();
+            case LabeledStatementTree t -> t.getLabel().toString();
+            case BreakTree t -> String.valueOf(t.getLabel());
+            case ContinueTree t -> String.valueOf(t.getLabel());
+            case TypeParameterTree t -> t.getName().toString();
+            case CaseTree t -> t.getCaseKind().toString();
+            case LambdaExpressionTree t -> t.getBodyKind().toString();
+            case BlockTree t -> String.valueOf(t.isStatic());
+            case MemberReferenceTree t -> t.getMode().toString();
+            case ImportTree t -> String.valueOf(t.isStatic());
+            case ModuleTree t -> t.getModuleType().toString();
+            case RequiresTree t -> t.isStatic() + ":" + t.isTransitive();
+            default -> null;
+        };
+    }
+
     @Override
     public Void visitCompilationUnit(CompilationUnitTree node, HashContext context) {
         updateAllCategories(context, "KIND:" + node.getKind());
@@ -222,21 +325,6 @@ public class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
             }
             return super.visitVariable(node, context);
         }
-    }
-
-    @Override
-    public Void visitBlock(BlockTree node, HashContext context) {
-        Tree parent = getCurrentPath().getParentPath() != null ? getCurrentPath().getParentPath().getLeaf() : null;
-        if (parent instanceof ClassTree) {
-            // Initializer block
-            bodyDepth++;
-            try {
-                return super.visitBlock(node, context);
-            } finally {
-                bodyDepth--;
-            }
-        }
-        return super.visitBlock(node, context);
     }
 
     @Override
