@@ -145,8 +145,15 @@ public final class SignatureDiffPrinter {
         return out.isEmpty() ? "" : " " + join(out, ", ") + " ";
     }
 
-    /** Old value struck through followed by the new one; unchanged values are printed once. */
-    private String slot(String oldValue, String newValue) {
+    /**
+     * Formats a changed value: the old value struck through followed by the new one; unchanged values
+     * are printed once.
+     *
+     * @param oldValue the old value, may be empty
+     * @param newValue the new value, may be empty
+     * @return the formatted text
+     */
+    public String slot(String oldValue, String newValue) {
         if (oldValue.equals(newValue) || oldValue.isEmpty()) {
             return newValue;
         }

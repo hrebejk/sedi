@@ -129,9 +129,8 @@ public class Main implements Callable<Integer> {
         List<String> result = new ArrayList<>();
         for (FileDiffAnalysis analysis : analyses) {
             List<String> lines = reporter.report(analysis);
-            if (!lines.isEmpty()) {
-                result.add(analysis.diff().getNewPath().equals("/dev/null")
-                        ? analysis.diff().getOldPath() : analysis.diff().getNewPath());
+            if (!lines.isEmpty() || ApiDiffReporter.isStructural(analysis)) {
+                result.add(reporter.title(analysis));
                 result.addAll(lines);
             }
         }

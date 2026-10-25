@@ -15,6 +15,7 @@ import org.eclipse.jgit.errors.IncorrectObjectTypeException;
 import org.eclipse.jgit.errors.RevisionSyntaxException;
 import org.eclipse.jgit.diff.DiffEntry;
 import org.eclipse.jgit.diff.DiffFormatter;
+import org.eclipse.jgit.diff.RenameDetector;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectReader;
 import org.eclipse.jgit.lib.Repository;
@@ -73,13 +74,13 @@ public class GitInspector {
             // 1. Check unstaged working tree changes (working tree vs index)
             List<DiffEntry> unstaged = git.diff().call();
             if (!unstaged.isEmpty()) {
-                return unstaged;
+                return detectRenames(git.getRepository(), unstaged);
             }
 
             // 2. Check staged changes (index vs HEAD)
             List<DiffEntry> staged = git.diff().setCached(true).call();
             if (!staged.isEmpty()) {
-                return staged;
+                return detectRenames(git.getRepository(), staged);
             }
 
             // 3. If no working copy changes, compare latest commit (HEAD) against its parent (HEAD^)
@@ -172,8 +173,15 @@ public class GitInspector {
             }
             CanonicalTreeParser newParser = new CanonicalTreeParser();
             newParser.reset(reader, revWalk.parseCommit(newCommit).getTree());
-            return diffFormatter.scan(oldTree, newParser);
+            return detectRenames(repo, diffFormatter.scan(oldTree, newParser));
         }
+    }
+
+    /** Pairs added and deleted files with similar content into {@code RENAME} (or {@code COPY}) entries. */
+    private static List<DiffEntry> detectRenames(Repository repo, List<DiffEntry> entries) throws IOException {
+        RenameDetector detector = new RenameDetector(repo);
+        detector.addAll(entries);
+        return detector.compute();
     }
 
     private static List<DiffEntry> diffAgainstParent(Repository repo, ObjectId commitId) throws IOException {

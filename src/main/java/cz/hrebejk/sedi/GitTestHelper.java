@@ -71,6 +71,7 @@ public class GitTestHelper implements AutoCloseable {
     public RevCommit commit(String message) throws GitAPIException {
         try {
             git.add().addFilepattern(".").call();
+            git.add().addFilepattern(".").setUpdate(true).call(); // stages deletions
         } catch (Exception e) {
             // Might be nothing to add if no tracked changes, ignore or let commit handle
         }
