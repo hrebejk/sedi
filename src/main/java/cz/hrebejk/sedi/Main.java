@@ -18,6 +18,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Callable;
@@ -36,6 +37,9 @@ public class Main implements Callable<Integer> {
     @Option(names = {"-c", "--commit"}, paramLabel = "<rev>",
             description = "Show the API diff of the given commit (SHA, abbreviated SHA, tag, branch, HEAD~2, ...) or range (a..b, a...b) and exit.")
     private String commit;
+
+    @Option(names = {"-i", "--info"}, description = "Print the resolved class path.")
+    private boolean info;
 
     private List<Path> classpath = List.of();
 
@@ -60,41 +64,60 @@ public class Main implements Callable<Integer> {
         } else {
             System.err.println("No pom.xml found in " + projectDir + ", using JDK classpath only.");
         }
-        System.out.println(classpath.stream()
-                .map(p -> p.getFileName().toString())
-                .collect(Collectors.joining(File.pathSeparator)));
+        if (info) {
+            System.out.println(classpath.stream()
+                    .map(p -> p.getFileName().toString())
+                    .collect(Collectors.joining(File.pathSeparator)));
+        }
 
         Console console = System.console();
-        ApiDiffReporter reporter = new ApiDiffReporter(console != null && console.isTerminal());
+        boolean interactive = console != null && console.isTerminal();
+        ApiDiffReporter reporter = new ApiDiffReporter(interactive);
         if (commit != null) {
             return reportCommit(reporter);
         }
-        report(reporter, path -> path.endsWith(".java"));
-        System.out.println("Watching " + projectDir + " ...");
+        Pager pager = new Pager(System.out, interactive);
+        if (!report(reporter, pager, path -> path.endsWith(".java"))) {
+            return 0;
+        }
         try (DirectoryWatcher watcher = new DirectoryWatcher(projectDir)) {
             watcher.run(changed -> {
                 Set<String> relative = changed.stream()
                         .map(p -> projectDir.relativize(p).toString().replace(File.separatorChar, '/'))
                         .collect(Collectors.toSet());
-                report(reporter, relative::contains);
+                if (!report(reporter, pager, relative::contains)) {
+                    // Makes the watcher's next wait for events end the run.
+                    Thread.currentThread().interrupt();
+                }
             });
         }
         return 0;
     }
 
-    /** Prints the API changes of the changed files accepted by the filter. */
-    private void report(ApiDiffReporter reporter, Predicate<String> filter) {
+    /**
+     * Shows the API changes of the changed files accepted by the filter.
+     *
+     * @return {@code false} if the user asked to quit
+     */
+    private boolean report(ApiDiffReporter reporter, Pager pager, Predicate<String> filter) {
+        List<String> lines;
         try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader)) {
-            print(reporter, analyzer.analyzeChanges(filter));
+            lines = format(reporter, analyzer.analyzeChanges(filter));
         } catch (IOException | GitAPIException e) {
             System.err.println("Cannot analyze changes: " + e.getMessage());
+            return true;
         }
+        if (!lines.isEmpty() && !pager.show(lines)) {
+            return false;
+        }
+        System.out.println("Watching " + projectDir + " ...");
+        return true;
     }
 
     /** Prints the API changes of the selected commit and returns the process exit code. */
     private int reportCommit(ApiDiffReporter reporter) {
         try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader)) {
-            print(reporter, analyzer.analyzeCommit(commit, path -> path.endsWith(".java")));
+            format(reporter, analyzer.analyzeCommit(commit, path -> path.endsWith(".java"))).forEach(System.out::println);
             return 0;
         } catch (IOException | IllegalArgumentException e) {
             System.err.println("Cannot analyze commit: " + e.getMessage());
@@ -102,14 +125,16 @@ public class Main implements Callable<Integer> {
         }
     }
 
-    private static void print(ApiDiffReporter reporter, List<FileDiffAnalysis> analyses) {
+    private static List<String> format(ApiDiffReporter reporter, List<FileDiffAnalysis> analyses) {
+        List<String> result = new ArrayList<>();
         for (FileDiffAnalysis analysis : analyses) {
             List<String> lines = reporter.report(analysis);
             if (!lines.isEmpty()) {
-                System.out.println(analysis.diff().getNewPath().equals("/dev/null")
+                result.add(analysis.diff().getNewPath().equals("/dev/null")
                         ? analysis.diff().getOldPath() : analysis.diff().getNewPath());
-                lines.forEach(System.out::println);
+                result.addAll(lines);
             }
         }
+        return result;
     }
 }
