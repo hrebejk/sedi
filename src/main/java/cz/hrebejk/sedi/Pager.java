@@ -13,8 +13,9 @@ import java.io.PrintStream;
 import java.util.List;
 
 /**
- * Shows lines page by page on an interactive terminal, clearing the screen first and waiting for
- * a key after each page. When the output is not a terminal everything is simply printed.
+ * Shows lines page by page on an interactive terminal, clearing the screen before the first page
+ * and waiting for a key between pages (later pages just scroll the console; there is no wait after
+ * the last page). When the output is not a terminal everything is simply printed.
  * <p>
  * Single key reading and the terminal height are obtained through {@code stty}, which keeps the
  * project free of terminal libraries.
@@ -23,6 +24,7 @@ final class Pager {
 
     private static final int DEFAULT_HEIGHT = 24;
     private static final String CLEAR = "\033[H\033[2J\033[3J";
+    private static final String ERASE_LINE = "\r\033[K";
 
     private final PrintStream out;
     private final boolean interactive;
@@ -51,14 +53,17 @@ final class Pager {
         }
         int pageSize = Math.max(1, terminalHeight() - 1);
         int pages = Math.max(1, (lines.size() + pageSize - 1) / pageSize);
+        out.print(CLEAR);
         for (int page = 0; page < pages; page++) {
-            out.print(CLEAR);
             lines.subList(page * pageSize, Math.min(lines.size(), (page + 1) * pageSize)).forEach(out::println);
-            out.print("-- page " + (page + 1) + "/" + pages + ", q: quit, any other key: "
-                    + (page + 1 < pages ? "next page" : "continue watching") + " --");
+            if (page + 1 == pages) {
+                out.flush();
+                break;
+            }
+            out.print("-- page " + (page + 1) + "/" + pages + ", q: quit, any other key: next page --");
             out.flush();
             boolean quit = readKey() == 'q';
-            out.println();
+            out.print(ERASE_LINE);
             if (quit) {
                 return false;
             }
