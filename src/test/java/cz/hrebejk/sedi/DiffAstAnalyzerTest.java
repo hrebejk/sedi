@@ -35,8 +35,6 @@ public class DiffAstAnalyzerTest extends TestCase {
             assertEquals(1, analyses.size());
 
             FileDiffAnalysis analysis = analyses.get(0);
-            assertNotNull(analysis.oldFile());
-            assertNotNull(analysis.newFile());
             assertNotNull(analysis.diff());
             assertNotNull(analysis.oldCompilationUnit());
             assertNotNull(analysis.newCompilationUnit());

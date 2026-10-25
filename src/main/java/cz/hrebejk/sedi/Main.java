@@ -127,8 +127,9 @@ public class Main implements Callable<Integer> {
 
     private static List<String> format(ApiDiffReporter reporter, List<FileDiffAnalysis> analyses) {
         List<String> result = new ArrayList<>();
+        Renames renames = reporter.detectRenames(analyses);
         for (FileDiffAnalysis analysis : analyses) {
-            List<String> lines = reporter.report(analysis);
+            List<String> lines = reporter.report(analysis, renames);
             if (!lines.isEmpty() || ApiDiffReporter.isStructural(analysis)) {
                 result.add(reporter.title(analysis));
                 result.addAll(lines);

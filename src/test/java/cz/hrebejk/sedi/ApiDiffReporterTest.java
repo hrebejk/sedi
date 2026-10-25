@@ -119,4 +119,59 @@ public class ApiDiffReporterTest extends TestCase {
             }
         }
     }
+
+    private static final String BEFORE = "public class Foo {\n  int count;\n  enum Color { RED, GREEN }\n"
+            + "  static class Helper { void a() { } void b() { } }\n  String helper(String s) { return s; }\n"
+            + "  int use(int p) { int local = p + count; helper(\"count\"); return local; }\n}\n";
+    private static final String AFTER = "public class Foo {\n  int total;\n  enum Color { RED, GREEN }\n"
+            + "  static class Assistant { void a() { } void b() { } }\n  String assist(String s) { return s; }\n"
+            + "  int use(int q) { int sum = q + total; assist(\"count\"); return sum; }\n}\n";
+
+    /**
+     * Tests that renamed fields, methods and nested types are detected and reported.
+     */
+    public void testDetectsRenames() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", BEFORE);
+            helper.commit("init");
+            helper.writeFile("Foo.java", AFTER);
+
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                List<FileDiffAnalysis> analyses = analyzer.analyzeChanges();
+                ApiDiffReporter reporter = new ApiDiffReporter(false);
+                Renames renames = reporter.detectRenames(analyses);
+                assertEquals("count", renames.oldName("Foo#total", "total"));
+                assertEquals("Helper", renames.oldName("Foo.Assistant", "Assistant"));
+                assertEquals("helper", renames.oldName("Foo#assist(java.lang.String)", "assist"));
+                assertEquals("use", renames.oldName("Foo#use(int)", "use"));
+            }
+        }
+    }
+
+    /**
+     * Tests that the WITHOUT_RENAMES hash of a method ignores renames of the elements it uses.
+     */
+    public void testWithoutRenamesHash() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", BEFORE);
+            helper.commit("init");
+            helper.writeFile("Foo.java", AFTER);
+
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                FileDiffAnalysis a = analyzer.analyzeChanges().get(0);
+                Renames renames = new ApiDiffReporter(false).detectRenames(List.of(a));
+                ElementInfo oldUse = member(new ElementHashCalculator(a.oldTrees()).calculate(a.oldCompilationUnit()), "use");
+                ElementInfo plain = member(new ElementHashCalculator(a.newTrees()).calculate(a.newCompilationUnit()), "use");
+                ElementInfo mapped = member(new ElementHashCalculator(a.newTrees(), renames).calculate(a.newCompilationUnit()), "use");
+
+                assertFalse(oldUse.getSha(ChangeCategory.WITHOUT_RENAMES).equals(plain.getSha(ChangeCategory.WITHOUT_RENAMES)));
+                assertEquals(oldUse.getSha(ChangeCategory.WITHOUT_RENAMES), mapped.getSha(ChangeCategory.WITHOUT_RENAMES));
+            }
+        }
+    }
+
+    private static ElementInfo member(ElementInfo root, String name) {
+        ElementInfo type = root.getChildren().get(0);
+        return type.getChildren().stream().filter(c -> c.getName().equals(name)).findFirst().orElseThrow();
+    }
 }

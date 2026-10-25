@@ -23,6 +23,14 @@ public enum ChangeCategory implements HashCalculation {
     /** Ignores names of local variables and parameters and the identifiers referring to them. */
     IGNORE_LOCAL_NAMES(new HashIgnoreLocalNames()),
 
+    /**
+     * Like {@link #IGNORE_LOCAL_NAMES}, and additionally the names of elements which were renamed are replaced
+     * by their old names, so a version of the code differing only by IDE-style renames hashes like the old one.
+     * Differs from {@link #IGNORE_LOCAL_NAMES} only when the scan is given the renames, see
+     * {@link ElementHashCalculator#ElementHashCalculator(com.sun.source.util.Trees, java.util.Map)}.
+     */
+    WITHOUT_RENAMES(new HashIgnoreLocalNames()),
+
     /** Only the signatures of elements; see {@link HashSignature}. */
     SIGNATURE(new HashSignature());
 

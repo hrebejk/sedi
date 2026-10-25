@@ -13,13 +13,9 @@ import com.sun.source.util.DocTrees;
 import com.sun.source.util.Trees;
 import org.eclipse.jgit.diff.DiffEntry;
 
-import java.nio.file.Path;
-
 /**
  * Record holding diff and attributed AST information for an old and new version of a changed file.
  *
- * @param oldFile             path to the old version of the file (or null if added)
- * @param newFile             path to the new version of the file (or null if deleted)
  * @param diff                the Git DiffEntry
  * @param oldCompilationUnit  AST compilation unit of the old version (or null)
  * @param newCompilationUnit  AST compilation unit of the new version (or null)
@@ -29,8 +25,6 @@ import java.nio.file.Path;
  * @param newDocTrees         DocTrees utility for new version (or null)
  */
 public record FileDiffAnalysis(
-        Path oldFile,
-        Path newFile,
         DiffEntry diff,
         CompilationUnitTree oldCompilationUnit,
         CompilationUnitTree newCompilationUnit,

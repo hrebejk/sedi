@@ -116,12 +116,40 @@ public class GitInspector {
      * @throws IllegalArgumentException if a revision cannot be resolved to a commit
      */
     public List<DiffEntry> getChanges(String revision) throws IOException {
+        Range range = resolveRange(revision);
+        try (Git git = Git.open(repositoryPath.toFile())) {
+            return diff(git.getRepository(), range.oldCommit(), range.newCommit());
+        }
+    }
+
+    /**
+     * The two commits compared by a revision expression.
+     *
+     * @param oldCommit the old commit, {@code null} stands for the empty tree
+     * @param newCommit the new commit
+     */
+    public record Range(ObjectId oldCommit, ObjectId newCommit) {
+    }
+
+    /**
+     * Resolves a revision expression, see {@link #getChanges(String)}, to the commits it compares.
+     *
+     * @param revision the revision expression
+     * @return the old and the new commit
+     * @throws IOException              if an I/O error occurs
+     * @throws IllegalArgumentException if a revision cannot be resolved to a commit
+     */
+    public Range resolveRange(String revision) throws IOException {
         try (Git git = Git.open(repositoryPath.toFile())) {
             Repository repo = git.getRepository();
             int threeDots = revision.indexOf("...");
             int twoDots = revision.indexOf("..");
             if (threeDots < 0 && twoDots < 0) {
-                return diffAgainstParent(repo, resolveCommit(repo, revision));
+                ObjectId commit = resolveCommit(repo, revision);
+                try (RevWalk revWalk = new RevWalk(repo)) {
+                    RevCommit parsed = revWalk.parseCommit(commit);
+                    return new Range(parsed.getParentCount() > 0 ? parsed.getParent(0).getId() : null, commit);
+                }
             }
             boolean mergeBase = threeDots >= 0;
             int at = mergeBase ? threeDots : twoDots;
@@ -130,7 +158,7 @@ public class GitInspector {
             if (mergeBase) {
                 left = findMergeBase(repo, left, right);
             }
-            return diff(repo, left, right);
+            return new Range(left, right);
         }
     }
 

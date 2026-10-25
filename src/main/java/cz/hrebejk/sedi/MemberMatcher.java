@@ -27,7 +27,9 @@ import java.util.function.Function;
  *   <li>equal {@link ChangeCategory#IGNORE_LOCAL_NAMES} hash (only names of locals and parameters differ),</li>
  *   <li>same name, parameter types and type parameters (modifiers, annotations, throws or return type changed),</li>
  *   <li>same name, different parameters (changed overload),</li>
- *   <li>same parameter types, type parameters and return type, different name (rename, unique candidates only).</li>
+ *   <li>same parameter types, type parameters and return type, different name (method rename, unique candidates only),</li>
+ *   <li>same type, modifiers and annotations, different name (field rename, unique candidates only),</li>
+ *   <li>same kind, modifiers and member signatures, different name (type rename, unique candidates only).</li>
  * </ol>
  * Whatever is left is reported as removed or added. Elements of different kinds never pair, and
  * constructors pair only with constructors.
@@ -72,6 +74,16 @@ public final class MemberMatcher {
                         : kind(e) + "|" + e.getFacetSha(Facet.PARAM_TYPES) + "|" + e.getFacetSha(Facet.TYPE_PARAMS)
                         + "|" + e.getFacetSha(Facet.RETURN_TYPE),
                 true, false);
+
+        // Pass 5: rename of a field or enum constant (same type, modifiers and annotations), only if unambiguous.
+        pass(oldRest, newRest, pairs,
+                e -> e.getNodeType() != ElementInfo.NodeType.FIELD ? null
+                        : kind(e) + "|" + e.getFacetSha(Facet.RETURN_TYPE) + "|" + e.getFacetSha(Facet.MODIFIERS)
+                        + "|" + e.getFacetSha(Facet.ANNOTATIONS),
+                true, false);
+
+        // Pass 6: rename of a type with the same members (compared by their signatures), only if unambiguous.
+        pass(oldRest, newRest, pairs, MemberMatcher::typeShape, true, false);
 
         for (ElementInfo removed : oldRest) {
             pairs.add(new ElementPair(removed, null, Set.of()));
@@ -157,6 +169,55 @@ public final class MemberMatcher {
             }
         }
         return changed;
+    }
+
+    /**
+     * Pairs the nested types of two versions of a container: the types paired by {@code memberPairs}
+     * (changed or renamed) and the remaining types of the same name, which can differ in their members only.
+     *
+     * @param oldContainer the old version of the container
+     * @param newContainer the new version of the container
+     * @param memberPairs  the result of {@link #match} for the two containers
+     * @return pairs of old and new type, none of them added or removed
+     */
+    public static List<ElementPair> nestedTypes(ElementInfo oldContainer, ElementInfo newContainer,
+                                                List<ElementPair> memberPairs) {
+        List<ElementPair> result = new ArrayList<>();
+        Set<ElementInfo> covered = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (ElementPair pair : memberPairs) {
+            if (!pair.isAdded() && !pair.isRemoved() && pair.newElement().getNodeType() == ElementInfo.NodeType.TYPE) {
+                result.add(pair);
+                covered.add(pair.oldElement());
+                covered.add(pair.newElement());
+            }
+        }
+        Map<String, ElementInfo> oldByName = new LinkedHashMap<>();
+        for (ElementInfo child : oldContainer.getChildren()) {
+            if (child.getNodeType() == ElementInfo.NodeType.TYPE && !covered.contains(child)) {
+                oldByName.put(child.getName(), child);
+            }
+        }
+        for (ElementInfo child : newContainer.getChildren()) {
+            ElementInfo old = child.getNodeType() == ElementInfo.NodeType.TYPE && !covered.contains(child)
+                    ? oldByName.get(child.getName()) : null;
+            if (old != null) {
+                result.add(new ElementPair(old, child, Set.of()));
+            }
+        }
+        return result;
+    }
+
+    /** Key of a type independent of its name: kind, modifiers, type parameters and the signatures of its non-constructor members. */
+    private static String typeShape(ElementInfo type) {
+        // Constructors do not count: javac adds a default one to every class, so they can't tell types apart.
+        List<ElementInfo> members = type.getChildren().stream().filter(c -> !CONSTRUCTOR_NAME.equals(c.getName())).toList();
+        if (type.getNodeType() != ElementInfo.NodeType.TYPE || members.isEmpty()) {
+            return null;
+        }
+        String declKind = type.getOriginalTree() instanceof com.sun.source.tree.ClassTree c ? c.getKind().name() : "";
+        return kind(type) + "|" + declKind + "|" + type.getFacetSha(Facet.MODIFIERS)
+                + "|" + type.getFacetSha(Facet.TYPE_PARAMS) + "|"
+                + members.stream().map(c -> c.getSha(ChangeCategory.SIGNATURE)).sorted().toList();
     }
 
     /** Pairing gate: node type, with constructors distinguished from methods. */

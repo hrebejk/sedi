@@ -31,6 +31,7 @@ public class ElementInfo {
     private final List<ElementInfo> children;
     private final Map<Facet, MessageDigest> facetDigests;
     private int paramCount;
+    private String elementId;
 
     /**
      * Enum defining the type of reduced AST node.
@@ -114,6 +115,24 @@ public class ElementInfo {
      */
     public void setParamCount(int paramCount) {
         this.paramCount = paramCount;
+    }
+
+    /**
+     * Returns the identity of the element javac resolved this node to.
+     *
+     * @return the id, {@code null} if the element could not be resolved
+     */
+    String getElementId() {
+        return elementId;
+    }
+
+    /**
+     * Sets the identity of the element javac resolved this node to.
+     *
+     * @param elementId the id, may be {@code null}
+     */
+    void setElementId(String elementId) {
+        this.elementId = elementId;
     }
 
     /**

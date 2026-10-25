@@ -40,20 +40,79 @@ public final class ApiDiffReporter {
      * @return indented lines, empty if the API did not change
      */
     public List<String> report(FileDiffAnalysis analysis) {
-        ElementInfo oldRoot = root(analysis.oldCompilationUnit(), analysis.oldTrees());
-        ElementInfo newRoot = root(analysis.newCompilationUnit(), analysis.newTrees());
+        return report(analysis, Renames.EMPTY);
+    }
+
+    /**
+     * Reports the API changes between two versions of a compilation unit. The new version is scanned
+     * again with the renames, so that its {@link ChangeCategory#WITHOUT_RENAMES} hashes ignore them.
+     *
+     * @param analysis the old and new version of a changed file
+     * @param renames  the result of {@link #detectRenames}
+     * @return indented lines, empty if the API did not change
+     */
+    public List<String> report(FileDiffAnalysis analysis, Renames renames) {
+        Versions v = versions(analysis, renames);
         List<String> lines = new ArrayList<>();
+        if (v.oldPrimary() != null) {
+            lines.add("  " + printer.format(new ElementPair(v.oldPrimary(), v.newPrimary(), Set.of()), "").stripLeading());
+            diff(v.oldPrimary(), v.newPrimary(), v.newPrimary().getName(), 1, lines);
+        }
+        diff(v.oldRoot(), v.newRoot(), "", 0, lines);
+        return lines;
+    }
+
+    /**
+     * Finds all the renamed types, fields (including enum constants) and methods, nested ones too, of the
+     * changed files: top level types renamed together with their file by git and elements paired by
+     * {@link MemberMatcher}.
+     *
+     * @param analyses the changed files
+     * @return the renamed elements
+     */
+    public Renames detectRenames(List<FileDiffAnalysis> analyses) {
+        Renames renames = new Renames();
+        for (FileDiffAnalysis analysis : analyses) {
+            Versions v = versions(analysis, Renames.EMPTY);
+            if (v.oldPrimary() != null) {
+                renames.add(v.oldPrimary(), v.newPrimary());
+                collectRenames(v.oldPrimary(), v.newPrimary(), renames);
+            }
+            collectRenames(v.oldRoot(), v.newRoot(), renames);
+        }
+        return renames;
+    }
+
+    private void collectRenames(ElementInfo oldContainer, ElementInfo newContainer, Renames renames) {
+        List<ElementPair> pairs = MemberMatcher.match(oldContainer, newContainer);
+        for (ElementPair pair : pairs) {
+            if (!pair.isAdded() && !pair.isRemoved()) {
+                renames.add(pair.oldElement(), pair.newElement());
+            }
+        }
+        for (ElementPair type : MemberMatcher.nestedTypes(oldContainer, newContainer, pairs)) {
+            renames.add(type.oldElement(), type.newElement());
+            collectRenames(type.oldElement(), type.newElement(), renames);
+        }
+    }
+
+    /**
+     * The two versions of a file as element trees. {@code oldPrimary} and {@code newPrimary} are the top level
+     * types renamed together with the file by git (both {@code null} otherwise); they are left out of the roots.
+     */
+    private record Versions(ElementInfo oldRoot, ElementInfo newRoot, ElementInfo oldPrimary, ElementInfo newPrimary) {
+    }
+
+    private static Versions versions(FileDiffAnalysis analysis, Renames renames) {
+        ElementInfo oldRoot = root(analysis.oldCompilationUnit(), analysis.oldTrees(), Renames.EMPTY);
+        ElementInfo newRoot = root(analysis.newCompilationUnit(), analysis.newTrees(), renames);
         ElementInfo oldPrimary = renamedType(analysis, oldRoot, true);
         ElementInfo newPrimary = renamedType(analysis, newRoot, false);
-        if (oldPrimary != null && newPrimary != null) {
-            // The file was renamed by git, so its top level type of the same name was renamed with it.
-            lines.add("  " + printer.format(new ElementPair(oldPrimary, newPrimary, Set.of()), "").stripLeading());
-            diff(oldPrimary, newPrimary, newPrimary.getName(), 1, lines);
-            oldRoot = without(oldRoot, oldPrimary);
-            newRoot = without(newRoot, newPrimary);
+        if (oldPrimary == null || newPrimary == null) {
+            return new Versions(oldRoot, newRoot, null, null);
         }
-        diff(oldRoot, newRoot, "", 0, lines);
-        return lines;
+        // The file was renamed by git, so its top level type of the same name was renamed with it.
+        return new Versions(without(oldRoot, oldPrimary), without(newRoot, newPrimary), oldPrimary, newPrimary);
     }
 
     /**
@@ -152,25 +211,23 @@ public final class ApiDiffReporter {
         return cut == null || cut.getPackageName() == null ? "" : cut.getPackageName().toString();
     }
 
-    private static ElementInfo root(com.sun.source.tree.CompilationUnitTree cut, com.sun.source.util.Trees trees) {
+    private static ElementInfo root(com.sun.source.tree.CompilationUnitTree cut, com.sun.source.util.Trees trees,
+                                    Renames renames) {
         return cut == null ? new ElementInfo(null, "ROOT", ElementInfo.NodeType.COMPILATION_UNIT)
-                : new ElementHashCalculator(trees).calculate(cut);
+                : new ElementHashCalculator(trees, renames).calculate(cut);
     }
 
     /** Diffs the members of two versions of a container, then descends into the types present in both. */
     private void diff(ElementInfo oldContainer, ElementInfo newContainer, String typeName, int depth,
                       List<String> lines) {
-        for (ElementPair pair : MemberMatcher.match(oldContainer, newContainer)) {
+        List<ElementPair> pairs = MemberMatcher.match(oldContainer, newContainer);
+        for (ElementPair pair : pairs) {
             lines.add("  ".repeat(depth + 1) + printer.format(pair, typeName));
         }
-        Map<String, ElementInfo> oldTypes = types(oldContainer);
-        for (ElementInfo newType : types(newContainer).values()) {
-            ElementInfo oldType = oldTypes.get(newType.getName());
-            if (oldType == null) {
-                continue;
-            }
+        for (ElementPair type : MemberMatcher.nestedTypes(oldContainer, newContainer, pairs)) {
+            ElementInfo newType = type.newElement();
             List<String> nested = new ArrayList<>();
-            diff(oldType, newType, newType.getName(), depth + 1, nested);
+            diff(type.oldElement(), newType, newType.getName(), depth + 1, nested);
             if (!nested.isEmpty()) {
                 lines.add("  ".repeat(depth + 1) + newType.getName());
                 lines.addAll(nested);

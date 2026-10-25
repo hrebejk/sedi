@@ -28,6 +28,7 @@ import java.util.Set;
 public class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
 
     private final Trees trees;
+    private final Renames renames;
     private final Deque<Set<String>> localScopeStack = new ArrayDeque<>();
     /** Greater than zero while scanning method bodies, field initializers and initializer blocks. */
     private int bodyDepth;
@@ -38,10 +39,29 @@ public class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
      * @param trees Trees utility instance
      */
     public ElementHashCalculator(Trees trees) {
+        this(trees, Renames.EMPTY);
+    }
+
+    /**
+     * Creates a calculator which, for the {@link ChangeCategory#WITHOUT_RENAMES} category, hashes the old
+     * names of renamed elements: in their declarations, in every reference javac resolved to them and in
+     * the qualified names of types. This is meant to scan the new version of a file; the old version is
+     * scanned without renames.
+     *
+     * @param trees   Trees utility instance
+     * @param renames the renamed elements
+     */
+    public ElementHashCalculator(Trees trees, Renames renames) {
         if (trees == null) {
             throw new IllegalArgumentException("Trees must not be null");
         }
         this.trees = trees;
+        this.renames = renames;
+    }
+
+    /** The old name of the element if it was renamed, else its current name. */
+    private String oldName(Element element, String name) {
+        return renames.isEmpty() ? name : renames.oldName(ElementIds.of(element), name);
     }
 
     /**
@@ -87,12 +107,13 @@ public class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
         parentNode.addChild(typeNode);
 
         context.setCurrentNode(typeNode);
+        Element el = trees.getElement(getCurrentPath());
+        typeNode.setElementId(ElementIds.of(el));
         updateAllCategories(context, "KIND:" + node.getKind());
         if (node.getSimpleName() != null) {
-            updateAllCategories(context, "NAME:" + node.getSimpleName());
+            updateAttribute(typeNode, "NAME:" + node.getSimpleName(), "NAME:" + oldName(el, className));
         }
 
-        Element el = trees.getElement(getCurrentPath());
         if (el instanceof TypeElement typeEl) {
             updateAllCategories(context, "FQN:" + typeEl.getQualifiedName());
             updateTypeParams(typeNode, typeEl.getTypeParameters());
@@ -121,12 +142,13 @@ public class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
             parentNode.addChild(methodNode);
 
             context.setCurrentNode(methodNode);
+            Element el = trees.getElement(getCurrentPath());
+            methodNode.setElementId(ElementIds.of(el));
             updateAllCategories(context, "KIND:" + node.getKind());
             if (node.getName() != null) {
-                updateAllCategories(context, "NAME:" + node.getName());
+                updateAttribute(methodNode, "NAME:" + node.getName(), "NAME:" + oldName(el, methodName));
             }
 
-            Element el = trees.getElement(getCurrentPath());
             updateCommonFacets(methodNode, methodName, node.getModifiers());
             if (el instanceof ExecutableElement execEl) {
                 updateAllCategories(context, "RETURN_TYPE:" + execEl.getReturnType());
@@ -168,12 +190,13 @@ public class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
             parentNode.addChild(varNode);
 
             context.setCurrentNode(varNode);
+            Element el = trees.getElement(getCurrentPath());
+            varNode.setElementId(ElementIds.of(el));
             updateAttribute(varNode, "KIND:" + node.getKind());
             if (node.getName() != null) {
-                updateAttribute(varNode, "NAME:" + node.getName());
+                updateAttribute(varNode, "NAME:" + node.getName(), "NAME:" + oldName(el, varName));
             }
 
-            Element el = trees.getElement(getCurrentPath());
             updateCommonFacets(varNode, varName, node.getModifiers());
             if (el instanceof VariableElement varEl) {
                 updateAttribute(varNode, "TYPE:" + varEl.asType());
@@ -242,10 +265,38 @@ public class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
                 }
             }
             for (ChangeCategory category : ChangeCategory.values()) {
-                category.onIdentifier(category, current, node, isLocalOrParam, region());
+                if (category == ChangeCategory.WITHOUT_RENAMES && !isLocalOrParam && name != null) {
+                    category.onAttribute(category, current, "KIND:" + node.getKind(), region());
+                    category.onAttribute(category, current,
+                            "IDENTIFIER:" + oldName(trees.getElement(getCurrentPath()), name.toString()), region());
+                } else {
+                    category.onIdentifier(category, current, node, isLocalOrParam, region());
+                }
             }
         }
         return super.visitIdentifier(node, context);
+    }
+
+    @Override
+    public Void visitMemberSelect(MemberSelectTree node, HashContext context) {
+        updateSelector(node.getKind(), node.getIdentifier(), context);
+        return super.visitMemberSelect(node, context);
+    }
+
+    @Override
+    public Void visitMemberReference(MemberReferenceTree node, HashContext context) {
+        updateSelector(node.getKind(), node.getName(), context);
+        return super.visitMemberReference(node, context);
+    }
+
+    /** Hashes the name after the dot of a member select, like the name of an identifier. */
+    private void updateSelector(Tree.Kind kind, Name name, HashContext context) {
+        ElementInfo current = context.getCurrentNode();
+        if (current != null && name != null) {
+            updateAttribute(current, "KIND:" + kind);
+            updateAttribute(current, "IDENTIFIER:" + name,
+                    "IDENTIFIER:" + oldName(trees.getElement(getCurrentPath()), name.toString()));
+        }
     }
 
     @Override
@@ -276,8 +327,23 @@ public class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
     }
 
     private void updateAttribute(ElementInfo node, String attribute) {
+        updateAttribute(node, attribute, null);
+    }
+
+    /**
+     * Updates the digests of all categories.
+     *
+     * @param withoutRenames what goes into {@link ChangeCategory#WITHOUT_RENAMES} instead of the attribute,
+     *                       {@code null} to use the attribute with the old qualified names of types
+     */
+    private void updateAttribute(ElementInfo node, String attribute, String withoutRenames) {
         for (ChangeCategory category : ChangeCategory.values()) {
-            category.onAttribute(category, node, attribute, region());
+            String text = attribute;
+            if (category == ChangeCategory.WITHOUT_RENAMES) {
+                text = withoutRenames != null ? withoutRenames
+                        : attribute.startsWith("LITERAL:") ? attribute : renames.undoTypeNames(attribute);
+            }
+            category.onAttribute(category, node, text, region());
         }
     }
 
