@@ -40,12 +40,4 @@ public record FileDiffAnalysis(
         DocTrees newDocTrees
 ) {
 
-    /**
-     * Alias for oldTrees to support both naming conventions.
-     *
-     * @return oldTrees Trees instance
-     */
-    public Trees oldsTrees() {
-        return oldTrees;
-    }
 }

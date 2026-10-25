@@ -44,7 +44,6 @@ public class DiffAstAnalyzerTest extends TestCase {
             assertNotNull(analysis.newTrees());
             assertNotNull(analysis.oldDocTrees());
             assertNotNull(analysis.newDocTrees());
-            assertNotNull(analysis.oldsTrees()); // Test alias
         }
     }
 }
