@@ -8,24 +8,20 @@
  */
 package cz.hrebejk.sedi.analysis;
 
-import com.sun.source.tree.CompilationUnitTree;
-import com.sun.source.util.DocTrees;
-import com.sun.source.util.Trees;
 import cz.hrebejk.sedi.compilation.*;
 import cz.hrebejk.sedi.util.GitInspector;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.diff.DiffEntry;
-import org.eclipse.jgit.lib.AbbreviatedObjectId;
-import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.Repository;
 
-import javax.tools.JavaFileObject;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Predicate;
 
 /**
@@ -33,9 +29,10 @@ import java.util.function.Predicate;
  * both old and new versions into attributed ASTs (CompilationUnitTree, Trees, DocTrees).
  * <p>
  * Old versions are read straight from git objects, nothing is copied. The other classes of the project which
- * a changed file refers to are found by javac on demand: in the working tree (new versions when analyzing the
- * working copy), in the git tree of the compared commits, and, for the old versions of the working copy, in
- * the old versions of the changed files. The ASTs stay usable until the analyzer is closed.
+ * a changed file refers to are found by javac on demand: in the git trees of the compared commits, or, for
+ * the new versions when analyzing the working copy, on disk, since what is on disk is what builds. The
+ * working copy is compared with HEAD, whether the changes are staged or not. The ASTs stay usable until the
+ * analyzer is closed.
  */
 public class DiffAstAnalyzer implements AutoCloseable {
 
@@ -102,7 +99,9 @@ public class DiffAstAnalyzer implements AutoCloseable {
      * @throws GitAPIException if a Git API error occurs
      */
     public List<FileDiffAnalysis> analyzeChanges(Predicate<String> filter) throws IOException, GitAPIException {
-        return analyze(new GitInspector(repositoryPath).getChanges(), filter, null);
+        GitInspector inspector = new GitInspector(repositoryPath);
+        GitInspector.Range range = inspector.resolveWorkingCopy();
+        return analyze(inspector.getChanges(range), filter, range);
     }
 
     /**
@@ -129,7 +128,7 @@ public class DiffAstAnalyzer implements AutoCloseable {
         return git.getRepository();
     }
 
-    /** @param range the compared commits, {@code null} to analyze the working copy */
+    /** @param range the compared versions; a {@code null} new commit stands for the working copy */
     private List<FileDiffAnalysis> analyze(List<DiffEntry> allDiffs, Predicate<String> filter,
                                            GitInspector.Range range) throws IOException {
         List<DiffEntry> diffs = allDiffs.stream()
@@ -137,82 +136,40 @@ public class DiffAstAnalyzer implements AutoCloseable {
                 .toList();
         Repository repo = repository();
 
-        List<SourceFileManager.Layer> oldLayers = new ArrayList<>();
-        List<SourceFileManager.Layer> newLayers = new ArrayList<>();
-        if (range == null) {
-            SourceFileManager.Layer workingTree = SourceLayers.directories(
-                    sourceRoots.stream().map(r -> r.isEmpty() ? repositoryPath : repositoryPath.resolve(r)).toList());
-            List<SourceFile> oldVersions = new ArrayList<>();
-            for (DiffEntry diff : allDiffs) {
-                SourceFile old = blob(repo, diff.getOldId(), diff.getOldPath());
-                if (old != null && old.binaryName() != null) {
-                    oldVersions.add(old);
-                }
-            }
-            // The old classes the old versions of the changed files refer to are their old versions.
-            oldLayers.add(SourceLayers.fixed(oldVersions));
-            oldLayers.add(workingTree);
-            newLayers.add(workingTree);
-        } else {
-            if (range.oldCommit() != null) {
-                oldLayers.add(SourceLayers.gitTree(repo, range.oldCommit(), sourceRoots));
-            }
-            newLayers.add(SourceLayers.gitTree(repo, range.newCommit(), sourceRoots));
+        List<SourceFileProvider> oldProviders = new ArrayList<>();
+        List<SourceFileProvider> newProviders = new ArrayList<>();
+        if (range.oldCommit() != null) {
+            oldProviders.add(SourceFileProvider.gitTree(repo, range.oldCommit(), sourceRoots));
         }
+        newProviders.add(range.newCommit() == null
+                ? SourceFileProvider.directories(repositoryPath, sourceRoots)
+                : SourceFileProvider.gitTree(repo, range.newCommit(), sourceRoots));
+
+        List<String> oldPaths = new ArrayList<>();
+        List<String> newPaths = new ArrayList<>();
+        for (DiffEntry diff : diffs) {
+            oldPaths.add(DiffEntry.DEV_NULL.equals(diff.getOldPath()) ? null : diff.getOldPath());
+            newPaths.add(DiffEntry.DEV_NULL.equals(diff.getNewPath()) ? null : diff.getNewPath());
+        }
+        List<CompilationUnitInfo> oldInfos = load(oldProviders, oldPaths);
+        List<CompilationUnitInfo> newInfos = load(newProviders, newPaths);
 
         List<FileDiffAnalysis> results = new ArrayList<>();
-        for (DiffEntry diff : diffs) {
-            CompilationUnitResult oldResult = analyzeFile(blob(repo, diff.getOldId(), diff.getOldPath()), oldLayers);
-            CompilationUnitResult newResult = analyzeFile(newUnit(repo, diff, range == null), newLayers);
-            results.add(new FileDiffAnalysis(
-                    diff,
-                    oldResult.compilationUnit,
-                    newResult.compilationUnit,
-                    oldResult.trees,
-                    newResult.trees,
-                    oldResult.docTrees,
-                    newResult.docTrees
-            ));
+        for (int i = 0; i < diffs.size(); i++) {
+            results.add(new FileDiffAnalysis(diffs.get(i), oldInfos.get(i), newInfos.get(i)));
         }
         return results;
     }
 
-    /** The git blob of a file version, {@code null} for a missing version (added or deleted file). */
-    private SourceFile blob(Repository repo, AbbreviatedObjectId objectId, String path) {
-        if (objectId == null || objectId.toObjectId().equals(ObjectId.zeroId()) || DiffEntry.DEV_NULL.equals(path)) {
-            return null;
-        }
-        return SourceFile.ofBlob(repo, objectId.toObjectId(), path, SourceLayers.binaryName(path, sourceRoots));
-    }
-
-    private SourceFile newUnit(Repository repo, DiffEntry diff, boolean preferWorkingTree) {
-        String newPath = diff.getNewPath();
-        if (DiffEntry.DEV_NULL.equals(newPath)) {
-            return null;
-        }
-        Path workingTreeFile = repositoryPath.resolve(newPath);
-        if (preferWorkingTree && Files.exists(workingTreeFile)) {
-            return SourceFile.ofPath(workingTreeFile, SourceLayers.binaryName(newPath, sourceRoots));
-        }
-        return blob(repo, diff.getNewId(), newPath);
-    }
-
-    private CompilationUnitResult analyzeFile(JavaFileObject unit, List<SourceFileManager.Layer> layers)
+    /** Loads the files in a single compilation; the result has a {@code null} for every {@code null} path. */
+    private List<CompilationUnitInfo> load(List<SourceFileProvider> providers, List<String> paths)
             throws IOException {
-        if (unit == null) {
-            return new CompilationUnitResult(null, null, null);
+        List<Path> present = paths.stream().filter(Objects::nonNull).map(Path::of).toList();
+        Iterator<CompilationUnitInfo> loaded = astLoader.load(providers, present).iterator();
+        List<CompilationUnitInfo> result = new ArrayList<>();
+        for (String path : paths) {
+            result.add(path == null ? null : loaded.next());
         }
-        CompilationUnitInfo analysis = astLoader.analyze(unit, layers);
-        return new CompilationUnitResult(analysis.compilationUnit(), analysis.trees(), analysis.docTrees());
-    }
-
-    /**
-     * Internal container for compilation unit results.
-     */
-    private record CompilationUnitResult(
-            CompilationUnitTree compilationUnit,
-            Trees trees,
-            DocTrees docTrees
-    ) {
+        return result;
     }
 }

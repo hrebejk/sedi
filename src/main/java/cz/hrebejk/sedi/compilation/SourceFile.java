@@ -23,7 +23,7 @@ import java.nio.file.Path;
  * A Java source file whose content is read only when javac asks for it: from the working tree or
  * straight from a git blob, so nothing needs to be copied to a temporary location.
  */
-public final class SourceFile extends SimpleJavaFileObject {
+final class SourceFile extends SimpleJavaFileObject {
 
     /** Supplies the bytes of the file. */
     @FunctionalInterface
@@ -31,40 +31,35 @@ public final class SourceFile extends SimpleJavaFileObject {
         byte[] read() throws IOException;
     }
 
-    private final String binaryName;
+    /** Scheme of the URIs of git blobs. */
+    static final String GIT_SCHEME = "git";
+
     private final Content content;
 
-    SourceFile(URI uri, String binaryName, Content content) {
+    SourceFile(URI uri, Content content) {
         super(uri, Kind.SOURCE);
-        this.binaryName = binaryName;
         this.content = content;
     }
 
     /** A file of the working tree. */
-    public static SourceFile ofPath(Path path, String binaryName) {
-        return new SourceFile(path.toUri(), binaryName, () -> Files.readAllBytes(path));
+    static SourceFile ofPath(Path path) {
+        return new SourceFile(path.toUri(), () -> Files.readAllBytes(path));
     }
 
     /**
      * A blob of a git repository.
      *
-     * @param repo       repository, must stay open as long as the file may be read
-     * @param blob       id of the blob
-     * @param repoPath   repository relative path of the file ({@code /} separated)
-     * @param binaryName binary name of the class the file declares, {@code null} if unknown
+     * @param repo     repository, must stay open as long as the file may be read
+     * @param blob     id of the blob
+     * @param repoPath repository relative path of the file ({@code /} separated)
      */
-    public static SourceFile ofBlob(Repository repo, ObjectId blob, String repoPath, String binaryName) {
+    static SourceFile ofBlob(Repository repo, ObjectId blob, String repoPath) {
         try {
-            URI uri = new URI("git", null, "/" + blob.name() + "/" + repoPath, null);
-            return new SourceFile(uri, binaryName, () -> repo.open(blob).getBytes());
+            URI uri = new URI(GIT_SCHEME, null, "/" + blob.name() + "/" + repoPath, null);
+            return new SourceFile(uri, () -> repo.open(blob).getBytes());
         } catch (URISyntaxException e) {
             throw new IllegalArgumentException(e);
         }
-    }
-
-    /** Binary name of the class this file is the source of, {@code null} if unknown. */
-    public String binaryName() {
-        return binaryName;
     }
 
     @Override

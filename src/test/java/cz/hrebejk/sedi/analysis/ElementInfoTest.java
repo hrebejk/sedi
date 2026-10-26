@@ -28,7 +28,7 @@ public class ElementInfoTest extends TestCase {
             Path sourceFile = helper.writeFile("User.java", "package cz.hrebejk.sedi;\n\npublic class User {\n    private String username;\n    public String getUsername() { return username; }\n}\n");
 
             AstLoader loader = new AstLoader();
-            List<CompilationUnitInfo> analyses = loader.loadCompilationAnalyses(List.of(sourceFile));
+            List<CompilationUnitInfo> analyses = TestSources.load(loader, List.of(sourceFile));
             assertFalse(analyses.isEmpty());
 
             ElementHashCalculator calculator = new ElementHashCalculator(analyses.get(0).trees());
@@ -70,8 +70,8 @@ public class ElementInfoTest extends TestCase {
             Path fileV2 = helper.writeFile("Service.java", "package cz.hrebejk.sedi;\n\npublic class Service {\n    public int compute() { return 2; }\n}\n");
 
             AstLoader loader = new AstLoader();
-            List<CompilationUnitInfo> analysesV1 = loader.loadCompilationAnalyses(List.of(fileV1));
-            List<CompilationUnitInfo> analysesV2 = loader.loadCompilationAnalyses(List.of(fileV2));
+            List<CompilationUnitInfo> analysesV1 = TestSources.load(loader, List.of(fileV1));
+            List<CompilationUnitInfo> analysesV2 = TestSources.load(loader, List.of(fileV2));
 
             ElementHashCalculator calcV1 = new ElementHashCalculator(analysesV1.get(0).trees());
             ElementInfo rootV1 = calcV1.calculate(analysesV1.get(0).compilationUnit());
@@ -95,8 +95,8 @@ public class ElementInfoTest extends TestCase {
             Path fileV2 = helper.writeFile("App.java", "package cz.hrebejk.sedi;\n\nimport java.util.List;\n\npublic class App {\n}\n");
 
             AstLoader loader = new AstLoader();
-            List<CompilationUnitInfo> analysesV1 = loader.loadCompilationAnalyses(List.of(fileV1));
-            List<CompilationUnitInfo> analysesV2 = loader.loadCompilationAnalyses(List.of(fileV2));
+            List<CompilationUnitInfo> analysesV1 = TestSources.load(loader, List.of(fileV1));
+            List<CompilationUnitInfo> analysesV2 = TestSources.load(loader, List.of(fileV2));
 
             ElementHashCalculator calcV1 = new ElementHashCalculator(analysesV1.get(0).trees());
             ElementInfo rootV1 = calcV1.calculate(analysesV1.get(0).compilationUnit());

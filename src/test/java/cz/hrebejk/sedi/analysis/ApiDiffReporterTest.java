@@ -161,9 +161,9 @@ public class ApiDiffReporterTest extends TestCase {
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
                 FileDiffAnalysis a = analyzer.analyzeChanges().get(0);
                 Renames renames = new ApiDiffReporter(false).detectRenames(List.of(a));
-                ElementInfo oldUse = member(new ElementHashCalculator(a.oldTrees()).calculate(a.oldCompilationUnit()), "use");
-                ElementInfo plain = member(new ElementHashCalculator(a.newTrees()).calculate(a.newCompilationUnit()), "use");
-                ElementInfo mapped = member(new ElementHashCalculator(a.newTrees(), renames).calculate(a.newCompilationUnit()), "use");
+                ElementInfo oldUse = member(new ElementHashCalculator(a.oldUnit().trees()).calculate(a.oldUnit().compilationUnit()), "use");
+                ElementInfo plain = member(new ElementHashCalculator(a.newUnit().trees()).calculate(a.newUnit().compilationUnit()), "use");
+                ElementInfo mapped = member(new ElementHashCalculator(a.newUnit().trees(), renames).calculate(a.newUnit().compilationUnit()), "use");
 
                 assertFalse(oldUse.getSha(ChangeCategory.WITHOUT_RENAMES).equals(plain.getSha(ChangeCategory.WITHOUT_RENAMES)));
                 assertEquals(oldUse.getSha(ChangeCategory.WITHOUT_RENAMES), mapped.getSha(ChangeCategory.WITHOUT_RENAMES));

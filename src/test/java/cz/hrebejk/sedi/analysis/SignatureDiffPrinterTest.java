@@ -24,7 +24,7 @@ public class SignatureDiffPrinterTest extends TestCase {
 
     private ElementInfo type(GitTestHelper helper, String members) throws Exception {
         String src = "package p;\n\npublic class T {\n" + members + "\n}\n";
-        List<CompilationUnitInfo> analyses = loader.loadCompilationAnalyses(List.of(helper.writeFile("T.java", src)));
+        List<CompilationUnitInfo> analyses = TestSources.load(loader, List.of(helper.writeFile("T.java", src)));
         return new ElementHashCalculator(analyses.get(0).trees())
                 .calculate(analyses.get(0).compilationUnit()).getChildren().get(0);
     }

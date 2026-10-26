@@ -28,7 +28,7 @@ public class ElementHashCalculatorTest extends TestCase {
             Path sourceFile = helper.writeFile("Data.java", "package cz.hrebejk.sedi;\n\npublic class Data {\n    private int x = 10;\n    public int getX() { return x; }\n}\n");
 
             AstLoader loader = new AstLoader();
-            List<CompilationUnitInfo> analyses = loader.loadCompilationAnalyses(List.of(sourceFile));
+            List<CompilationUnitInfo> analyses = TestSources.load(loader, List.of(sourceFile));
             assertFalse(analyses.isEmpty());
 
             ElementHashCalculator calculator = new ElementHashCalculator(analyses.get(0).trees());
@@ -182,7 +182,7 @@ public class ElementHashCalculatorTest extends TestCase {
             Path file1 = helper.writeFile("Calc.java", code1);
             AstLoader loader = new AstLoader();
 
-            List<CompilationUnitInfo> analyses1 = loader.loadCompilationAnalyses(List.of(file1));
+            List<CompilationUnitInfo> analyses1 = TestSources.load(loader, List.of(file1));
             ElementHashCalculator calc1 = new ElementHashCalculator(analyses1.get(0).trees());
             ElementInfo root1 = calc1.calculate(analyses1.get(0).compilationUnit());
             String sha1Cat0 = root1.getSha(ChangeCategory.FULL);
@@ -192,7 +192,7 @@ public class ElementHashCalculatorTest extends TestCase {
             String code2 = "package cz.hrebejk.sedi;\n\npublic class Calc {\n    public int compute(int x) {\n        int total = x * 2;\n        return total;\n    }\n}\n";
             Path file2 = helper.writeFile("Calc.java", code2);
 
-            List<CompilationUnitInfo> analyses2 = loader.loadCompilationAnalyses(List.of(file2));
+            List<CompilationUnitInfo> analyses2 = TestSources.load(loader, List.of(file2));
             ElementHashCalculator calc2 = new ElementHashCalculator(analyses2.get(0).trees());
             ElementInfo root2 = calc2.calculate(analyses2.get(0).compilationUnit());
             String sha2Cat0 = root2.getSha(ChangeCategory.FULL);
@@ -229,12 +229,12 @@ public class ElementHashCalculatorTest extends TestCase {
     }
 
     private ElementInfo calc(AstLoader loader, Path file) throws Exception {
-        List<CompilationUnitInfo> analyses = loader.loadCompilationAnalyses(List.of(file));
+        List<CompilationUnitInfo> analyses = TestSources.load(loader, List.of(file));
         return new ElementHashCalculator(analyses.get(0).trees()).calculate(analyses.get(0).compilationUnit());
     }
 
     private String calculateCompilationUnitSha(AstLoader loader, Path file) throws Exception {
-        List<CompilationUnitInfo> analyses = loader.loadCompilationAnalyses(List.of(file));
+        List<CompilationUnitInfo> analyses = TestSources.load(loader, List.of(file));
         assertFalse(analyses.isEmpty());
         ElementHashCalculator calculator = new ElementHashCalculator(analyses.get(0).trees());
         ElementInfo root = calculator.calculate(analyses.get(0).compilationUnit());

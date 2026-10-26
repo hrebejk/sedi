@@ -13,17 +13,15 @@ import com.sun.source.util.DocTrees;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.Trees;
 
-import javax.tools.JavaCompiler;
-import javax.tools.JavaFileManager;
-import javax.tools.JavaFileObject;
-import javax.tools.StandardJavaFileManager;
-import javax.tools.StandardLocation;
-import javax.tools.ToolProvider;
+import javax.tools.*;
 import java.io.IOException;
+import java.net.URI;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
-import java.util.function.Function;
+import java.util.Map;
+import java.util.Optional;
 
 /**
  * Loader for attributed Abstract Syntax Trees (AST) of Java source files using the JDK Compiler API.
@@ -49,33 +47,25 @@ public class AstLoader {
     }
 
     /**
-     * Loads compilation analyses containing compilation units, trees, and doc trees.
+     * Parses and attributes the given files in a single javac task. Classes of the project which the files
+     * refer to are found in the providers, on demand.
      *
-     * @param sourcePaths list of paths to Java source files
-     * @return list of CompilationAnalysis
-     * @throws IOException if an I/O error occurs
+     * @param providers sources of the project; for a class present in several providers the first one wins.
+     *                  Each path is looked up in the providers in order, the first provider having it is used.
+     * @param paths     the files to analyze
+     * @return one info per path, in the order of the paths, sharing the same {@link Trees}
+     * @throws IOException              if an I/O error occurs
+     * @throws IllegalArgumentException if no provider has one of the paths
      */
-    public List<CompilationUnitInfo> loadCompilationAnalyses(List<Path> sourcePaths) throws IOException {
-        return run(fileManager -> fileManager.getJavaFileObjectsFromPaths(sourcePaths), List.of());
-    }
+    public List<CompilationUnitInfo> load(List<SourceFileProvider> providers, List<Path> paths) throws IOException {
+        List<JavaFileObject> files = new ArrayList<>();
+        for (Path path : paths) {
+            files.add(find(providers, path));
+        }
+        if (files.isEmpty()) {
+            return List.of();
+        }
 
-    /**
-     * Loads the compilation analysis of one source file. Classes of the project which the file refers to are
-     * found in the given layers, on demand.
-     *
-     * @param unit   the file to analyze
-     * @param layers sources of the other classes of the project; for a class present in several layers the
-     *               first one wins
-     * @return the analysis of the file
-     * @throws IOException if an I/O error occurs
-     */
-    public CompilationUnitInfo analyze(JavaFileObject unit, List<SourceFileManager.Layer> layers) throws IOException {
-        return run(fileManager -> List.of(unit), layers).getFirst();
-    }
-
-    private List<CompilationUnitInfo> run(
-            Function<StandardJavaFileManager, Iterable<? extends JavaFileObject>> units,
-            List<SourceFileManager.Layer> layers) throws IOException {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         if (compiler == null) {
             throw new IllegalStateException("System Java compiler not found. Ensure running on a JDK, not a JRE.");
@@ -85,30 +75,42 @@ public class AstLoader {
             if (!classpath.isEmpty()) {
                 standard.setLocationFromPaths(StandardLocation.CLASS_PATH, classpath);
             }
-            JavaFileManager fileManager = layers.isEmpty() ? standard : new SourceFileManager(standard, layers);
 
             JavaCompiler.CompilationTask task = compiler.getTask(
                     null,
-                    fileManager,
+                    new SourceFileManager(standard, providers),
                     diagnostic -> { },
                     // Sources of the project win over class files, and no annotation processors are run.
                     List.of("-proc:none", "-Xprefer:source"),
                     null,
-                    units.apply(standard)
+                    files
             );
 
             JavacTask javacTask = (JavacTask) task;
-            Iterable<? extends CompilationUnitTree> compilationUnits = javacTask.parse();
+            Map<URI, CompilationUnitTree> units = new HashMap<>();
+            for (CompilationUnitTree cut : javacTask.parse()) {
+                units.put(cut.getSourceFile().toUri(), cut);
+            }
             javacTask.analyze();
 
             Trees trees = Trees.instance(javacTask);
             DocTrees docTrees = DocTrees.instance(javacTask);
 
-            List<CompilationUnitInfo> list = new ArrayList<>();
-            for (CompilationUnitTree cut : compilationUnits) {
-                list.add(new CompilationUnitInfo(cut, trees, docTrees));
+            List<CompilationUnitInfo> result = new ArrayList<>();
+            for (JavaFileObject file : files) {
+                result.add(new CompilationUnitInfo(units.get(file.toUri()), trees, docTrees));
             }
-            return list;
+            return result;
         }
+    }
+
+    private static JavaFileObject find(List<SourceFileProvider> providers, Path path) throws IOException {
+        for (SourceFileProvider provider : providers) {
+            Optional<JavaFileObject> file = provider.get(path);
+            if (file.isPresent()) {
+                return file.get();
+            }
+        }
+        throw new IllegalArgumentException("No source file provider has " + path);
     }
 }

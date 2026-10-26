@@ -31,8 +31,8 @@ public class RenamesTest extends TestCase {
 
     private static ElementInfo use(FileDiffAnalysis analysis, boolean old, Renames renames) {
         ElementInfo root = old
-                ? new ElementHashCalculator(analysis.oldTrees()).calculate(analysis.oldCompilationUnit())
-                : new ElementHashCalculator(analysis.newTrees(), renames).calculate(analysis.newCompilationUnit());
+                ? new ElementHashCalculator(analysis.oldUnit().trees()).calculate(analysis.oldUnit().compilationUnit())
+                : new ElementHashCalculator(analysis.newUnit().trees(), renames).calculate(analysis.newUnit().compilationUnit());
         return root.getChildren().get(0).getChildren().stream()
                 .filter(c -> c.getName().equals("use")).findFirst().orElseThrow();
     }

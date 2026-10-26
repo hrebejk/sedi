@@ -8,6 +8,7 @@
  */
 package cz.hrebejk.sedi.analysis;
 
+import cz.hrebejk.sedi.compilation.CompilationUnitInfo;
 import org.eclipse.jgit.diff.DiffEntry;
 
 import java.util.ArrayList;
@@ -104,8 +105,8 @@ public final class ApiDiffReporter {
     }
 
     private static Versions versions(FileDiffAnalysis analysis, Renames renames) {
-        ElementInfo oldRoot = root(analysis.oldCompilationUnit(), analysis.oldTrees(), Renames.EMPTY);
-        ElementInfo newRoot = root(analysis.newCompilationUnit(), analysis.newTrees(), renames);
+        ElementInfo oldRoot = root(analysis.oldUnit(), Renames.EMPTY);
+        ElementInfo newRoot = root(analysis.newUnit(), renames);
         ElementInfo oldPrimary = renamedType(analysis, oldRoot, true);
         ElementInfo newPrimary = renamedType(analysis, newRoot, false);
         if (oldPrimary == null || newPrimary == null) {
@@ -162,10 +163,10 @@ public final class ApiDiffReporter {
     public String title(FileDiffAnalysis analysis) {
         DiffEntry diff = analysis.diff();
         DiffEntry.ChangeType type = diff.getChangeType();
-        String oldName = type == DiffEntry.ChangeType.ADD ? "" : className(analysis.oldCompilationUnit(), diff.getOldPath());
-        String newName = type == DiffEntry.ChangeType.DELETE ? "" : className(analysis.newCompilationUnit(), diff.getNewPath());
-        String oldPackage = packageName(analysis.oldCompilationUnit());
-        String newPackage = packageName(analysis.newCompilationUnit());
+        String oldName = type == DiffEntry.ChangeType.ADD ? "" : className(analysis.oldUnit(), diff.getOldPath());
+        String newName = type == DiffEntry.ChangeType.DELETE ? "" : className(analysis.newUnit(), diff.getNewPath());
+        String oldPackage = packageName(analysis.oldUnit());
+        String newPackage = packageName(analysis.newUnit());
         if (type == DiffEntry.ChangeType.ADD) {
             oldPackage = "";
         }
@@ -187,13 +188,13 @@ public final class ApiDiffReporter {
     }
 
     /** The top level class named like the file, else the first one, else the file name without extension. */
-    private static String className(com.sun.source.tree.CompilationUnitTree cut, String path) {
+    private static String className(CompilationUnitInfo unit, String path) {
         String fileName = typeName(path);
-        if (cut == null) {
+        if (unit == null) {
             return fileName;
         }
         String first = null;
-        for (com.sun.source.tree.Tree decl : cut.getTypeDecls()) {
+        for (com.sun.source.tree.Tree decl : unit.compilationUnit().getTypeDecls()) {
             if (decl instanceof com.sun.source.tree.ClassTree c) {
                 String name = c.getSimpleName().toString();
                 if (name.equals(fileName)) {
@@ -207,14 +208,14 @@ public final class ApiDiffReporter {
         return first != null ? first : fileName;
     }
 
-    private static String packageName(com.sun.source.tree.CompilationUnitTree cut) {
-        return cut == null || cut.getPackageName() == null ? "" : cut.getPackageName().toString();
+    private static String packageName(CompilationUnitInfo unit) {
+        return unit == null || unit.compilationUnit().getPackageName() == null
+                ? "" : unit.compilationUnit().getPackageName().toString();
     }
 
-    private static ElementInfo root(com.sun.source.tree.CompilationUnitTree cut, com.sun.source.util.Trees trees,
-                                    Renames renames) {
-        return cut == null ? new ElementInfo(null, "ROOT", ElementInfo.NodeType.COMPILATION_UNIT)
-                : new ElementHashCalculator(trees, renames).calculate(cut);
+    private static ElementInfo root(CompilationUnitInfo unit, Renames renames) {
+        return unit == null ? new ElementInfo(null, "ROOT", ElementInfo.NodeType.COMPILATION_UNIT)
+                : new ElementHashCalculator(unit.trees(), renames).calculate(unit.compilationUnit());
     }
 
     /** Diffs the members of two versions of a container, then descends into the types present in both. */

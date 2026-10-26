@@ -20,35 +20,23 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * A file manager which serves the {@link StandardLocation#SOURCE_PATH} from {@link Layer}s instead of
+ * A file manager which serves the {@link StandardLocation#SOURCE_PATH} from {@link SourceFileProvider}s instead of
  * from directories. javac asks for the sources of a package only when it meets a class it does not know,
  * so the sources are read lazily, directly from where they live (for example a git tree).
  */
-public final class SourceFileManager extends ForwardingJavaFileManager<StandardJavaFileManager> {
+final class SourceFileManager extends ForwardingJavaFileManager<StandardJavaFileManager> {
 
-    /** A source of Java files organized by packages. */
-    public interface Layer {
-        /**
-         * Lists the source files of a package.
-         *
-         * @param packageName dotted package name, empty for the default package
-         * @param recurse     also list the files of the sub packages
-         * @return the files, each with its binary name set
-         */
-        List<SourceFile> list(String packageName, boolean recurse) throws IOException;
-    }
-
-    private final List<Layer> layers;
+    private final List<SourceFileProvider> providers;
 
     /**
      * Creates the manager.
      *
-     * @param delegate manager serving everything but the source path
-     * @param layers   sources of the source path; for a class present in several layers the first one wins
+     * @param delegate  manager serving everything but the source path
+     * @param providers sources of the source path; for a class present in several providers the first one wins
      */
-    SourceFileManager(StandardJavaFileManager delegate, List<Layer> layers) {
+    SourceFileManager(StandardJavaFileManager delegate, List<SourceFileProvider> providers) {
         super(delegate);
-        this.layers = List.copyOf(layers);
+        this.providers = List.copyOf(providers);
     }
 
     @Override
@@ -67,9 +55,9 @@ public final class SourceFileManager extends ForwardingJavaFileManager<StandardJ
             return result;
         }
         Set<String> seen = new HashSet<>();
-        for (Layer layer : layers) {
-            for (SourceFile file : layer.list(packageName, recurse)) {
-                if (seen.add(file.binaryName())) {
+        for (SourceFileProvider provider : providers) {
+            for (JavaFileObject file : provider.list(packageName, recurse)) {
+                if (seen.add(file.getName())) {
                     result.add(file);
                 }
             }
@@ -78,9 +66,23 @@ public final class SourceFileManager extends ForwardingJavaFileManager<StandardJ
     }
 
     @Override
+    public boolean contains(Location location, FileObject file) throws IOException {
+        // The files of the providers are not path based, the standard manager cannot tell where they are.
+        return file instanceof SourceFile ? location == StandardLocation.SOURCE_PATH : super.contains(location, file);
+    }
+
+    @Override
     public String inferBinaryName(Location location, JavaFileObject file) {
-        return file instanceof SourceFile source && source.binaryName() != null
-                ? source.binaryName() : super.inferBinaryName(location, file);
+        if (!(file instanceof SourceFile)) {
+            return super.inferBinaryName(location, file);
+        }
+        for (SourceFileProvider provider : providers) {
+            String binaryName = provider.inferBinaryName(file);
+            if (binaryName != null) {
+                return binaryName;
+            }
+        }
+        return null;
     }
 
     @Override

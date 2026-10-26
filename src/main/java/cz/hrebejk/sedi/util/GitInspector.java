@@ -48,40 +48,70 @@ public class GitInspector {
     }
 
     /**
-     * Computes the list of diff entries. If there are changes in the working copy (unstaged or staged),
-     * returns those changes. If there are no working copy changes, compares HEAD against its parent.
+     * Computes the changes of the working copy: what is on disk compared with HEAD, whether staged or not.
+     * If the working copy is clean, the changes of HEAD against its parent.
      *
      * @return list of DiffEntry representing changes
      * @throws IOException     if an I/O error occurs
      * @throws GitAPIException if a Git API error occurs
      */
     public List<DiffEntry> getChanges() throws IOException, GitAPIException {
+        return getChanges(resolveWorkingCopy());
+    }
+
+    /**
+     * The two versions compared by {@link #getChanges()}: HEAD and the working copy, or, if the working copy
+     * is clean, the parent of HEAD and HEAD.
+     *
+     * @return the compared versions; the new commit is {@code null} for the working copy
+     * @throws IOException     if an I/O error occurs
+     * @throws GitAPIException if a Git API error occurs
+     */
+    public Range resolveWorkingCopy() throws IOException, GitAPIException {
         try (Git git = Git.open(repositoryPath.toFile())) {
-            // 1. Check unstaged working tree changes (working tree vs index)
-            List<DiffEntry> unstaged = git.diff().call();
-            if (!unstaged.isEmpty()) {
-                return detectRenames(git.getRepository(), unstaged);
-            }
-
-            // 2. Check staged changes (index vs HEAD)
-            List<DiffEntry> staged = git.diff().setCached(true).call();
-            if (!staged.isEmpty()) {
-                return detectRenames(git.getRepository(), staged);
-            }
-
-            // 3. If no working copy changes, compare latest commit (HEAD) against its parent (HEAD^)
             Repository repo = git.getRepository();
             ObjectId head = repo.resolve("HEAD");
             if (head == null) {
-                return List.of();
+                return new Range(null, null);
             }
-
+            Range workingCopy = new Range(head, null);
+            if (!getChanges(git, workingCopy).isEmpty()) {
+                return workingCopy;
+            }
             try (RevWalk revWalk = new RevWalk(repo)) {
-                if (revWalk.parseCommit(head).getParentCount() == 0) {
-                    return List.of();
-                }
+                RevCommit commit = revWalk.parseCommit(head);
+                return commit.getParentCount() == 0 ? workingCopy : new Range(commit.getParent(0).getId(), head);
             }
-            return diffAgainstParent(repo, head);
+        }
+    }
+
+    /**
+     * Computes the changes between two versions.
+     *
+     * @param range the compared versions, see {@link Range}
+     * @return list of DiffEntry representing changes
+     * @throws IOException     if an I/O error occurs
+     * @throws GitAPIException if a Git API error occurs
+     */
+    public List<DiffEntry> getChanges(Range range) throws IOException, GitAPIException {
+        try (Git git = Git.open(repositoryPath.toFile())) {
+            return getChanges(git, range);
+        }
+    }
+
+    private static List<DiffEntry> getChanges(Git git, Range range) throws IOException, GitAPIException {
+        Repository repo = git.getRepository();
+        if (range.newCommit() != null) {
+            return diff(repo, range.oldCommit(), range.newCommit());
+        }
+        if (range.oldCommit() == null) {
+            return List.of();
+        }
+        try (RevWalk revWalk = new RevWalk(repo); ObjectReader reader = repo.newObjectReader()) {
+            CanonicalTreeParser oldTree = new CanonicalTreeParser();
+            oldTree.reset(reader, revWalk.parseCommit(range.oldCommit()).getTree());
+            // No new tree, so the working tree is compared.
+            return detectRenames(repo, git.diff().setOldTree(oldTree).call());
         }
     }
 
@@ -109,10 +139,10 @@ public class GitInspector {
     }
 
     /**
-     * The two commits compared by a revision expression.
+     * The two versions compared: commits, or a commit and the working copy.
      *
      * @param oldCommit the old commit, {@code null} stands for the empty tree
-     * @param newCommit the new commit
+     * @param newCommit the new commit, {@code null} stands for the working copy (what is on disk)
      */
     public record Range(ObjectId oldCommit, ObjectId newCommit) {
     }
@@ -196,12 +226,5 @@ public class GitInspector {
         RenameDetector detector = new RenameDetector(repo);
         detector.addAll(entries);
         return detector.compute();
-    }
-
-    private static List<DiffEntry> diffAgainstParent(Repository repo, ObjectId commitId) throws IOException {
-        try (RevWalk revWalk = new RevWalk(repo)) {
-            RevCommit commit = revWalk.parseCommit(commitId);
-            return diff(repo, commit.getParentCount() > 0 ? commit.getParent(0) : null, commitId);
-        }
     }
 }

@@ -37,12 +37,12 @@ public class DiffAstAnalyzerTest extends TestCase {
 
             FileDiffAnalysis analysis = analyses.get(0);
             assertNotNull(analysis.diff());
-            assertNotNull(analysis.oldCompilationUnit());
-            assertNotNull(analysis.newCompilationUnit());
-            assertNotNull(analysis.oldTrees());
-            assertNotNull(analysis.newTrees());
-            assertNotNull(analysis.oldDocTrees());
-            assertNotNull(analysis.newDocTrees());
+            assertNotNull(analysis.oldUnit().compilationUnit());
+            assertNotNull(analysis.newUnit().compilationUnit());
+            assertNotNull(analysis.oldUnit().trees());
+            assertNotNull(analysis.newUnit().trees());
+            assertNotNull(analysis.oldUnit().docTrees());
+            assertNotNull(analysis.newUnit().docTrees());
         }
     }
 }

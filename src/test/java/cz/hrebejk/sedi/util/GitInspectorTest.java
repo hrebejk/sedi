@@ -50,4 +50,26 @@ public class GitInspectorTest extends TestCase {
             assertEquals("Hello.java", changes2.get(0).getNewPath());
         }
     }
+
+    /**
+     * Tests that the working copy is compared with HEAD whether the changes are staged, unstaged or untracked.
+     */
+    public void testWorkingCopyIgnoresStaging() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("A.java", "public class A {}");
+            helper.writeFile("B.java", "public class B {}");
+            helper.commit("Initial commit");
+
+            helper.writeFile("A.java", "public class A { void staged() {} }");
+            try (org.eclipse.jgit.api.Git git = org.eclipse.jgit.api.Git.open(helper.getRepositoryPath().toFile())) {
+                git.add().addFilepattern("A.java").call();
+            }
+            helper.writeFile("B.java", "public class B { void unstaged() {} }");
+            helper.writeFile("Untracked.java", "public class Untracked {}");
+
+            List<DiffEntry> changes = new GitInspector(helper.getRepositoryPath()).getChanges();
+            // A new file on disk builds, so it is a change even if git does not track it yet.
+            assertEquals(List.of("A.java", "B.java", "Untracked.java"), changes.stream().map(DiffEntry::getNewPath).sorted().toList());
+        }
+    }
 }
