@@ -8,6 +8,14 @@
  */
 package cz.hrebejk.sedi;
 
+import cz.hrebejk.sedi.analysis.ApiDiffReporter;
+import cz.hrebejk.sedi.analysis.DiffAstAnalyzer;
+import cz.hrebejk.sedi.analysis.FileDiffAnalysis;
+import cz.hrebejk.sedi.analysis.Renames;
+import cz.hrebejk.sedi.compilation.AstLoader;
+import cz.hrebejk.sedi.util.DirectoryWatcher;
+import cz.hrebejk.sedi.util.MavenClasspath;
+import cz.hrebejk.sedi.util.Pager;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
