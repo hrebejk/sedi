@@ -8,17 +8,22 @@
  */
 package cz.hrebejk.sedi.analysis;
 
+import com.sun.source.tree.ImportTree;
+import com.sun.source.util.SourcePositions;
 import cz.hrebejk.sedi.compilation.CompilationUnitInfo;
 import org.eclipse.jgit.diff.DiffEntry;
 
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Hashes the old and new versions of the changed files, finds the renames among them and pairs their
- * members into {@link ApiChanges}.
+ * members into {@link ApiChanges}, classifying every change by its {@link ChangeLevel}.
  */
 final class ApiDiffAnalyzer {
 
@@ -62,11 +67,14 @@ final class ApiDiffAnalyzer {
             CompilationUnitInfo newUnit = newUnits.get(i);
             ElementInfo newRoot = root(newUnit, renames);
             Versions v = versions(diff, oldRoots.get(i), newRoot);
+            Sources sources = new Sources(oldUnit, newUnit);
             ApiChanges primary = v.oldPrimary() == null ? null
-                    : changes(v.oldPrimary(), v.newPrimary(), v.newPrimary().getName());
+                    : changes(v.oldPrimary(), v.newPrimary(), v.newPrimary().getName(),
+                    Visibility.isExposed(v.newPrimary(), true, false), sources);
             files.add(new FileAnalysis(diff, oldUnit, newUnit, oldRoots.get(i), newRoot, v.oldPrimary(),
                     v.newPrimary(), className(oldUnit, diff.getOldPath()), className(newUnit, diff.getNewPath()),
-                    packageName(oldUnit), packageName(newUnit), primary, changes(v.oldRoot(), v.newRoot(), "")));
+                    packageName(oldUnit), packageName(newUnit), primary,
+                    changes(v.oldRoot(), v.newRoot(), "", true, sources), importChanges(oldUnit, newUnit)));
         }
         return new DiffAnalysis(files, renames);
     }
@@ -84,14 +92,120 @@ final class ApiDiffAnalyzer {
         }
     }
 
-    /** Pairs the members of two versions of a container, then descends into the types present in both. */
-    private static ApiChanges changes(ElementInfo oldContainer, ElementInfo newContainer, String typeName) {
-        List<ElementPair> pairs = MemberMatcher.match(oldContainer, newContainer);
-        List<ApiChanges> nested = new ArrayList<>();
-        for (ElementPair type : MemberMatcher.nestedTypes(oldContainer, newContainer, pairs)) {
-            nested.add(changes(type.oldElement(), type.newElement(), type.newElement().getName()));
+    /** The two compilation units, to compare the source text of the members. */
+    private record Sources(CompilationUnitInfo oldUnit, CompilationUnitInfo newUnit) {
+
+        /** The source text of the element, empty if it is not known. */
+        private static String text(CompilationUnitInfo unit, ElementInfo element) {
+            if (unit == null || element.getOriginalTree() == null) {
+                return "";
+            }
+            SourcePositions positions = unit.trees().getSourcePositions();
+            long start = positions.getStartPosition(unit.compilationUnit(), element.getOriginalTree());
+            long end = positions.getEndPosition(unit.compilationUnit(), element.getOriginalTree());
+            if (start < 0 || end < start) {
+                return "";
+            }
+            try {
+                return unit.compilationUnit().getSourceFile().getCharContent(true)
+                        .subSequence((int) start, (int) end).toString();
+            } catch (IOException e) {
+                return "";
+            }
         }
-        return new ApiChanges(typeName, pairs, nested);
+
+        boolean sameText(ElementPair pair) {
+            return text(oldUnit, pair.oldElement()).equals(text(newUnit, pair.newElement()));
+        }
+
+        /** An implementation change of the pair, with the details of what changed in the body. */
+        MemberChange implementation(ElementPair pair, boolean publicApi) {
+            return new MemberChange(pair, ChangeLevel.IMPLEMENTATION, publicApi,
+                    BodyDiff.diff(pair.oldElement(), pair.newElement(), oldUnit, newUnit));
+        }
+    }
+
+    /**
+     * Pairs the members of two versions of a container and classifies their changes, then descends into the
+     * types present in both.
+     *
+     * @param exposed whether the container is a part of the public API
+     */
+    private static ApiChanges changes(ElementInfo oldContainer, ElementInfo newContainer, String typeName,
+                                      boolean exposed, Sources sources) {
+        MemberMatcher.Matches matches = MemberMatcher.matchAll(oldContainer, newContainer);
+        boolean inInterface = Visibility.isInterface(newContainer);
+        List<MemberChange> changes = new ArrayList<>();
+        for (ElementPair pair : matches.changed()) {
+            ElementInfo shown = pair.isRemoved() ? pair.oldElement() : pair.newElement();
+            boolean publicApi = Visibility.isExposed(shown, exposed, inInterface);
+            changes.add(new MemberChange(pair, ChangeLevel.API, publicApi));
+            if (!pair.isAdded() && !pair.isRemoved() && isCode(pair) && bodyChanged(pair)) {
+                changes.add(sources.implementation(pair, publicApi));
+            }
+        }
+        for (ElementPair pair : matches.unchanged()) {
+            ChangeLevel level = isCode(pair) ? bodyLevel(pair, sources) : null;
+            boolean publicApi = Visibility.isExposed(pair.newElement(), exposed, inInterface);
+            if (level == ChangeLevel.IMPLEMENTATION) {
+                changes.add(sources.implementation(pair, publicApi));
+            } else if (level != null) {
+                changes.add(new MemberChange(pair, level, publicApi));
+            }
+        }
+        ElementPair self = new ElementPair(oldContainer, newContainer, Set.of());
+        if (newContainer.getNodeType() == ElementInfo.NodeType.TYPE && bodyChanged(self)) {
+            // Initializer blocks belong to the type itself.
+            changes.add(new MemberChange(self, ChangeLevel.IMPLEMENTATION, exposed));
+        }
+
+        List<ApiChanges> nested = new ArrayList<>();
+        for (ElementPair type : MemberMatcher.nestedTypes(oldContainer, newContainer, matches.changed())) {
+            nested.add(changes(type.oldElement(), type.newElement(), type.newElement().getName(),
+                    Visibility.isExposed(type.newElement(), exposed, inInterface), sources));
+        }
+        return new ApiChanges(typeName, exposed, changes, nested);
+    }
+
+    /** Whether the element has a body of its own which can change: methods and fields, not types. */
+    private static boolean isCode(ElementPair pair) {
+        return pair.newElement().getNodeType() != ElementInfo.NodeType.TYPE;
+    }
+
+    private static boolean bodyChanged(ElementPair pair) {
+        return !pair.oldElement().getSha(ChangeCategory.BODY).equals(pair.newElement().getSha(ChangeCategory.BODY));
+    }
+
+    /**
+     * Classifies the change of a member whose signature did not change: real code changes are implementation
+     * changes; what is left after undoing the renames, such as renamed locals, referred elements or whitespace,
+     * is cosmetic.
+     *
+     * @return the level, {@code null} if the member did not change at all
+     */
+    private static ChangeLevel bodyLevel(ElementPair pair, Sources sources) {
+        if (bodyChanged(pair)) {
+            return ChangeLevel.IMPLEMENTATION;
+        }
+        boolean sameTree = pair.oldElement().getSha(ChangeCategory.FULL).equals(pair.newElement().getSha(ChangeCategory.FULL));
+        return !sameTree || !sources.sameText(pair) ? ChangeLevel.COSMETIC : null;
+    }
+
+    private static ImportChanges importChanges(CompilationUnitInfo oldUnit, CompilationUnitInfo newUnit) {
+        Set<String> oldImports = imports(oldUnit);
+        Set<String> newImports = imports(newUnit);
+        return new ImportChanges(newImports.stream().filter(i -> !oldImports.contains(i)).toList(),
+                oldImports.stream().filter(i -> !newImports.contains(i)).toList());
+    }
+
+    private static Set<String> imports(CompilationUnitInfo unit) {
+        Set<String> result = new LinkedHashSet<>();
+        if (unit != null) {
+            for (ImportTree i : unit.compilationUnit().getImports()) {
+                result.add((i.isStatic() ? "static " : "") + i.getQualifiedIdentifier());
+            }
+        }
+        return result;
     }
 
     private static Versions versions(DiffEntry diff, ElementInfo oldRoot, ElementInfo newRoot) {

@@ -175,7 +175,8 @@ public final class SignatureDiffPrinter {
         return join(out, " ");
     }
 
-    private String strike(String text) {
+    /** The text struck through. */
+    String strike(String text) {
         return ansi ? "\u001b[9m" + text + "\u001b[29m" : "~~" + text + "~~";
     }
 

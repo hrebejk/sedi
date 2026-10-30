@@ -113,6 +113,12 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
         if (initializer) {
             bodyDepth++;
         }
+        // The nodes of bodies of methods and fields are kept with their hashes, to diff the bodies.
+        boolean node = bodyDepth > 0 && (current.getNodeType() == ElementInfo.NodeType.METHOD
+                || current.getNodeType() == ElementInfo.NodeType.FIELD);
+        if (node) {
+            current.openNode(new TreePath(getCurrentPath(), tree));
+        }
         try {
             updateAttribute(current, "KIND:" + tree.getKind());
             String identity = identity(tree);
@@ -123,6 +129,9 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
             updateAttribute(current, "END:" + tree.getKind());
             return result;
         } finally {
+            if (node) {
+                current.closeNode();
+            }
             if (initializer) {
                 bodyDepth--;
             }
@@ -353,7 +362,7 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
                 }
             }
             for (ChangeCategory category : ChangeCategory.values()) {
-                if (category == ChangeCategory.WITHOUT_RENAMES && !isLocalOrParam && name != null) {
+                if (category.undoesRenames() && !isLocalOrParam && name != null) {
                     category.onAttribute(category, current, "KIND:" + node.getKind(), region());
                     category.onAttribute(category, current,
                             "IDENTIFIER:" + oldName(trees.getElement(getCurrentPath()), name.toString()), region());
@@ -427,7 +436,7 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
     private void updateAttribute(ElementInfo node, String attribute, String withoutRenames) {
         for (ChangeCategory category : ChangeCategory.values()) {
             String text = attribute;
-            if (category == ChangeCategory.WITHOUT_RENAMES) {
+            if (category.undoesRenames()) {
                 text = withoutRenames != null ? withoutRenames
                         : attribute.startsWith("LITERAL:") ? attribute : renames.undoTypeNames(attribute);
             }

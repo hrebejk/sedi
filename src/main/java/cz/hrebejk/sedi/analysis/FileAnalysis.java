@@ -27,6 +27,7 @@ import org.eclipse.jgit.diff.DiffEntry;
  * @param newPackage     package of the new version, empty if none
  * @param primaryChanges changes of the members of the renamed top level type, {@code null} if there is none
  * @param rootChanges    changes of the top level types, the renamed one excluded
+ * @param importChanges  the added and removed imports
  */
 public record FileAnalysis(
         DiffEntry diff,
@@ -41,7 +42,8 @@ public record FileAnalysis(
         String oldPackage,
         String newPackage,
         ApiChanges primaryChanges,
-        ApiChanges rootChanges
+        ApiChanges rootChanges,
+        ImportChanges importChanges
 ) {
 
     /**
@@ -63,5 +65,16 @@ public record FileAnalysis(
      */
     public boolean hasApiChanges() {
         return oldPrimary != null || !rootChanges.isEmpty();
+    }
+
+    /**
+     * Returns whether the file has a change of the level or a more important one.
+     *
+     * @param max the least important level to look at
+     * @return {@code true} if there is something to report
+     */
+    public boolean hasChanges(ChangeLevel max) {
+        return oldPrimary != null || !rootChanges.isEmpty(max)
+                || max == ChangeLevel.IMPORTS && !importChanges.isEmpty();
     }
 }

@@ -9,11 +9,14 @@
 package cz.hrebejk.sedi.analysis;
 
 import com.sun.source.tree.Tree;
+import com.sun.source.util.TreePath;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +35,9 @@ public class ElementInfo {
     private final Map<Facet, MessageDigest> facetDigests;
     private int paramCount;
     private String elementId;
+    /** The nodes of the body being scanned, innermost last. */
+    private final Deque<NodeInfo> openNodes = new ArrayDeque<>();
+    private NodeInfo body;
 
     /**
      * Enum defining the type of reduced AST node.
@@ -65,7 +71,7 @@ public class ElementInfo {
         this.children = new ArrayList<>();
     }
 
-    private static MessageDigest newDigest() {
+    static MessageDigest newDigest() {
         try {
             return MessageDigest.getInstance("SHA-256");
         } catch (NoSuchAlgorithmException e) {
@@ -156,7 +162,40 @@ public class ElementInfo {
             synchronized (md) {
                 md.update(attribute.getBytes(StandardCharsets.UTF_8));
             }
+            if (category == ChangeCategory.BODY) {
+                for (NodeInfo node : openNodes) {
+                    node.update(attribute, node == openNodes.getLast());
+                }
+            }
         }
+    }
+
+    /**
+     * Starts a node of the body; everything hashed into {@link ChangeCategory#BODY} until it is closed goes into it.
+     *
+     * @param path the path to the node
+     */
+    void openNode(TreePath path) {
+        openNodes.addLast(new NodeInfo(path));
+    }
+
+    /** Completes the innermost open node and attaches it to its parent, or makes it the body. */
+    void closeNode() {
+        NodeInfo node = openNodes.removeLast();
+        if (openNodes.isEmpty()) {
+            body = node;
+        } else {
+            openNodes.getLast().addChild(node);
+        }
+    }
+
+    /**
+     * Returns the hashed nodes of the method body or of the field initializer.
+     *
+     * @return the root node, {@code null} if the element has no body
+     */
+    NodeInfo getBody() {
+        return body;
     }
 
     /**
@@ -169,7 +208,7 @@ public class ElementInfo {
         return sha(messageDigests.get(category));
     }
 
-    private static String sha(MessageDigest md) {
+    static String sha(MessageDigest md) {
         synchronized (md) {
             try {
                 MessageDigest clone = (MessageDigest) md.clone();

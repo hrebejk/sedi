@@ -21,7 +21,8 @@ import java.util.function.Function;
 /**
  * Pairs the members of the old and new version of a type that are "the same element, changed".
  * <p>
- * Elements with an equal {@link ChangeCategory#SIGNATURE} hash are considered unchanged and dropped.
+ * Elements with an equal {@link ChangeCategory#SIGNATURE} hash have an unchanged signature; {@link #match}
+ * drops them, {@link #matchAll} returns them separately.
  * The remaining elements are paired in passes of decreasing confidence:
  * <ol>
  *   <li>equal {@link ChangeCategory#IGNORE_LOCAL_NAMES} hash (only names of locals and parameters differ),</li>
@@ -42,6 +43,15 @@ final class MemberMatcher {
     }
 
     /**
+     * The members of two versions of a type.
+     *
+     * @param changed   pairs of members with a changed signature, removed and added members
+     * @param unchanged pairs of members with an unchanged signature, whose bodies can still differ
+     */
+    record Matches(List<ElementPair> changed, List<ElementPair> unchanged) {
+    }
+
+    /**
      * Pairs the children of two versions of a type.
      *
      * @param oldType the old version of the type
@@ -49,12 +59,24 @@ final class MemberMatcher {
      * @return pairs of changed, removed and added members; unchanged members are omitted
      */
     public static List<ElementPair> match(ElementInfo oldType, ElementInfo newType) {
+        return matchAll(oldType, newType).changed();
+    }
+
+    /**
+     * Pairs the children of two versions of a type, keeping the members whose signature did not change.
+     *
+     * @param oldType the old version of the type
+     * @param newType the new version of the type
+     * @return the changed and the unchanged pairs
+     */
+    static Matches matchAll(ElementInfo oldType, ElementInfo newType) {
         List<ElementInfo> oldRest = new ArrayList<>(oldType.getChildren());
         List<ElementInfo> newRest = new ArrayList<>(newType.getChildren());
         List<ElementPair> pairs = new ArrayList<>();
+        List<ElementPair> unchanged = new ArrayList<>();
 
         // Pass 0: unchanged members.
-        pass(oldRest, newRest, null, e -> kind(e) + "|" + e.getSha(ChangeCategory.SIGNATURE), false, false);
+        pass(oldRest, newRest, unchanged, e -> kind(e) + "|" + e.getSha(ChangeCategory.SIGNATURE), false, false);
 
         // Pass 1: same code up to names of locals and parameters; the same element whatever else changed.
         pass(oldRest, newRest, pairs, e -> kind(e) + "|" + e.getSha(ChangeCategory.IGNORE_LOCAL_NAMES), false, false);
@@ -91,13 +113,13 @@ final class MemberMatcher {
         for (ElementInfo added : newRest) {
             pairs.add(new ElementPair(null, added, Set.of()));
         }
-        return pairs;
+        return new Matches(pairs, unchanged);
     }
 
     /**
      * One pairing pass. Matched elements are removed from both lists.
      *
-     * @param pairs            receives the matches; {@code null} to just drop matched (unchanged) elements
+     * @param pairs            receives the matches
      * @param key              pairing key, {@code null} result means the element does not take part
      * @param uniqueOnly       pair only if exactly one old and one new element share the key
      * @param preferParamCount among several candidates prefer one with the same parameter count
@@ -124,9 +146,7 @@ final class MemberMatcher {
             }
             usedOld.add(old);
             usedNew.add(match);
-            if (pairs != null) {
-                pairs.add(new ElementPair(old, match, changedFacets(old, match)));
-            }
+            pairs.add(new ElementPair(old, match, changedFacets(old, match)));
         }
         oldRest.removeIf(usedOld::contains);
         newRest.removeIf(usedNew::contains);

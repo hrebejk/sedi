@@ -32,12 +32,27 @@ public enum ChangeCategory implements HashCalculation {
     WITHOUT_RENAMES(new HashIgnoreLocalNames()),
 
     /** Only the signatures of elements; see {@link HashSignature}. */
-    SIGNATURE(new HashSignature());
+    SIGNATURE(new HashSignature()),
+
+    /**
+     * Only the bodies of elements, ignoring names of locals and parameters; like {@link #WITHOUT_RENAMES} it
+     * hashes the old names of renamed elements, so it differs between two versions only if the code really changed.
+     */
+    BODY(new HashBody());
 
     private final HashCalculation calculation;
 
     ChangeCategory(HashCalculation calculation) {
         this.calculation = calculation;
+    }
+
+    /**
+     * Returns whether the digest of this category contains the old names of renamed elements.
+     *
+     * @return {@code true} for {@link #WITHOUT_RENAMES} and {@link #BODY}
+     */
+    boolean undoesRenames() {
+        return this == WITHOUT_RENAMES || this == BODY;
     }
 
     @Override
