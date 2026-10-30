@@ -73,6 +73,22 @@ public class AstPrinterTest extends TestCase {
                 body("void m() { f(1); }\nvoid f(int... a) {}", "void m() { f(1, 2); }\nvoid f(int... a) {}"));
     }
 
+    /** Arguments replaced by expressions of another kind are struck through in place. */
+    public void testArgumentsOfOtherKind() throws Exception {
+        assertEquals(List.of("  boolean m() [impl]",
+                        "      return new java.util.ArrayList<String>(~~5~~ Integer.MAX_VALUE).add(~~\"a\"~~ String.valueOf(1));"),
+                body("boolean m() { return new java.util.ArrayList<String>(5).add(\"a\"); }",
+                        "boolean m() { return new java.util.ArrayList<String>(Integer.MAX_VALUE).add(String.valueOf(1)); }"));
+    }
+
+    /** A big expression replaced by one of another kind replaces the statement. */
+    public void testBigExpressionOfOtherKind() throws Exception {
+        assertEquals(List.of("  int m( boolean b, int x ) [impl]", "      - return b ? x + 1 : x - 1;",
+                        "      + return Math.abs(x);"),
+                body("int m(boolean b, int x) { return b ? x + 1 : x - 1; }",
+                        "int m(boolean b, int x) { return Math.abs(x); }"));
+    }
+
     public void testRenamedLocalsAndMethodsHaveNoDetails() throws Exception {
         assertTrue(body("int m() { int a = h(); return a; }\nint h() { return 1; }",
                 "int m() { int b = g(); return b; }\nint g() { return 1; }").stream().noneMatch(l -> l.contains("[impl]")));

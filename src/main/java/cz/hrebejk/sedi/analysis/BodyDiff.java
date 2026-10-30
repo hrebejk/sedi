@@ -9,6 +9,7 @@
 package cz.hrebejk.sedi.analysis;
 
 import com.sun.source.tree.BlockTree;
+import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.StatementTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.util.SourcePositions;
@@ -25,12 +26,16 @@ import java.util.Map;
  * diffed in turn, the rest were added or removed.
  * <p>
  * A simple statement (or an expression in the header of a compound statement) is a unit: it is shown with its
- * changes inline only if they are at most {@value #MAX_INLINE_EDITS} edited leaves, else it is replaced as a whole.
+ * changes inline only if they are at most {@value #MAX_INLINE_EDITS} edited leaves (or small expressions replaced by
+ * ones of another kind), else it is replaced as a whole. Between aligned children, as many expressions as before are
+ * paired by their position.
  * Synthetic trees without a place in the source, such as an implicit {@code super()}, take no part.
  */
 final class BodyDiff {
 
     private static final int MAX_INLINE_EDITS = 2;
+    /** The most nodes an expression replaced by one of another kind may have to be struck through inline. */
+    private static final int MAX_STRUCK_NODES = 5;
     private static final BodyChanges.Mark CHANGED = new BodyChanges.Changed();
 
     private final Map<Tree, BodyChanges.Mark> marks = new IdentityHashMap<>();
@@ -72,8 +77,11 @@ final class BodyDiff {
             return;
         }
         if (oldNode.getTree().getKind() != newNode.getTree().getKind()) {
-            marks.put(newNode.getTree(), isLeaf(oldNode) && isLeaf(newNode) ? new BodyChanges.Edited(oldNode.getTree())
-                    : new BodyChanges.Replaced(oldNode.getTree()));
+            // A small expression is struck through as a whole, e.g. a literal replaced by a field access.
+            boolean small = isExpression(oldNode.getTree()) && isExpression(newNode.getTree())
+                    && size(oldNode) <= MAX_STRUCK_NODES && size(newNode) <= MAX_STRUCK_NODES;
+            marks.put(newNode.getTree(), small || isLeaf(oldNode) && isLeaf(newNode)
+                    ? new BodyChanges.Edited(oldNode.getTree()) : new BodyChanges.Replaced(oldNode.getTree()));
         } else if (unit) {
             BodyDiff inner = new BodyDiff(oldUnit, newUnit);
             inner.node(oldNode, newNode);
@@ -135,6 +143,14 @@ final class BodyDiff {
      * @param next   the new child following the segment, {@code null} at the end of the parent
      */
     private void segment(Tree parent, List<NodeInfo> olds, List<NodeInfo> news, Tree next) {
+        if (olds.size() == news.size() && olds.stream().allMatch(c -> isExpression(c.getTree()))
+                && news.stream().allMatch(c -> isExpression(c.getTree()))) {
+            // As many expressions as before, like the arguments of a call: each replaces the one at its place.
+            for (int i = 0; i < news.size(); i++) {
+                pair(olds.get(i), news.get(i), isUnit(parent, news.get(i).getTree()));
+            }
+            return;
+        }
         int o = 0;
         int lastPaired = -1;
         for (int n = 0; n < news.size(); n++) {
@@ -183,6 +199,19 @@ final class BodyDiff {
     /** Nodes of the same kind, or two leaves, such as an identifier replaced by a literal. */
     private static boolean isPairable(NodeInfo oldNode, NodeInfo newNode) {
         return oldNode.getTree().getKind() == newNode.getTree().getKind() || isLeaf(oldNode) && isLeaf(newNode);
+    }
+
+    /** The number of nodes of the subtree. */
+    private static int size(NodeInfo node) {
+        int size = 1;
+        for (NodeInfo child : node.getChildren()) {
+            size += size(child);
+        }
+        return size;
+    }
+
+    private static boolean isExpression(Tree tree) {
+        return tree instanceof ExpressionTree;
     }
 
     private static boolean isLeaf(NodeInfo node) {
