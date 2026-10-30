@@ -6,17 +6,19 @@
  * direction of the author. Provided "as is", without warranty of any kind; use
  * at your own risk. See the LICENSE file for details.
  */
-package cz.hrebejk.sedi.analysis;
+package cz.hrebejk.sedi.report;
 
 import cz.hrebejk.sedi.GitTestHelper;
+import cz.hrebejk.sedi.analysis.DiffAstAnalyzer;
+import cz.hrebejk.sedi.analysis.FileAnalysis;
 import junit.framework.TestCase;
 
 import java.util.List;
 
 /**
- * Unit tests for {@link ApiDiffReporter}.
+ * Unit tests for {@link Reporter}.
  */
-public class ApiDiffReporterTest extends TestCase {
+public class ReporterTest extends TestCase {
 
     /**
      * Tests that member and nested type changes are reported and that body changes are not.
@@ -28,14 +30,14 @@ public class ApiDiffReporterTest extends TestCase {
             helper.writeFile("Foo.java", "public class Foo {\n  long a;\n  void body() { int z = 1; }\n  static class In { void x() {} void y() {} }\n}\n");
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                List<FileDiffAnalysis> analyses = analyzer.analyzeChanges();
+                List<FileAnalysis> analyses = analyzer.analyzeChanges().files();
                 assertEquals(1, analyses.size());
                 assertEquals(List.of(
                                 "  Foo",
                                 "      ~~int~~ long a",
                                 "    In",
                                 "      + void y()"),
-                        new ApiDiffReporter(false).report(analyses.get(0)));
+                        new Reporter(false).report(analyses.get(0)));
             }
         }
     }
@@ -50,7 +52,7 @@ public class ApiDiffReporterTest extends TestCase {
             helper.writeFile("Foo.java", "public class Foo {\n  void body() { int z = 1; }\n}\n");
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                assertTrue(new ApiDiffReporter(false).report(analyzer.analyzeChanges().get(0)).isEmpty());
+                assertTrue(new Reporter(false).report(analyzer.analyzeChanges().files().get(0)).isEmpty());
             }
         }
     }
@@ -69,13 +71,13 @@ public class ApiDiffReporterTest extends TestCase {
             helper.commit("rename");
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                List<FileDiffAnalysis> analyses = analyzer.analyzeCommit("HEAD", p -> p.endsWith(".java"));
+                List<FileAnalysis> analyses = analyzer.analyzeCommit("HEAD", p -> p.endsWith(".java")).files();
                 assertEquals(1, analyses.size());
                 assertEquals(org.eclipse.jgit.diff.DiffEntry.ChangeType.RENAME, analyses.get(0).diff().getChangeType());
                 assertEquals(List.of(
                                 "  public class ~~Foo~~ Bar",
                                 "      ~~int~~ long a"),
-                        new ApiDiffReporter(false).report(analyses.get(0)));
+                        new Reporter(false).report(analyses.get(0)));
             }
         }
     }
@@ -91,7 +93,7 @@ public class ApiDiffReporterTest extends TestCase {
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
                 assertEquals(List.of("  - class Gone", "  + class New"),
-                        new ApiDiffReporter(false).report(analyzer.analyzeChanges().get(0)));
+                        new Reporter(false).report(analyzer.analyzeChanges().files().get(0)));
             }
         }
     }
@@ -113,66 +115,11 @@ public class ApiDiffReporterTest extends TestCase {
             helper.commit("change");
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                ApiDiffReporter reporter = new ApiDiffReporter(false);
-                List<String> titles = analyzer.analyzeCommit("HEAD", p -> p.endsWith(".java")).stream()
+                Reporter reporter = new Reporter(false);
+                List<String> titles = analyzer.analyzeCommit("HEAD", p -> p.endsWith(".java")).files().stream()
                         .map(reporter::title).sorted().toList();
                 assertEquals(List.of("+ New n", "- Gone", "~~Foo~~ Bar ~~a~~ b"), titles);
             }
         }
-    }
-
-    private static final String BEFORE = "public class Foo {\n  int count;\n  enum Color { RED, GREEN }\n"
-            + "  static class Helper { void a() { } void b() { } }\n  String helper(String s) { return s; }\n"
-            + "  int use(int p) { int local = p + count; helper(\"count\"); return local; }\n}\n";
-    private static final String AFTER = "public class Foo {\n  int total;\n  enum Color { RED, GREEN }\n"
-            + "  static class Assistant { void a() { } void b() { } }\n  String assist(String s) { return s; }\n"
-            + "  int use(int q) { int sum = q + total; assist(\"count\"); return sum; }\n}\n";
-
-    /**
-     * Tests that renamed fields, methods and nested types are detected and reported.
-     */
-    public void testDetectsRenames() throws Exception {
-        try (GitTestHelper helper = new GitTestHelper()) {
-            helper.writeFile("Foo.java", BEFORE);
-            helper.commit("init");
-            helper.writeFile("Foo.java", AFTER);
-
-            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                List<FileDiffAnalysis> analyses = analyzer.analyzeChanges();
-                ApiDiffReporter reporter = new ApiDiffReporter(false);
-                Renames renames = reporter.detectRenames(analyses);
-                assertEquals("count", renames.oldName("Foo#total", "total"));
-                assertEquals("Helper", renames.oldName("Foo.Assistant", "Assistant"));
-                assertEquals("helper", renames.oldName("Foo#assist(java.lang.String)", "assist"));
-                assertEquals("use", renames.oldName("Foo#use(int)", "use"));
-            }
-        }
-    }
-
-    /**
-     * Tests that the WITHOUT_RENAMES hash of a method ignores renames of the elements it uses.
-     */
-    public void testWithoutRenamesHash() throws Exception {
-        try (GitTestHelper helper = new GitTestHelper()) {
-            helper.writeFile("Foo.java", BEFORE);
-            helper.commit("init");
-            helper.writeFile("Foo.java", AFTER);
-
-            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                FileDiffAnalysis a = analyzer.analyzeChanges().get(0);
-                Renames renames = new ApiDiffReporter(false).detectRenames(List.of(a));
-                ElementInfo oldUse = member(new ElementHashCalculator(a.oldUnit().trees()).calculate(a.oldUnit().compilationUnit()), "use");
-                ElementInfo plain = member(new ElementHashCalculator(a.newUnit().trees()).calculate(a.newUnit().compilationUnit()), "use");
-                ElementInfo mapped = member(new ElementHashCalculator(a.newUnit().trees(), renames).calculate(a.newUnit().compilationUnit()), "use");
-
-                assertFalse(oldUse.getSha(ChangeCategory.WITHOUT_RENAMES).equals(plain.getSha(ChangeCategory.WITHOUT_RENAMES)));
-                assertEquals(oldUse.getSha(ChangeCategory.WITHOUT_RENAMES), mapped.getSha(ChangeCategory.WITHOUT_RENAMES));
-            }
-        }
-    }
-
-    private static ElementInfo member(ElementInfo root, String name) {
-        ElementInfo type = root.getChildren().get(0);
-        return type.getChildren().stream().filter(c -> c.getName().equals(name)).findFirst().orElseThrow();
     }
 }

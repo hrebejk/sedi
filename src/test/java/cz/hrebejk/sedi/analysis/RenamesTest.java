@@ -29,7 +29,7 @@ public class RenamesTest extends TestCase {
         return "package p;\npublic class B {\n  int use(A a) { a." + call + "(); return a." + field + "; }\n}\n";
     }
 
-    private static ElementInfo use(FileDiffAnalysis analysis, boolean old, Renames renames) {
+    private static ElementInfo use(FileAnalysis analysis, boolean old, Renames renames) {
         ElementInfo root = old
                 ? new ElementHashCalculator(analysis.oldUnit().trees()).calculate(analysis.oldUnit().compilationUnit())
                 : new ElementHashCalculator(analysis.newUnit().trees(), renames).calculate(analysis.newUnit().compilationUnit());
@@ -37,7 +37,7 @@ public class RenamesTest extends TestCase {
                 .filter(c -> c.getName().equals("use")).findFirst().orElseThrow();
     }
 
-    private static FileDiffAnalysis fileNamed(List<FileDiffAnalysis> analyses, String name) {
+    private static FileAnalysis fileNamed(List<FileAnalysis> analyses, String name) {
         return analyses.stream().filter(a -> a.diff().getNewPath().endsWith(name)).findFirst().orElseThrow();
     }
 
@@ -57,9 +57,10 @@ public class RenamesTest extends TestCase {
             helper.writeFile("src/main/java/p/B.java", b("assist", "total"));
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                List<FileDiffAnalysis> analyses = analyzer.analyzeChanges();
-                Renames renames = new ApiDiffReporter(false).detectRenames(analyses);
-                FileDiffAnalysis b = fileNamed(analyses, "B.java");
+                DiffAnalysis analysis = analyzer.analyzeChanges();
+                List<FileAnalysis> analyses = analysis.files();
+                Renames renames = analysis.renames();
+                FileAnalysis b = fileNamed(analyses, "B.java");
                 ElementInfo oldUse = use(b, true, renames);
                 ElementInfo newUse = use(b, false, renames);
 
@@ -69,7 +70,7 @@ public class RenamesTest extends TestCase {
                 assertFalse(sha(oldUse, ChangeCategory.WITHOUT_RENAMES).equals(
                         sha(use(b, false, Renames.EMPTY), ChangeCategory.WITHOUT_RENAMES)));
                 // Nothing to report in B: the API did not change.
-                assertTrue(new ApiDiffReporter(false).report(b, renames).isEmpty());
+                assertTrue(new cz.hrebejk.sedi.report.Reporter(false).report(b).isEmpty());
             }
         }
     }
@@ -89,9 +90,10 @@ public class RenamesTest extends TestCase {
             helper.writeFile("src/main/java/p/B.java", newB);
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                List<FileDiffAnalysis> analyses = analyzer.analyzeChanges();
-                Renames renames = new ApiDiffReporter(false).detectRenames(analyses);
-                FileDiffAnalysis b = fileNamed(analyses, "B.java");
+                DiffAnalysis analysis = analyzer.analyzeChanges();
+                List<FileAnalysis> analyses = analysis.files();
+                Renames renames = analysis.renames();
+                FileAnalysis b = fileNamed(analyses, "B.java");
                 assertEquals("helper", renames.oldName("p.A#assist()", "assist"));
                 assertEquals("assist", renames.oldName("p.C#assist()", "assist"));
                 assertFalse(sha(use(b, true, renames), ChangeCategory.WITHOUT_RENAMES).equals(
@@ -111,7 +113,7 @@ public class RenamesTest extends TestCase {
             helper.writeFile("src/main/java/p/B.java", b("other", "count"));
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                FileDiffAnalysis b = analyzer.analyzeChanges().get(0);
+                FileAnalysis b = analyzer.analyzeChanges().files().get(0);
                 for (ChangeCategory category : List.of(ChangeCategory.FULL, ChangeCategory.IGNORE_LOCAL_NAMES,
                         ChangeCategory.WITHOUT_RENAMES)) {
                     assertFalse(category.name(), sha(use(b, true, Renames.EMPTY), category)
@@ -136,9 +138,10 @@ public class RenamesTest extends TestCase {
             Files.writeString(helper.getRepositoryPath().resolve("src/main/java/p/A.java"), "package p;\npublic class A { }\n");
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                List<FileDiffAnalysis> analyses = analyzer.analyzeCommit("HEAD", p -> p.endsWith(".java"));
-                Renames renames = new ApiDiffReporter(false).detectRenames(analyses);
-                FileDiffAnalysis b = fileNamed(analyses, "B.java");
+                DiffAnalysis analysis = analyzer.analyzeCommit("HEAD", p -> p.endsWith(".java"));
+                List<FileAnalysis> analyses = analysis.files();
+                Renames renames = analysis.renames();
+                FileAnalysis b = fileNamed(analyses, "B.java");
                 assertEquals(sha(use(b, true, renames), ChangeCategory.WITHOUT_RENAMES),
                         sha(use(b, false, renames), ChangeCategory.WITHOUT_RENAMES));
             }
@@ -161,10 +164,11 @@ public class RenamesTest extends TestCase {
             helper.writeFile("src/main/java/p/B.java", newB);
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                List<FileDiffAnalysis> analyses = analyzer.analyzeChanges();
-                Renames renames = new ApiDiffReporter(false).detectRenames(analyses);
+                DiffAnalysis analysis = analyzer.analyzeChanges();
+                List<FileAnalysis> analyses = analysis.files();
+                Renames renames = analysis.renames();
                 assertEquals("In", renames.oldName("p.A.Out", "Out"));
-                FileDiffAnalysis b = fileNamed(analyses, "B.java");
+                FileAnalysis b = fileNamed(analyses, "B.java");
                 assertEquals(sha(use(b, true, renames), ChangeCategory.WITHOUT_RENAMES),
                         sha(use(b, false, renames), ChangeCategory.WITHOUT_RENAMES));
             }

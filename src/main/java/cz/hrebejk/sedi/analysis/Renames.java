@@ -21,7 +21,7 @@ import java.util.regex.Pattern;
 public final class Renames {
 
     /** No renames. */
-    public static final Renames EMPTY = new Renames();
+    static final Renames EMPTY = new Renames();
 
     /** Id in the new version to the old simple name, for renamed types, fields and methods. */
     private final Map<String, String> oldNames = new HashMap<>();
@@ -36,7 +36,7 @@ public final class Renames {
      * @param oldElement the old version
      * @param newElement the new version
      */
-    public void add(ElementInfo oldElement, ElementInfo newElement) {
+    void add(ElementInfo oldElement, ElementInfo newElement) {
         String oldId = oldElement.getElementId();
         String newId = newElement.getElementId();
         if (oldId == null || newId == null) {

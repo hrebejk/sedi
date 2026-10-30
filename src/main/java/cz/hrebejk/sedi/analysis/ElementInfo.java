@@ -50,7 +50,7 @@ public class ElementInfo {
      * @param name         name of the entity
      * @param nodeType     type of node
      */
-    public ElementInfo(Tree originalTree, String name, NodeType nodeType) {
+    ElementInfo(Tree originalTree, String name, NodeType nodeType) {
         this.originalTree = originalTree;
         this.name = name;
         this.nodeType = nodeType;
@@ -79,7 +79,7 @@ public class ElementInfo {
      * @param facet     the facet
      * @param attribute attribute string
      */
-    public void updateFacet(Facet facet, String attribute) {
+    void updateFacet(Facet facet, String attribute) {
         if (attribute != null) {
             MessageDigest md = facetDigests.get(facet);
             synchronized (md) {
@@ -113,7 +113,7 @@ public class ElementInfo {
      *
      * @param paramCount parameter count
      */
-    public void setParamCount(int paramCount) {
+    void setParamCount(int paramCount) {
         this.paramCount = paramCount;
     }
 
@@ -140,7 +140,7 @@ public class ElementInfo {
      *
      * @param child child ReducedAstNode
      */
-    public void addChild(ElementInfo child) {
+    void addChild(ElementInfo child) {
         this.children.add(child);
     }
 
@@ -150,7 +150,7 @@ public class ElementInfo {
      * @param category      the category
      * @param attribute     attribute string
      */
-    public void updateDigest(ChangeCategory category, String attribute) {
+    void updateDigest(ChangeCategory category, String attribute) {
         if (attribute != null) {
             MessageDigest md = messageDigests.get(category);
             synchronized (md) {
@@ -226,7 +226,7 @@ public class ElementInfo {
      *
      * @return map of MessageDigests
      */
-    public Map<ChangeCategory, MessageDigest> getMessageDigests() {
+    Map<ChangeCategory, MessageDigest> getMessageDigests() {
         return messageDigests;
     }
 

@@ -6,11 +6,11 @@
  * direction of the author. Provided "as is", without warranty of any kind; use
  * at your own risk. See the LICENSE file for details.
  */
-package cz.hrebejk.sedi.analysis;
+package cz.hrebejk.sedi.report;
 
 import cz.hrebejk.sedi.GitTestHelper;
-import cz.hrebejk.sedi.compilation.AstLoader;
-import cz.hrebejk.sedi.compilation.CompilationUnitInfo;
+import cz.hrebejk.sedi.analysis.DiffAstAnalyzer;
+import cz.hrebejk.sedi.analysis.ElementPair;
 import junit.framework.TestCase;
 
 import java.util.List;
@@ -20,22 +20,24 @@ import java.util.List;
  */
 public class SignatureDiffPrinterTest extends TestCase {
 
-    private final AstLoader loader = new AstLoader();
+    private List<ElementPair> pairs(String oldMembers, String newMembers) throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("T.java", source(oldMembers));
+            helper.commit("init");
+            helper.writeFile("T.java", source(newMembers));
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                return analyzer.analyzeChanges().files().get(0).rootChanges().nested().get(0).pairs();
+            }
+        }
+    }
 
-    private ElementInfo type(GitTestHelper helper, String members) throws Exception {
-        String src = "package p;\n\npublic class T {\n" + members + "\n}\n";
-        List<CompilationUnitInfo> analyses = TestSources.load(loader, List.of(helper.writeFile("T.java", src)));
-        return new ElementHashCalculator(analyses.get(0).trees())
-                .calculate(analyses.get(0).compilationUnit()).getChildren().get(0);
+    private static String source(String members) {
+        return "public class T {\n" + members + "\n}\n";
     }
 
     private List<String> print(String oldMembers, String newMembers) throws Exception {
-        try (GitTestHelper helper = new GitTestHelper()) {
-            ElementInfo oldType = type(helper, oldMembers);
-            ElementInfo newType = type(helper, newMembers);
-            SignatureDiffPrinter printer = new SignatureDiffPrinter(false);
-            return MemberMatcher.match(oldType, newType).stream().map(p -> printer.format(p, "T")).toList();
-        }
+        SignatureDiffPrinter printer = new SignatureDiffPrinter(false);
+        return pairs(oldMembers, newMembers).stream().map(p -> printer.format(p, "T")).toList();
     }
 
     public void testParameterTypeAndNameChange() throws Exception {
@@ -68,11 +70,7 @@ public class SignatureDiffPrinterTest extends TestCase {
     }
 
     public void testAnsiStrike() throws Exception {
-        try (GitTestHelper helper = new GitTestHelper()) {
-            ElementInfo o = type(helper, "int f;");
-            ElementInfo n = type(helper, "long f;");
-            ElementPair pair = MemberMatcher.match(o, n).get(0);
-            assertEquals("  \u001b[9mint\u001b[29m long f", new SignatureDiffPrinter(true).format(pair, "T"));
-        }
+        ElementPair pair = pairs("int f;", "long f;").get(0);
+        assertEquals("  \u001b[9mint\u001b[29m long f", new SignatureDiffPrinter(true).format(pair, "T"));
     }
 }

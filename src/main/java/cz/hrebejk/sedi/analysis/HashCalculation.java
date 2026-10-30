@@ -16,7 +16,7 @@ import com.sun.source.tree.VariableTree;
  * {@link ElementInfo} for each kind of AST event seen by {@link ElementHashCalculator}.
  * Implementations update the digest of their own category on the given node.
  */
-public interface HashCalculation {
+interface HashCalculation {
 
     /** Part of a member the scanner is currently in. */
     enum Region {

@@ -30,12 +30,12 @@ public class DiffAstAnalyzerTest extends TestCase {
             helper.writeFile("Calculator.java", "package cz.hrebejk.sedi;\n\npublic class Calculator {\n    public int add(int a, int b) { return a + b + 1; }\n}\n");
 
             DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath());
-            List<FileDiffAnalysis> analyses = analyzer.analyzeChanges();
+            List<FileAnalysis> analyses = analyzer.analyzeChanges().files();
 
             assertNotNull(analyses);
             assertEquals(1, analyses.size());
 
-            FileDiffAnalysis analysis = analyses.get(0);
+            FileAnalysis analysis = analyses.get(0);
             assertNotNull(analysis.diff());
             assertNotNull(analysis.oldUnit().compilationUnit());
             assertNotNull(analysis.newUnit().compilationUnit());

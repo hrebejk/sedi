@@ -12,7 +12,7 @@ package cz.hrebejk.sedi.analysis;
  * Context passed along the AST scan to track the current ReducedAstNode being built
  * and update its message digests.
  */
-public class HashContext {
+class HashContext {
 
     private ElementInfo currentNode;
 

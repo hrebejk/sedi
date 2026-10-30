@@ -79,13 +79,13 @@ public class DiffAstAnalyzer implements AutoCloseable {
     }
 
     /**
-     * Analyzes all changed files in the repository, returning a list of FileDiffAnalysis records.
+     * Analyzes all changed files in the repository.
      *
-     * @return list of FileDiffAnalysis containing old/new files, diffs, and ASTs
+     * @return the analysis of the diff: hashes, renames and API changes of every changed file
      * @throws IOException     if an I/O error occurs
      * @throws GitAPIException if a Git API error occurs
      */
-    public List<FileDiffAnalysis> analyzeChanges() throws IOException, GitAPIException {
+    public DiffAnalysis analyzeChanges() throws IOException, GitAPIException {
         return analyzeChanges(path -> true);
     }
 
@@ -94,11 +94,11 @@ public class DiffAstAnalyzer implements AutoCloseable {
      *
      * @param filter accepts repository relative paths ({@code /} separated); a change is analyzed if
      *               either its old or new path is accepted
-     * @return list of FileDiffAnalysis containing old/new files, diffs, and ASTs
+     * @return the analysis of the diff: hashes, renames and API changes of every changed file
      * @throws IOException     if an I/O error occurs
      * @throws GitAPIException if a Git API error occurs
      */
-    public List<FileDiffAnalysis> analyzeChanges(Predicate<String> filter) throws IOException, GitAPIException {
+    public DiffAnalysis analyzeChanges(Predicate<String> filter) throws IOException, GitAPIException {
         GitInspector inspector = new GitInspector(repositoryPath);
         GitInspector.Range range = inspector.resolveWorkingCopy();
         return analyze(inspector.getChanges(range), filter, range);
@@ -111,11 +111,11 @@ public class DiffAstAnalyzer implements AutoCloseable {
      *
      * @param revision any revision git understands: SHA, abbreviated SHA, tag, branch, {@code HEAD~2}, ...
      * @param filter   accepts repository relative paths ({@code /} separated)
-     * @return list of FileDiffAnalysis containing old/new files, diffs, and ASTs
+     * @return the analysis of the diff: hashes, renames and API changes of every changed file
      * @throws IOException              if an I/O error occurs
      * @throws IllegalArgumentException if the revision cannot be resolved to a commit
      */
-    public List<FileDiffAnalysis> analyzeCommit(String revision, Predicate<String> filter) throws IOException {
+    public DiffAnalysis analyzeCommit(String revision, Predicate<String> filter) throws IOException {
         GitInspector inspector = new GitInspector(repositoryPath);
         GitInspector.Range range = inspector.resolveRange(revision);
         return analyze(inspector.getChanges(revision), filter, range);
@@ -129,8 +129,8 @@ public class DiffAstAnalyzer implements AutoCloseable {
     }
 
     /** @param range the compared versions; a {@code null} new commit stands for the working copy */
-    private List<FileDiffAnalysis> analyze(List<DiffEntry> allDiffs, Predicate<String> filter,
-                                           GitInspector.Range range) throws IOException {
+    private DiffAnalysis analyze(List<DiffEntry> allDiffs, Predicate<String> filter,
+                                 GitInspector.Range range) throws IOException {
         List<DiffEntry> diffs = allDiffs.stream()
                 .filter(d -> filter.test(d.getOldPath()) || filter.test(d.getNewPath()))
                 .toList();
@@ -154,11 +154,7 @@ public class DiffAstAnalyzer implements AutoCloseable {
         List<CompilationUnitInfo> oldInfos = load(oldProviders, oldPaths);
         List<CompilationUnitInfo> newInfos = load(newProviders, newPaths);
 
-        List<FileDiffAnalysis> results = new ArrayList<>();
-        for (int i = 0; i < diffs.size(); i++) {
-            results.add(new FileDiffAnalysis(diffs.get(i), oldInfos.get(i), newInfos.get(i)));
-        }
-        return results;
+        return ApiDiffAnalyzer.analyze(diffs, oldInfos, newInfos);
     }
 
     /** Loads the files in a single compilation; the result has a {@code null} for every {@code null} path. */

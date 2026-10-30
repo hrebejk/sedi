@@ -8,11 +8,9 @@
  */
 package cz.hrebejk.sedi;
 
-import cz.hrebejk.sedi.analysis.ApiDiffReporter;
 import cz.hrebejk.sedi.analysis.DiffAstAnalyzer;
-import cz.hrebejk.sedi.analysis.FileDiffAnalysis;
-import cz.hrebejk.sedi.analysis.Renames;
 import cz.hrebejk.sedi.compilation.AstLoader;
+import cz.hrebejk.sedi.report.Reporter;
 import cz.hrebejk.sedi.util.DirectoryWatcher;
 import cz.hrebejk.sedi.util.MavenClasspath;
 import cz.hrebejk.sedi.util.Pager;
@@ -26,7 +24,6 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Callable;
@@ -80,7 +77,7 @@ public class Main implements Callable<Integer> {
 
         Console console = System.console();
         boolean interactive = console != null && console.isTerminal();
-        ApiDiffReporter reporter = new ApiDiffReporter(interactive);
+        Reporter reporter = new Reporter(interactive);
         if (commit != null) {
             return reportCommit(reporter);
         }
@@ -107,10 +104,10 @@ public class Main implements Callable<Integer> {
      *
      * @return {@code false} if the user asked to quit
      */
-    private boolean report(ApiDiffReporter reporter, Pager pager, Predicate<String> filter) {
+    private boolean report(Reporter reporter, Pager pager, Predicate<String> filter) {
         List<String> lines;
         try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader)) {
-            lines = format(reporter, analyzer.analyzeChanges(filter));
+            lines = reporter.report(analyzer.analyzeChanges(filter));
         } catch (IOException | GitAPIException e) {
             System.err.println("Cannot analyze changes: " + e.getMessage());
             return true;
@@ -123,26 +120,13 @@ public class Main implements Callable<Integer> {
     }
 
     /** Prints the API changes of the selected commit and returns the process exit code. */
-    private int reportCommit(ApiDiffReporter reporter) {
+    private int reportCommit(Reporter reporter) {
         try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader)) {
-            format(reporter, analyzer.analyzeCommit(commit, path -> path.endsWith(".java"))).forEach(System.out::println);
+            reporter.report(analyzer.analyzeCommit(commit, path -> path.endsWith(".java"))).forEach(System.out::println);
             return 0;
         } catch (IOException | IllegalArgumentException e) {
             System.err.println("Cannot analyze commit: " + e.getMessage());
             return 1;
         }
-    }
-
-    private static List<String> format(ApiDiffReporter reporter, List<FileDiffAnalysis> analyses) {
-        List<String> result = new ArrayList<>();
-        Renames renames = reporter.detectRenames(analyses);
-        for (FileDiffAnalysis analysis : analyses) {
-            List<String> lines = reporter.report(analysis, renames);
-            if (!lines.isEmpty() || ApiDiffReporter.isStructural(analysis)) {
-                result.add(reporter.title(analysis));
-                result.addAll(lines);
-            }
-        }
-        return result;
     }
 }

@@ -25,7 +25,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-public class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
+class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
 
     private final Trees trees;
     private final Renames renames;

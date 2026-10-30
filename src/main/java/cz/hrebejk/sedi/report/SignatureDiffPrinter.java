@@ -6,7 +6,10 @@
  * direction of the author. Provided "as is", without warranty of any kind; use
  * at your own risk. See the LICENSE file for details.
  */
-package cz.hrebejk.sedi.analysis;
+package cz.hrebejk.sedi.report;
+
+import cz.hrebejk.sedi.analysis.ElementInfo;
+import cz.hrebejk.sedi.analysis.ElementPair;
 
 import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.ClassTree;

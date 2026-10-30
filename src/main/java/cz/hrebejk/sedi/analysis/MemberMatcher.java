@@ -34,7 +34,7 @@ import java.util.function.Function;
  * Whatever is left is reported as removed or added. Elements of different kinds never pair, and
  * constructors pair only with constructors.
  */
-public final class MemberMatcher {
+final class MemberMatcher {
 
     private static final String CONSTRUCTOR_NAME = "<init>";
 
