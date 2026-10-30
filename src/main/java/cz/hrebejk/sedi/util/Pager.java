@@ -83,20 +83,36 @@ public final class Pager {
     /** Reads a single key press without waiting for enter; returns -1 at the end of input. */
     private static int readKey() {
         String saved = null;
+        Thread restoreHook = null;
         try {
             saved = stty("-g").trim();
+            // Ctrl+C ends the JVM without running the finally block below, so restore from a hook too.
+            String settings = saved;
+            restoreHook = new Thread(() -> restore(settings));
+            Runtime.getRuntime().addShutdownHook(restoreHook);
             stty("-icanon", "-echo", "min", "1");
             return System.in.read();
         } catch (IOException e) {
             return -1;
         } finally {
             if (saved != null) {
+                restore(saved);
+            }
+            if (restoreHook != null) {
                 try {
-                    stty(saved);
-                } catch (IOException ignored) {
-                    // nothing more can be done to restore the terminal
+                    Runtime.getRuntime().removeShutdownHook(restoreHook);
+                } catch (IllegalStateException ignored) {
+                    // shutdown already in progress; the hook does the restoring
                 }
             }
+        }
+    }
+
+    private static void restore(String saved) {
+        try {
+            stty(saved);
+        } catch (IOException ignored) {
+            // nothing more can be done to restore the terminal
         }
     }
 
