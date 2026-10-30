@@ -205,7 +205,7 @@ final class AstPrinter {
                 case null, default -> null;
             };
             if (old != null) {
-                append(theme.strike(plain(old, oldSource)) + " " + plain(tree, source));
+                append(theme.replace(plain(old, oldSource), plain(tree, source)));
                 return;
             }
         }

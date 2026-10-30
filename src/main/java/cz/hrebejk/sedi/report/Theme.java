@@ -55,6 +55,8 @@ public final class Theme {
         COMMENT,
         /** Old text replaced by new one. */
         STRIKE,
+        /** New text following the struck through text it replaced. */
+        REPLACEMENT,
         /** Lines of added code. */
         ADDED,
         /** Lines of removed code. */
@@ -101,6 +103,7 @@ public final class Theme {
             Map.entry(Role.ANNOTATION, "#a6e3e9"),
             Map.entry(Role.COMMENT, "#7f8796"),
             Map.entry(Role.STRIKE, "#8c93a3 strike"),
+            Map.entry(Role.REPLACEMENT, "underline"),
             Map.entry(Role.ADDED, "bg:#1e3a2a"),
             Map.entry(Role.REMOVED, "bg:#3f2226"),
             Map.entry(Role.ADDED_MARK, "bold bg:#2f8f55"),
@@ -267,6 +270,11 @@ public final class Theme {
     /** The old text, struck through. */
     String strike(String text) {
         return ansi ? style(Role.STRIKE, text) : "~~" + text + "~~";
+    }
+
+    /** The old text struck through, followed by the new text which replaced it. */
+    String replace(String oldText, String newText) {
+        return strike(oldText) + " " + style(Role.REPLACEMENT, newText);
     }
 
     /** A line of added ({@code added == true}) or removed code, starting with its {@code +} or {@code -}. */

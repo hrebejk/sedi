@@ -75,7 +75,7 @@ public class Main implements Callable<Integer> {
 
     @Option(names = "--theme", paramLabel = "<file>",
             description = "Properties file with the colors, keyed by role (keyword, type, method, string, number, "
-                    + "constant, annotation, comment, strike, added, removed, added_mark, removed_mark, declaration, heading, "
+                    + "constant, annotation, comment, strike, replacement, added, removed, added_mark, removed_mark, declaration, heading, "
                     + "title, package, tag, note), "
                     + "e.g. keyword=#82aaff bold, added=bg:#1e3a2a. Attributes: #rrggbb, bg:#rrggbb, bold, "
                     + "underline, strike, none (default: ~/.config/sedi/theme.properties if it exists).")

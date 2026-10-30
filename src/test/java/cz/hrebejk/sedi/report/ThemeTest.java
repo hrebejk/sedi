@@ -39,6 +39,12 @@ public class ThemeTest extends TestCase {
                 + E + "29m" + E + "24m" + E + "22m" + E + "49m" + E + "39m", style.apply("x"));
     }
 
+    public void testReplacementUnderlined() {
+        assertEquals(E + "9mold" + E + "29m " + E + "4mnew" + E + "24m",
+                only("strike", "strike", "replacement", "underline").replace("old", "new"));
+        assertEquals("~~old~~ new", Theme.PLAIN.replace("old", "new"));
+    }
+
     public void testNoneLeavesTextAsItIs() {
         assertEquals("x", Theme.Style.parse("none").apply("x"));
     }

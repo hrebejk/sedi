@@ -161,16 +161,16 @@ public final class SignatureDiffPrinter {
         if (oldValue.equals(newValue) || oldValue.isEmpty()) {
             return newValue;
         }
-        return newValue.isEmpty() ? strike(oldValue) : strike(oldValue) + " " + newValue;
+        return newValue.isEmpty() ? strike(oldValue) : theme.replace(oldValue, newValue);
     }
 
     /** Like {@link #slot}, the new name shown as a declaration. */
     private String declared(String oldName, String newName) {
         String name = theme.style(Theme.Role.DECLARATION, newName);
-        return oldName.equals(newName) || oldName.isEmpty() ? name : strike(oldName) + " " + name;
+        return oldName.equals(newName) || oldName.isEmpty() ? name : theme.replace(oldName, name);
     }
 
-    /** Removed tokens struck through, followed by all tokens of the new version. */
+    /** Removed tokens struck through, followed by all tokens of the new version, the added ones underlined. */
     private String tokens(List<String> oldTokens, List<String> newTokens) {
         List<String> out = new ArrayList<>();
         for (String t : oldTokens) {
@@ -178,7 +178,9 @@ public final class SignatureDiffPrinter {
                 out.add(strike(t));
             }
         }
-        out.addAll(newTokens);
+        for (String t : newTokens) {
+            out.add(oldTokens.contains(t) ? t : theme.style(Theme.Role.REPLACEMENT, t));
+        }
         return join(out, " ");
     }
 
