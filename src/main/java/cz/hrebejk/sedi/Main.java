@@ -13,6 +13,7 @@ import cz.hrebejk.sedi.analysis.DiffAstAnalyzer;
 import cz.hrebejk.sedi.compilation.AstLoader;
 import cz.hrebejk.sedi.report.ReportOptions;
 import cz.hrebejk.sedi.report.Reporter;
+import cz.hrebejk.sedi.report.Theme;
 import cz.hrebejk.sedi.util.DirectoryWatcher;
 import cz.hrebejk.sedi.util.MavenClasspath;
 import cz.hrebejk.sedi.util.Pager;
@@ -65,6 +66,21 @@ public class Main implements Callable<Integer> {
                     + ReportOptions.DEFAULT_BODY_LINES + ").")
     private int bodyLines = ReportOptions.DEFAULT_BODY_LINES;
 
+    @Option(names = "--color", paramLabel = "<when>", converter = ColorConverter.class,
+            description = "Colors: auto (when the output is a terminal), always or never (default: auto).")
+    private ColorMode color = ColorMode.AUTO;
+
+    /** When to color the output. */
+    private enum ColorMode { AUTO, ALWAYS, NEVER }
+
+    @Option(names = "--theme", paramLabel = "<file>",
+            description = "Properties file with the colors, keyed by role (keyword, type, method, string, number, "
+                    + "constant, annotation, comment, strike, added, removed, added_mark, removed_mark, declaration, heading, "
+                    + "title, package, tag, note), "
+                    + "e.g. keyword=#82aaff bold, added=bg:#1e3a2a. Attributes: #rrggbb, bg:#rrggbb, bold, "
+                    + "underline, strike, none (default: ~/.config/sedi/theme.properties if it exists).")
+    private Path themeFile;
+
     private List<Path> classpath = List.of();
 
     private AstLoader astLoader = new AstLoader();
@@ -91,6 +107,19 @@ public class Main implements Callable<Integer> {
                 case "type" -> ReportOptions.Grouping.BY_TYPE;
                 case "category" -> ReportOptions.Grouping.BY_CATEGORY;
                 default -> throw new CommandLine.TypeConversionException("expected type or category");
+            };
+        }
+    }
+
+    /** Reads the color modes: {@code auto}, {@code always} and {@code never}. */
+    private static final class ColorConverter implements CommandLine.ITypeConverter<ColorMode> {
+        @Override
+        public ColorMode convert(String value) {
+            return switch (value.toLowerCase()) {
+                case "auto" -> ColorMode.AUTO;
+                case "always" -> ColorMode.ALWAYS;
+                case "never" -> ColorMode.NEVER;
+                default -> throw new CommandLine.TypeConversionException("expected auto, always or never");
             };
         }
     }
@@ -122,7 +151,15 @@ public class Main implements Callable<Integer> {
 
         Console console = System.console();
         boolean interactive = console != null && console.isTerminal();
-        Reporter reporter = new Reporter(interactive, new ReportOptions(level, splitVisibility, grouping, bodyLines));
+        Theme theme;
+        try {
+            boolean colored = color == ColorMode.ALWAYS || color == ColorMode.AUTO && interactive;
+            theme = colored ? theme() : Theme.PLAIN;
+        } catch (IOException | IllegalArgumentException e) {
+            System.err.println("Cannot read the theme: " + e.getMessage());
+            return 1;
+        }
+        Reporter reporter = new Reporter(theme, new ReportOptions(level, splitVisibility, grouping, bodyLines));
         if (commit != null) {
             return reportCommit(reporter);
         }
@@ -142,6 +179,16 @@ public class Main implements Callable<Integer> {
             });
         }
         return 0;
+    }
+
+    /** The theme of {@code --theme}, or of the default file if there is one, or the default colors. */
+    private Theme theme() throws IOException {
+        Path file = themeFile;
+        if (file == null) {
+            Path home = Path.of(System.getProperty("user.home"), ".config", "sedi", "theme.properties");
+            file = Files.isRegularFile(home) ? home : null;
+        }
+        return file == null ? Theme.defaults() : Theme.load(file);
     }
 
     /**

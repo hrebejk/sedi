@@ -27,19 +27,20 @@ import java.util.stream.Collectors;
  * Renders the signature of an {@link ElementPair} as a single line in which every changed part
  * shows the old value struck through followed by the new value, for example
  * {@code public String method( ~~int~~ float ~~i~~ f )}.
- * Added elements are prefixed with {@code +}, removed elements with {@code -}.
+ * Added elements are prefixed with {@code +}, removed elements with {@code -}. The line is colored by a
+ * {@link Theme}.
  */
 public final class SignatureDiffPrinter {
 
-    private final boolean ansi;
+    private final Theme theme;
 
     /**
      * Creates a printer.
      *
-     * @param ansi {@code true} to strike through with ANSI escape codes, {@code false} to use {@code ~~old~~}
+     * @param theme the colors of the code; {@link Theme#PLAIN} strikes through with {@code ~~old~~}
      */
-    public SignatureDiffPrinter(boolean ansi) {
-        this.ansi = ansi;
+    public SignatureDiffPrinter(Theme theme) {
+        this.theme = theme;
     }
 
     /**
@@ -52,13 +53,13 @@ public final class SignatureDiffPrinter {
     public String format(ElementPair pair, String typeName) {
         if (pair.isAdded()) {
             Parts parts = Parts.of(pair.newElement(), typeName);
-            return "+ " + render(parts, parts);
+            return theme.changed(true, "+ " + theme.code(render(parts, parts)));
         }
         if (pair.isRemoved()) {
             Parts parts = Parts.of(pair.oldElement(), typeName);
-            return "- " + render(parts, parts);
+            return theme.changed(false, "- " + theme.code(render(parts, parts)));
         }
-        return "  " + render(Parts.of(pair.oldElement(), typeName), Parts.of(pair.newElement(), typeName));
+        return "  " + theme.code(render(Parts.of(pair.oldElement(), typeName), Parts.of(pair.newElement(), typeName)));
     }
 
     /** Textual pieces of one element's signature. */
@@ -119,7 +120,7 @@ public final class SignatureDiffPrinter {
             case METHOD -> {
                 out.add(slot(o.typeParams(), n.typeParams()));
                 out.add(slot(o.type(), n.type()));
-                out.add(slot(o.name(), n.name()) + "(" + params(o, n) + ")");
+                out.add(declared(o.name(), n.name()) + "(" + params(o, n) + ")");
                 String throwsPart = tokens(o.throwsList(), n.throwsList());
                 if (!throwsPart.isEmpty()) {
                     out.add("throws " + throwsPart);
@@ -127,11 +128,11 @@ public final class SignatureDiffPrinter {
             }
             case FIELD -> {
                 out.add(slot(o.type(), n.type()));
-                out.add(slot(o.name(), n.name()));
+                out.add(declared(o.name(), n.name()));
             }
             default -> {
                 out.add(slot(o.type(), n.type()));
-                out.add(slot(o.name(), n.name()) + n.typeParams());
+                out.add(declared(o.name(), n.name()) + n.typeParams());
             }
         }
         return join(out, " ");
@@ -156,11 +157,17 @@ public final class SignatureDiffPrinter {
      * @param newValue the new value, may be empty
      * @return the formatted text
      */
-    public String slot(String oldValue, String newValue) {
+    String slot(String oldValue, String newValue) {
         if (oldValue.equals(newValue) || oldValue.isEmpty()) {
             return newValue;
         }
         return newValue.isEmpty() ? strike(oldValue) : strike(oldValue) + " " + newValue;
+    }
+
+    /** Like {@link #slot}, the new name shown as a declaration. */
+    private String declared(String oldName, String newName) {
+        String name = theme.style(Theme.Role.DECLARATION, newName);
+        return oldName.equals(newName) || oldName.isEmpty() ? name : strike(oldName) + " " + name;
     }
 
     /** Removed tokens struck through, followed by all tokens of the new version. */
@@ -177,7 +184,7 @@ public final class SignatureDiffPrinter {
 
     /** The text struck through. */
     String strike(String text) {
-        return ansi ? "\u001b[9m" + text + "\u001b[29m" : "~~" + text + "~~";
+        return theme.strike(text);
     }
 
     private static String join(List<String> parts, String separator) {

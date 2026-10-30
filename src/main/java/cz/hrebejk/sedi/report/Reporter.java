@@ -27,33 +27,33 @@ import java.util.function.Predicate;
 /**
  * Renders a {@link DiffAnalysis} as text, as configured by {@link ReportOptions}. Changes are grouped either by
  * file, with a heading and then, for every changed type, one line for every change, or by their
- * {@link ChangeLevel}. The lines are rendered by a {@link SignatureDiffPrinter}.
+ * {@link ChangeLevel}. The lines are rendered by a {@link SignatureDiffPrinter} and colored by a {@link Theme}.
  */
 public final class Reporter {
 
     private final SignatureDiffPrinter printer;
     private final ReportOptions options;
-    private final boolean ansi;
+    private final Theme theme;
 
     /**
      * Creates a reporter showing the API changes grouped by type.
      *
-     * @param ansi {@code true} to use ANSI escape codes for strike through
+     * @param theme the colors of the report, {@link Theme#PLAIN} for none
      */
-    public Reporter(boolean ansi) {
-        this(ansi, ReportOptions.DEFAULT);
+    public Reporter(Theme theme) {
+        this(theme, ReportOptions.DEFAULT);
     }
 
     /**
      * Creates a reporter.
      *
-     * @param ansi    {@code true} to use ANSI escape codes for strike through
+     * @param theme   the colors of the report, {@link Theme#PLAIN} for none
      * @param options what to show and how to group it
      */
-    public Reporter(boolean ansi, ReportOptions options) {
-        this.printer = new SignatureDiffPrinter(ansi);
+    public Reporter(Theme theme, ReportOptions options) {
+        this.printer = new SignatureDiffPrinter(theme);
         this.options = options;
-        this.ansi = ansi;
+        this.theme = theme;
     }
 
     /**
@@ -114,7 +114,7 @@ public final class Reporter {
             addFile(lines, file, fileLines, structural && file.isStructural());
         }
         if (!lines.isEmpty()) {
-            result.add(bold("=== " + heading + " ==="));
+            result.add(theme.style(Theme.Role.HEADING, "=== " + heading + " ==="));
             result.addAll(lines);
         }
     }
@@ -163,16 +163,16 @@ public final class Reporter {
 
     private void importLines(FileAnalysis file, boolean tagged, List<String> lines) {
         String tag = tagged ? tag("import") : "";
-        file.importChanges().removed().forEach(i -> lines.add("  - import " + i + tag));
-        file.importChanges().added().forEach(i -> lines.add("  + import " + i + tag));
+        file.importChanges().removed().forEach(i -> lines.add("  " + importLine(false, i) + tag));
+        file.importChanges().added().forEach(i -> lines.add("  " + importLine(true, i) + tag));
+    }
+
+    private String importLine(boolean added, String name) {
+        return theme.changed(added, (added ? "+ " : "- ") + theme.code("import " + name));
     }
 
     private String tag(String text) {
-        return ansi ? " \u001b[2m[" + text + "]\u001b[22m" : " [" + text + "]";
-    }
-
-    private String bold(String text) {
-        return ansi ? "\u001b[1m" + text + "\u001b[22m" : text;
+        return " " + theme.style(Theme.Role.TAG, "[" + text + "]");
     }
 
     /** The marker of the level of a change, empty for the API changes unless told apart by their visibility. */
@@ -200,10 +200,14 @@ public final class Reporter {
         String oldPackage = type == DiffEntry.ChangeType.ADD ? "" : file.oldPackage();
         String newPackage = file.newPackage();
         boolean deleted = type == DiffEntry.ChangeType.DELETE;
-        String name = deleted ? oldName : printer.slot(oldName, newName);
-        String pkg = deleted ? oldPackage : printer.slot(oldPackage, newPackage);
-        String prefix = type == DiffEntry.ChangeType.ADD ? "+ " : type == DiffEntry.ChangeType.DELETE ? "- " : "";
-        return prefix + name + (pkg.isEmpty() ? "" : " " + pkg);
+        String name = theme.style(Theme.Role.TITLE, deleted ? oldName : printer.slot(oldName, newName));
+        String pkg = theme.style(Theme.Role.PACKAGE, deleted ? oldPackage : printer.slot(oldPackage, newPackage));
+        String title = name + (pkg.isEmpty() ? "" : " " + pkg);
+        return switch (type) {
+            case ADD -> theme.changed(true, "+ " + title);
+            case DELETE -> theme.changed(false, "- " + title);
+            default -> title;
+        };
     }
 
     /**
@@ -217,15 +221,15 @@ public final class Reporter {
         int size = Math.max(body.oldStatements(), body.newStatements());
         int unchanged = body.unchangedStatements();
         if (unchanged * 3 < size && size - unchanged > 3) {
-            return List.of("body rewritten (-" + (body.oldStatements() - unchanged) + " +"
-                    + (body.newStatements() - unchanged) + " statements)");
+            return List.of(theme.style(Theme.Role.NOTE, "body rewritten (-" + (body.oldStatements() - unchanged) + " +"
+                    + (body.newStatements() - unchanged) + " statements)"));
         }
-        List<String> lines = new AstPrinter(body, printer::strike).print();
+        List<String> lines = new AstPrinter(body, theme).print();
         if (lines.size() <= options.bodyLines()) {
             return lines;
         }
         List<String> shown = new ArrayList<>(lines.subList(0, options.bodyLines()));
-        shown.add("… " + (lines.size() - options.bodyLines()) + " more lines");
+        shown.add(theme.style(Theme.Role.NOTE, "… " + (lines.size() - options.bodyLines()) + " more lines"));
         return shown;
     }
 
@@ -246,7 +250,7 @@ public final class Reporter {
             List<String> nested = new ArrayList<>();
             render(type, depth + 1, nested, filter, tagged);
             if (!nested.isEmpty()) {
-                lines.add("  ".repeat(depth + 1) + type.typeName());
+                lines.add("  ".repeat(depth + 1) + theme.style(Theme.Role.TYPE, type.typeName()));
                 lines.addAll(nested);
             }
         }

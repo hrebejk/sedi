@@ -29,7 +29,7 @@ public class AstPrinterTest extends TestCase {
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
                 ReportOptions options = new ReportOptions(ChangeLevel.IMPLEMENTATION, false,
                         ReportOptions.Grouping.BY_TYPE, bodyLines);
-                List<String> lines = new Reporter(false, options).report(analyzer.analyzeChanges());
+                List<String> lines = new Reporter(Theme.PLAIN, options).report(analyzer.analyzeChanges());
                 return lines.subList(2, lines.size()).stream().map(l -> l.substring(4)).toList();
             }
         }

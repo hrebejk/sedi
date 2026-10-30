@@ -33,7 +33,6 @@ import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.function.UnaryOperator;
 
 /**
  * Prints the changes of a body as lines of code. The printer walks the trees: the text between the children of a
@@ -43,6 +42,7 @@ import java.util.function.UnaryOperator;
  * <p>
  * The marks of the {@link BodyChanges} decide what is printed: unchanged statements are left out, changed ones are
  * printed with their edited parts struck through, added and removed ones are prefixed with {@code +} and {@code -}.
+ * The lines are colored by a {@link Theme}.
  */
 final class AstPrinter {
 
@@ -98,7 +98,7 @@ final class AstPrinter {
     private final BodyChanges changes;
     private final Source oldSource;
     private final Source newSource;
-    private final UnaryOperator<String> strike;
+    private final Theme theme;
     private final List<String> lines = new ArrayList<>();
     private StringBuilder line;
     private int lineDepth;
@@ -108,13 +108,13 @@ final class AstPrinter {
      * Creates a printer of one body.
      *
      * @param changes the changes of the body
-     * @param strike  renders removed text as struck through
+     * @param theme   the colors of the code and of the struck through old text
      */
-    AstPrinter(BodyChanges changes, UnaryOperator<String> strike) {
+    AstPrinter(BodyChanges changes, Theme theme) {
         this.changes = changes;
         this.oldSource = Source.of(changes.oldUnit());
         this.newSource = Source.of(changes.newUnit());
-        this.strike = strike;
+        this.theme = theme;
     }
 
     /**
@@ -205,7 +205,7 @@ final class AstPrinter {
                 case null, default -> null;
             };
             if (old != null) {
-                append(strike.apply(plain(old, oldSource)) + " " + plain(tree, source));
+                append(theme.strike(plain(old, oldSource)) + " " + plain(tree, source));
                 return;
             }
         }
@@ -246,7 +246,7 @@ final class AstPrinter {
                 begin(depth, mode.prefix());
             } else {
                 if (removed != null) {
-                    removed.forEach(old -> append(strike.apply(plain(old, oldSource)) + " "));
+                    removed.forEach(old -> append(theme.strike(plain(old, oldSource)) + " "));
                 }
                 emit(child, mode, depth, null);
             }
@@ -259,7 +259,7 @@ final class AstPrinter {
                     whole(old, oldSource, depth + 1, "- ");
                     begin(depth, mode.prefix());
                 } else {
-                    append(" " + strike.apply(plain(old, oldSource)));
+                    append(" " + theme.strike(plain(old, oldSource)));
                 }
             }
         }
@@ -399,7 +399,12 @@ final class AstPrinter {
         if (line != null) {
             String text = line.toString().strip();
             if (!text.isEmpty()) {
-                lines.add("  ".repeat(lineDepth) + linePrefix + text);
+                String code = theme.code(text);
+                lines.add("  ".repeat(lineDepth) + switch (linePrefix) {
+                    case "+ " -> theme.changed(true, linePrefix + code);
+                    case "- " -> theme.changed(false, linePrefix + code);
+                    default -> linePrefix + code;
+                });
             }
             line = null;
         }

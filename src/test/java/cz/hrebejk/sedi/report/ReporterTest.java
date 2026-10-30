@@ -38,7 +38,7 @@ public class ReporterTest extends TestCase {
                                 "      ~~int~~ long a",
                                 "    In",
                                 "      + void y()"),
-                        new Reporter(false).report(analyses.get(0)));
+                        new Reporter(Theme.PLAIN).report(analyses.get(0)));
             }
         }
     }
@@ -53,7 +53,7 @@ public class ReporterTest extends TestCase {
             helper.writeFile("Foo.java", "public class Foo {\n  void body() { int z = 1; }\n}\n");
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                assertTrue(new Reporter(false).report(analyzer.analyzeChanges().files().get(0)).isEmpty());
+                assertTrue(new Reporter(Theme.PLAIN).report(analyzer.analyzeChanges().files().get(0)).isEmpty());
             }
         }
     }
@@ -78,7 +78,7 @@ public class ReporterTest extends TestCase {
                 assertEquals(List.of(
                                 "  public class ~~Foo~~ Bar",
                                 "      ~~int~~ long a"),
-                        new Reporter(false).report(analyses.get(0)));
+                        new Reporter(Theme.PLAIN).report(analyses.get(0)));
             }
         }
     }
@@ -94,7 +94,7 @@ public class ReporterTest extends TestCase {
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
                 assertEquals(List.of("  - class Gone", "  + class New"),
-                        new Reporter(false).report(analyzer.analyzeChanges().files().get(0)));
+                        new Reporter(Theme.PLAIN).report(analyzer.analyzeChanges().files().get(0)));
             }
         }
     }
@@ -116,7 +116,7 @@ public class ReporterTest extends TestCase {
             helper.commit("change");
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                Reporter reporter = new Reporter(false);
+                Reporter reporter = new Reporter(Theme.PLAIN);
                 List<String> titles = analyzer.analyzeCommit("HEAD", p -> p.endsWith(".java")).files().stream()
                         .map(reporter::title).sorted().toList();
                 assertEquals(List.of("+ New n", "- Gone", "~~Foo~~ Bar ~~a~~ b"), titles);
@@ -135,7 +135,7 @@ public class ReporterTest extends TestCase {
             helper.commit("init");
             helper.writeFile("Foo.java", AFTER);
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                return new Reporter(false, options).report(analyzer.analyzeChanges());
+                return new Reporter(Theme.PLAIN, options).report(analyzer.analyzeChanges());
             }
         }
     }

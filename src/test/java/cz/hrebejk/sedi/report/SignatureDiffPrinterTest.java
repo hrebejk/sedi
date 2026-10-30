@@ -36,7 +36,7 @@ public class SignatureDiffPrinterTest extends TestCase {
     }
 
     private List<String> print(String oldMembers, String newMembers) throws Exception {
-        SignatureDiffPrinter printer = new SignatureDiffPrinter(false);
+        SignatureDiffPrinter printer = new SignatureDiffPrinter(Theme.PLAIN);
         return pairs(oldMembers, newMembers).stream().map(p -> printer.format(p, "T")).toList();
     }
 
@@ -71,6 +71,16 @@ public class SignatureDiffPrinterTest extends TestCase {
 
     public void testAnsiStrike() throws Exception {
         ElementPair pair = pairs("int f;", "long f;").get(0);
-        assertEquals("  \u001b[9mint\u001b[29m long f", new SignatureDiffPrinter(true).format(pair, "T"));
+        assertEquals("  \u001b[9mint\u001b[29m long f", new SignatureDiffPrinter(ThemeTest.only("strike", "strike"))
+                .format(pair, "T"));
+    }
+
+    public void testAnsiAddedLineAndKeywords() throws Exception {
+        Theme theme = ThemeTest.only("added", "bg:#010203", "added_mark", "underline", "keyword", "bold",
+                "declaration", "strike");
+        List<String> lines = pairs("", "int fresh;").stream().map(p -> new SignatureDiffPrinter(theme).format(p, "T"))
+                .toList();
+        assertEquals(List.of("\u001b[48;2;1;2;3m\u001b[4m+\u001b[24m \u001b[1mint\u001b[22m \u001b[9mfresh\u001b[29m"
+                + "\u001b[49m"), lines);
     }
 }
