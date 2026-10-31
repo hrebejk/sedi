@@ -20,7 +20,7 @@ import java.util.List;
  */
 public class AstPrinterTest extends TestCase {
 
-    /** The report of the implementation changes of the methods of {@code Foo}, without the headings. */
+    /** The report of the implementation changes of the methods of {@code Foo}, without the heading of the type. */
     static List<String> body(String oldMembers, String newMembers, int bodyLines) throws Exception {
         try (GitTestHelper helper = new GitTestHelper()) {
             helper.writeFile("Foo.java", "class Foo {\n" + oldMembers + "\n}\n");
@@ -30,7 +30,7 @@ public class AstPrinterTest extends TestCase {
                 ReportOptions options = new ReportOptions(ChangeLevel.IMPLEMENTATION,
                         ReportOptions.Grouping.BY_TYPE, bodyLines);
                 List<String> lines = new Reporter(Theme.PLAIN, options).report(analyzer.analyzeChanges());
-                return lines.subList(2, lines.size()).stream().map(l -> l.substring(4)).toList();
+                return lines.subList(1, lines.size()).stream().map(l -> l.substring(2)).toList();
             }
         }
     }

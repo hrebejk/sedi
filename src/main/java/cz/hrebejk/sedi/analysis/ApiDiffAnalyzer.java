@@ -70,11 +70,12 @@ final class ApiDiffAnalyzer {
             Sources sources = new Sources(oldUnit, newUnit);
             ApiChanges primary = v.oldPrimary() == null ? null
                     : changes(v.oldPrimary(), v.newPrimary(), v.newPrimary().getName(),
-                    Visibility.isExposed(v.newPrimary(), true, false), sources);
+                    Visibility.isExposed(v.newPrimary(), true, false),
+                    new ElementPair(v.oldPrimary(), v.newPrimary(), Set.of()), sources);
             files.add(new FileAnalysis(diff, oldUnit, newUnit, oldRoots.get(i), newRoot, v.oldPrimary(),
                     v.newPrimary(), className(oldUnit, diff.getOldPath()), className(newUnit, diff.getNewPath()),
                     packageName(oldUnit), packageName(newUnit), primary,
-                    changes(v.oldRoot(), v.newRoot(), "", true, sources), importChanges(oldUnit, newUnit)));
+                    changes(v.oldRoot(), v.newRoot(), "", true, null, sources), importChanges(oldUnit, newUnit)));
         }
         return new DiffAnalysis(files, renames);
     }
@@ -132,7 +133,7 @@ final class ApiDiffAnalyzer {
      * @param exposed whether the container is a part of the public API
      */
     private static ApiChanges changes(ElementInfo oldContainer, ElementInfo newContainer, String typeName,
-                                      boolean exposed, Sources sources) {
+                                      boolean exposed, ElementPair typePair, Sources sources) {
         MemberMatcher.Matches matches = MemberMatcher.matchAll(oldContainer, newContainer);
         boolean inInterface = Visibility.isInterface(newContainer);
         List<MemberChange> changes = new ArrayList<>();
@@ -162,9 +163,9 @@ final class ApiDiffAnalyzer {
         List<ApiChanges> nested = new ArrayList<>();
         for (ElementPair type : MemberMatcher.nestedTypes(oldContainer, newContainer, matches.changed())) {
             nested.add(changes(type.oldElement(), type.newElement(), type.newElement().getName(),
-                    Visibility.isExposed(type.newElement(), exposed, inInterface), sources));
+                    Visibility.isExposed(type.newElement(), exposed, inInterface), type, sources));
         }
-        return new ApiChanges(typeName, exposed, changes, nested);
+        return new ApiChanges(typeName, exposed, typePair, changes, nested);
     }
 
     /** Whether the element has a body of its own which can change: methods and fields, not types. */

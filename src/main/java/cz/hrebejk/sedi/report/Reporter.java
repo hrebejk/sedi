@@ -72,7 +72,7 @@ public final class Reporter {
         List<String> result = new ArrayList<>();
         if (options.grouping() == ReportOptions.Grouping.BY_TYPE) {
             for (FileAnalysis file : files) {
-                addFile(result, file, report(file), file.isStructural());
+                addFile(result, file, block(file), file.isStructural());
             }
             return result;
         }
@@ -104,13 +104,15 @@ public final class Reporter {
     private List<String> levelLines(List<FileAnalysis> files, ChangeLevel level) {
         List<String> lines = new ArrayList<>();
         for (FileAnalysis file : files) {
-            List<String> fileLines = new ArrayList<>();
+            Block block;
             if (level == ChangeLevel.IMPORTS) {
-                importLines(file, false, fileLines);
+                List<String> imports = new ArrayList<>();
+                importLines(file, false, imports);
+                block = new Block(imports, false);
             } else {
-                fileLines = lines(file, (container, c) -> c.level() == level, false, false);
+                block = lines(file, (container, c) -> c.level() == level, false, false, false);
             }
-            addFile(lines, file, fileLines, false);
+            addFile(lines, file, block, false);
         }
         return lines;
     }
@@ -148,7 +150,7 @@ public final class Reporter {
         for (FileAnalysis file : files) {
             boolean renamed = file.diff().getChangeType() == DiffEntry.ChangeType.RENAME;
             addFile(changed, file, lines(file, (container, c) -> c.level() == ChangeLevel.API && !isListedApart(container, c),
-                    true, false), renamed);
+                    true, false, true), renamed);
         }
         parts.add(changed);
         List<String> result = new ArrayList<>();
@@ -215,10 +217,21 @@ public final class Reporter {
         }
     }
 
-    private void addFile(List<String> result, FileAnalysis file, List<String> lines, boolean keepEmpty) {
-        if (!lines.isEmpty() || keepEmpty) {
-            result.add(title(file));
-            result.addAll(lines);
+    /**
+     * The lines reporting a file.
+     *
+     * @param lines  the lines
+     * @param headed whether the lines start with the signature of a changed type, which says what file it is
+     */
+    private record Block(List<String> lines, boolean headed) { }
+
+    /** Adds the lines of a file, with its title unless the signature of a changed type is there instead. */
+    private void addFile(List<String> result, FileAnalysis file, Block block, boolean keepEmpty) {
+        if (!block.lines().isEmpty() || keepEmpty) {
+            if (!block.headed()) {
+                result.add(title(file));
+            }
+            result.addAll(block.lines());
         }
     }
 
@@ -229,32 +242,51 @@ public final class Reporter {
      * @return indented lines, empty if there is nothing to show
      */
     public List<String> report(FileAnalysis file) {
-        List<String> lines = lines(file, (container, c) -> c.level().compareTo(options.maxLevel()) <= 0, true, true);
+        return block(file).lines();
+    }
+
+    private Block block(FileAnalysis file) {
+        Block block = lines(file, (container, c) -> c.level().compareTo(options.maxLevel()) <= 0, true, true, true);
         if (options.maxLevel() == ChangeLevel.IMPORTS) {
-            importLines(file, true, lines);
+            importLines(file, true, block.lines());
         }
-        return lines;
+        return block;
     }
 
     /**
-     * Renders the changes of a file accepted by the filter.
+     * Renders the changes of a file accepted by the filter. Every changed type is shown with its whole signature.
      *
      * @param header whether to show the type renamed together with the file
      * @param tagged whether to end the lines with the level of the change
+     * @param diff   whether to show the changes of the signatures of the types
      */
-    private List<String> lines(FileAnalysis file, BiPredicate<ApiChanges, MemberChange> filter, boolean header, boolean tagged) {
+    private Block lines(FileAnalysis file, BiPredicate<ApiChanges, MemberChange> filter, boolean header, boolean tagged,
+                        boolean diff) {
         List<String> lines = new ArrayList<>();
         if (file.oldPrimary() != null) {
             List<String> members = new ArrayList<>();
-            render(file.primaryChanges(), 1, members, filter, tagged);
+            render(file, file.primaryChanges(), 1, members, filter, tagged, diff);
             if (header || !members.isEmpty()) {
-                lines.add("  " + printer.format(new ElementPair(file.oldPrimary(), file.newPrimary(), Set.of()), "")
-                        .stripLeading());
+                lines.add(heading(file, file.primaryChanges().type(), diff));
                 lines.addAll(members);
             }
         }
-        render(file.rootChanges(), 0, lines, filter, tagged);
-        return lines;
+        render(file, file.rootChanges(), 0, lines, filter, tagged, diff);
+        // What is left at the top level are the types, each with the place it is in.
+        return new Block(lines, !lines.isEmpty());
+    }
+
+    /** The first line of a changed top level type: the signature of the type and where it is. */
+    private String heading(FileAnalysis file, ElementPair type, boolean diff) {
+        String oldWhere = withSourceRoot(file.diff().getOldPath(), file.oldPackage());
+        String newWhere = withSourceRoot(file.diff().getNewPath(), file.newPackage());
+        String where = theme.style(Theme.Role.PACKAGE, diff ? printer.slot(oldWhere, newWhere) : newWhere);
+        return theme.modified() + signature(type, "", diff).substring(1) + (where.isEmpty() ? "" : " " + where);
+    }
+
+    /** The signature of a changed type, the changes of it shown if {@code diff}. */
+    private String signature(ElementPair type, String outerName, boolean diff) {
+        return printer.format(diff ? type : new ElementPair(type.newElement(), type.newElement(), Set.of()), outerName);
     }
 
     private void importLines(FileAnalysis file, boolean tagged, List<String> lines) {
@@ -351,30 +383,53 @@ public final class Reporter {
         return shown;
     }
 
-    /** Renders the changes of a container accepted by the filter, then the types nested in it which have some. */
-    private void render(ApiChanges changes, int depth, List<String> lines, BiPredicate<ApiChanges, MemberChange> filter,
-                        boolean tagged) {
+    /**
+     * Renders the changes of a container accepted by the filter, then the types nested in it which have some, each
+     * of them with its signature.
+     *
+     * @param depth the indentation of the lines, in levels
+     */
+    private void render(FileAnalysis file, ApiChanges changes, int depth, List<String> lines,
+                        BiPredicate<ApiChanges, MemberChange> filter, boolean tagged, boolean diff) {
         for (MemberChange change : changes.changes()) {
-            if (filter.test(changes, change)) {
+            if (filter.test(changes, change) && !isSignatureOfNested(changes, change)) {
                 ElementPair pair = change.level() == ChangeLevel.API ? change.pair()
                         : new ElementPair(change.pair().newElement(), change.pair().newElement(), Set.of());
-                lines.add("  ".repeat(depth + 1) + printer.format(pair, changes.typeName()) + (tagged ? tag(change) : ""));
+                // A top level type added or removed is not under a heading saying where it is.
+                String where = depth == 0 && isTypeAddedOrRemoved(change)
+                        ? location(new TypeRef(file, "", pair.isAdded() ? pair.newElement() : pair.oldElement()),
+                        pair.isAdded()) : "";
+                lines.add("  ".repeat(depth) + printer.format(pair, changes.typeName()) + where
+                        + (tagged ? tag(change) : ""));
                 if (change.level() == ChangeLevel.API && change.pair().isAdded()
                         && change.pair().newElement().getNodeType() == ElementInfo.NodeType.TYPE) {
-                    addedMembers(change.pair().newElement(), depth + 3, lines);
+                    addedMembers(change.pair().newElement(), depth + 2, lines);
                 }
                 if (change.body() != null) {
-                    body(change.body()).forEach(l -> lines.add("  ".repeat(depth + 4) + l));
+                    body(change.body()).forEach(l -> lines.add("  ".repeat(depth + 3) + l));
                 }
             }
         }
         for (ApiChanges type : changes.nested()) {
             List<String> nested = new ArrayList<>();
-            render(type, depth + 1, nested, filter, tagged);
-            if (!nested.isEmpty()) {
-                lines.add("  ".repeat(depth + 1) + theme.style(Theme.Role.TYPE, type.typeName()));
+            render(file, type, depth + 1, nested, filter, tagged, diff);
+            boolean own = changes.changes().stream()
+                    .anyMatch(c -> filter.test(changes, c) && isSignatureOf(c, type));
+            if (own || !nested.isEmpty()) {
+                lines.add(depth == 0 ? heading(file, type.type(), diff)
+                        : "  ".repeat(depth) + signature(type.type(), changes.typeName(), diff));
                 lines.addAll(nested);
             }
         }
+    }
+
+    /** Whether the change is the change of the signature of a type, which is shown in the heading of its changes. */
+    private static boolean isSignatureOfNested(ApiChanges container, MemberChange change) {
+        return container.nested().stream().anyMatch(type -> isSignatureOf(change, type));
+    }
+
+    private static boolean isSignatureOf(MemberChange change, ApiChanges type) {
+        return change.level() == ChangeLevel.API && !change.pair().isAdded() && !change.pair().isRemoved()
+                && change.pair().newElement() == type.type().newElement();
     }
 }

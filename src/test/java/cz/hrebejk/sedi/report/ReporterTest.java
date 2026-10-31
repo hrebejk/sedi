@@ -34,10 +34,10 @@ public class ReporterTest extends TestCase {
                 List<FileAnalysis> analyses = analyzer.analyzeChanges().files();
                 assertEquals(1, analyses.size());
                 assertEquals(List.of(
-                                "  Foo",
-                                "      ~~int~~ long a",
-                                "    In",
-                                "      + void y()"),
+                                "~ public class Foo",
+                                "    ~~int~~ long a",
+                                "    static class In",
+                                "    + void y()"),
                         new Reporter(Theme.PLAIN).report(analyses.get(0)));
             }
         }
@@ -76,8 +76,8 @@ public class ReporterTest extends TestCase {
                 assertEquals(1, analyses.size());
                 assertEquals(org.eclipse.jgit.diff.DiffEntry.ChangeType.RENAME, analyses.get(0).diff().getChangeType());
                 assertEquals(List.of(
-                                "  public class ~~Foo~~ Bar",
-                                "      ~~int~~ long a"),
+                                "~ public class ~~Foo~~ Bar",
+                                "    ~~int~~ long a"),
                         new Reporter(Theme.PLAIN).report(analyses.get(0)));
             }
         }
@@ -93,7 +93,7 @@ public class ReporterTest extends TestCase {
             helper.writeFile("Foo.java", "public class Foo {\n}\nclass New { }\n");
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                assertEquals(List.of("  - class Gone", "  + class New"),
+                assertEquals(List.of("- class Gone", "+ class New"),
                         new Reporter(Theme.PLAIN).report(analyzer.analyzeChanges().files().get(0)));
             }
         }
@@ -144,20 +144,20 @@ public class ReporterTest extends TestCase {
      * Tests that the default options show the API changes only.
      */
     public void testDefaultShowsOnlyApi() throws Exception {
-        assertEquals(List.of("~ Foo", "  Foo", "      public ~~int~~ long a", "      private ~~int~~ long b"), report(ReportOptions.DEFAULT));
+        assertEquals(List.of("~ public class Foo", "    public ~~int~~ long a", "    private ~~int~~ long b"), report(ReportOptions.DEFAULT));
     }
 
     /**
      * Tests that a deeper level adds the less important changes, tagged, and the imports last.
      */
     public void testLevelsByType() throws Exception {
-        assertEquals(List.of("~ Foo", "  Foo",
-                        "      public ~~int~~ long a", "      private ~~int~~ long b",
-                        "      public int m() [impl]", "          return ~~1~~ 2;", "      int o() [cosmetic]",
+        assertEquals(List.of("~ public class Foo",
+                        "    public ~~int~~ long a", "    private ~~int~~ long b",
+                        "    public int m() [impl]", "        return ~~1~~ 2;", "    int o() [cosmetic]",
                         "  - import java.util.List [import]", "  + import java.util.Set [import]"),
                 report(new ReportOptions(ChangeLevel.IMPORTS, ReportOptions.Grouping.BY_TYPE)));
-        assertEquals(List.of("~ Foo", "  Foo",
-                        "      public ~~int~~ long a", "      private ~~int~~ long b", "      public int m() [impl]", "          return ~~1~~ 2;"),
+        assertEquals(List.of("~ public class Foo",
+                        "    public ~~int~~ long a", "    private ~~int~~ long b", "    public int m() [impl]", "        return ~~1~~ 2;"),
                 report(new ReportOptions(ChangeLevel.IMPLEMENTATION, ReportOptions.Grouping.BY_TYPE)));
     }
 
@@ -167,13 +167,13 @@ public class ReporterTest extends TestCase {
     public void testGroupByCategory() throws Exception {
         assertEquals(List.of(
                         "# API changes", "",
-                        "~ Foo", "  Foo", "      public ~~int~~ long a", "      private ~~int~~ long b",
+                        "~ public class Foo", "    public ~~int~~ long a", "    private ~~int~~ long b",
                         "",
                         "# Implementation changes", "",
-                        "~ Foo", "  Foo", "      public int m()", "          return ~~1~~ 2;",
+                        "~ public class Foo", "    public int m()", "        return ~~1~~ 2;",
                         "",
                         "# Cosmetic changes", "",
-                        "~ Foo", "  Foo", "      int o()",
+                        "~ public class Foo", "    int o()",
                         "",
                         "# Imports", "",
                         "~ Foo", "  - import java.util.List", "  + import java.util.Set"),
@@ -204,15 +204,35 @@ public class ReporterTest extends TestCase {
                                 "- Old a",
                                 "- Gone a.Foo",
                                 "",
-                                "~ Foo a",
-                                "  Foo",
-                                "      ~~int~~ long a",
-                                "    + public static class Fresh",
-                                "        public Fresh()",
-                                "        public int x",
-                                "        protected void m()"),
+                                "~ public class Foo a",
+                                "    ~~int~~ long a",
+                                "  + public static class Fresh",
+                                "      public Fresh()",
+                                "      public int x",
+                                "      protected void m()"),
                         new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY))
                                 .report(analyzer.analyzeChanges()));
+            }
+        }
+    }
+
+    /**
+     * Tests that a changed type is shown once, with the changes of its whole signature, also if none of its members
+     * changed, and that a nested type is shown the same way.
+     */
+    public void testChangedTypeSignature() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("p/Foo.java", "package p;\npublic class Foo<T> extends Object implements Runnable {\n"
+                    + "  public void run() { }\n  static class In { }\n}\n");
+            helper.commit("init");
+            helper.writeFile("p/Foo.java", "package p;\npublic abstract class Foo<T, U> extends Number implements Runnable, Cloneable {\n"
+                    + "  public void run() { }\n  static final class In implements Runnable { public void run() { } }\n}\n");
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                assertEquals(List.of(
+                                "~ public abstract class Foo<T, U> extends ~~Object~~ Number implements Runnable, Cloneable p",
+                                "    static final class In implements Runnable",
+                                "    + public void run()"),
+                        new Reporter(Theme.PLAIN).report(analyzer.analyzeChanges()));
             }
         }
     }

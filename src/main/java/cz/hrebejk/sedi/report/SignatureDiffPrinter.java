@@ -75,8 +75,9 @@ public final class SignatureDiffPrinter {
     }
 
     /** Textual pieces of one element's signature. */
-    private record Parts(ElementInfo.NodeType nodeType, List<String> modifiers, String typeParams, String type,
-                         String name, List<String[]> params, List<String> throwsList, boolean hasParams) {
+    private record Parts(ElementInfo.NodeType nodeType, List<String> modifiers, List<String> typeParams, String type,
+                         String name, List<String[]> params, List<String> throwsList, List<String> extendsList,
+                         List<String> implementsList, List<String> permitsList) {
 
         static Parts of(ElementInfo info, String typeName) {
             Tree tree = info.getOriginalTree();
@@ -88,17 +89,27 @@ public final class SignatureDiffPrinter {
                 }
                 return new Parts(info.getNodeType(), modifiers(m.getModifiers()), typeParams(m.getTypeParameters()),
                         m.getReturnType() == null ? "" : m.getReturnType().toString(), name, params,
-                        m.getThrows().stream().map(Object::toString).toList(), true);
+                        m.getThrows().stream().map(Object::toString).toList(), List.of(), List.of(), List.of());
             }
             if (tree instanceof VariableTree v) {
-                return new Parts(info.getNodeType(), modifiers(v.getModifiers()), "", String.valueOf(v.getType()),
-                        v.getName().toString(), List.of(), List.of(), false);
+                return new Parts(info.getNodeType(), modifiers(v.getModifiers()), List.of(), String.valueOf(v.getType()),
+                        v.getName().toString(), List.of(), List.of(), List.of(), List.of(), List.of());
             }
             if (tree instanceof ClassTree c) {
+                // An interface lists the interfaces it extends where a class lists the ones it implements.
+                List<String> extended = new ArrayList<>();
+                List<String> implemented = new ArrayList<>();
+                if (c.getExtendsClause() != null) {
+                    extended.add(c.getExtendsClause().toString());
+                }
+                (c.getKind() == Tree.Kind.INTERFACE ? extended : implemented)
+                        .addAll(c.getImplementsClause().stream().map(Object::toString).toList());
                 return new Parts(info.getNodeType(), modifiers(c.getModifiers()), typeParams(c.getTypeParameters()),
-                        keyword(c.getKind()), c.getSimpleName().toString(), List.of(), List.of(), false);
+                        keyword(c.getKind()), c.getSimpleName().toString(), List.of(), List.of(), extended, implemented,
+                        c.getPermitsClause().stream().map(Object::toString).toList());
             }
-            return new Parts(info.getNodeType(), List.of(), "", "", info.getName(), List.of(), List.of(), false);
+            return new Parts(info.getNodeType(), List.of(), List.of(), "", info.getName(), List.of(), List.of(),
+                    List.of(), List.of(), List.of());
         }
 
         private static List<String> modifiers(ModifiersTree modifiers) {
@@ -112,9 +123,8 @@ public final class SignatureDiffPrinter {
             return result;
         }
 
-        private static String typeParams(List<? extends Tree> params) {
-            return params.isEmpty() ? ""
-                    : params.stream().map(Object::toString).collect(Collectors.joining(", ", "<", ">"));
+        private static List<String> typeParams(List<? extends Tree> params) {
+            return params.stream().map(Object::toString).toList();
         }
 
         private static String keyword(Tree.Kind kind) {
@@ -130,13 +140,10 @@ public final class SignatureDiffPrinter {
         out.add(tokens(o.modifiers(), n.modifiers()));
         switch (n.nodeType()) {
             case METHOD -> {
-                out.add(slot(o.typeParams(), n.typeParams()));
+                out.add(typeParams(o, n));
                 out.add(slot(o.type(), n.type()));
                 out.add(declared(o.name(), n.name()) + "(" + params(o, n) + ")");
-                String throwsPart = tokens(o.throwsList(), n.throwsList());
-                if (!throwsPart.isEmpty()) {
-                    out.add("throws " + throwsPart);
-                }
+                addClause(out, "throws", o.throwsList(), n.throwsList());
             }
             case FIELD -> {
                 out.add(slot(o.type(), n.type()));
@@ -144,10 +151,27 @@ public final class SignatureDiffPrinter {
             }
             default -> {
                 out.add(slot(o.type(), n.type()));
-                out.add(declared(o.name(), n.name()) + n.typeParams());
+                out.add(declared(o.name(), n.name()) + typeParams(o, n));
+                addClause(out, "extends", o.extendsList(), n.extendsList());
+                addClause(out, "implements", o.implementsList(), n.implementsList());
+                addClause(out, "permits", o.permitsList(), n.permitsList());
             }
         }
         return join(out, " ");
+    }
+
+    /** Adds the clause with its keyword, if the old or the new version has it; the changed items show the change. */
+    private void addClause(List<String> out, String keyword, List<String> oldItems, List<String> newItems) {
+        String items = tokens(oldItems, newItems, ", ");
+        if (!items.isEmpty()) {
+            out.add(keyword + " " + items);
+        }
+    }
+
+    /** The type parameters in angle brackets, the removed ones struck through and the added ones underlined. */
+    private String typeParams(Parts o, Parts n) {
+        String params = tokens(o.typeParams(), n.typeParams(), ", ");
+        return params.isEmpty() ? "" : "<" + params + ">";
     }
 
     private String params(Parts o, Parts n) {
@@ -184,16 +208,21 @@ public final class SignatureDiffPrinter {
 
     /** Removed tokens struck through, followed by all tokens of the new version, the added ones underlined. */
     private String tokens(List<String> oldTokens, List<String> newTokens) {
-        List<String> out = new ArrayList<>();
+        return tokens(oldTokens, newTokens, " ");
+    }
+
+    private String tokens(List<String> oldTokens, List<String> newTokens, String separator) {
+        List<String> removed = new ArrayList<>();
         for (String t : oldTokens) {
             if (!newTokens.contains(t)) {
-                out.add(strike(t));
+                removed.add(strike(t));
             }
         }
+        List<String> current = new ArrayList<>();
         for (String t : newTokens) {
-            out.add(oldTokens.contains(t) ? t : theme.style(Theme.Role.REPLACEMENT, t));
+            current.add(oldTokens.contains(t) ? t : theme.style(Theme.Role.REPLACEMENT, t));
         }
-        return join(out, " ");
+        return join(List.of(join(removed, separator), join(current, separator)), " ");
     }
 
     /** The text struck through. */

@@ -15,10 +15,12 @@ import java.util.List;
  *
  * @param typeName simple name of the type, empty for the top level of a file; displays constructors
  * @param exposed  whether the container is a part of the public API
+ * @param type     the old and new version of the type, {@code null} for the top level of a file
  * @param changes  the changes of the members, in all the levels except imports
  * @param nested   the changes of the types present in both versions, which are nested in the container
  */
-public record ApiChanges(String typeName, boolean exposed, List<MemberChange> changes, List<ApiChanges> nested) {
+public record ApiChanges(String typeName, boolean exposed, ElementPair type, List<MemberChange> changes,
+                         List<ApiChanges> nested) {
 
     /**
      * Returns the added, removed and changed members, which are the changes of the {@link ChangeLevel#API} level.
