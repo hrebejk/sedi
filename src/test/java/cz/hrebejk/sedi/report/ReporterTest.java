@@ -119,7 +119,7 @@ public class ReporterTest extends TestCase {
                 Reporter reporter = new Reporter(Theme.PLAIN);
                 List<String> titles = analyzer.analyzeCommit("HEAD", p -> p.endsWith(".java")).files().stream()
                         .map(reporter::title).sorted().toList();
-                assertEquals(List.of("+ New n", "- Gone", "~~Foo~~ Bar ~~a~~ b"), titles);
+                assertEquals(List.of("+ New n", "- Gone", "~ ~~Foo~~ Bar ~~a~~ b"), titles);
             }
         }
     }
@@ -144,29 +144,21 @@ public class ReporterTest extends TestCase {
      * Tests that the default options show the API changes only.
      */
     public void testDefaultShowsOnlyApi() throws Exception {
-        assertEquals(List.of("Foo", "  Foo", "      public ~~int~~ long a", "      private ~~int~~ long b"), report(ReportOptions.DEFAULT));
+        assertEquals(List.of("~ Foo", "  Foo", "      public ~~int~~ long a", "      private ~~int~~ long b"), report(ReportOptions.DEFAULT));
     }
 
     /**
      * Tests that a deeper level adds the less important changes, tagged, and the imports last.
      */
     public void testLevelsByType() throws Exception {
-        assertEquals(List.of("Foo", "  Foo",
+        assertEquals(List.of("~ Foo", "  Foo",
                         "      public ~~int~~ long a", "      private ~~int~~ long b",
                         "      public int m() [impl]", "          return ~~1~~ 2;", "      int o() [cosmetic]",
                         "  - import java.util.List [import]", "  + import java.util.Set [import]"),
-                report(new ReportOptions(ChangeLevel.IMPORTS, false, ReportOptions.Grouping.BY_TYPE)));
-        assertEquals(List.of("Foo", "  Foo",
+                report(new ReportOptions(ChangeLevel.IMPORTS, ReportOptions.Grouping.BY_TYPE)));
+        assertEquals(List.of("~ Foo", "  Foo",
                         "      public ~~int~~ long a", "      private ~~int~~ long b", "      public int m() [impl]", "          return ~~1~~ 2;"),
-                report(new ReportOptions(ChangeLevel.IMPLEMENTATION, false, ReportOptions.Grouping.BY_TYPE)));
-    }
-
-    /**
-     * Tests that public and private API changes can be told apart.
-     */
-    public void testSplitVisibility() throws Exception {
-        assertEquals(List.of("Foo", "  Foo", "      public ~~int~~ long a [public]", "      private ~~int~~ long b [private]"),
-                report(new ReportOptions(ChangeLevel.API, true, ReportOptions.Grouping.BY_TYPE)));
+                report(new ReportOptions(ChangeLevel.IMPLEMENTATION, ReportOptions.Grouping.BY_TYPE)));
     }
 
     /**
@@ -174,15 +166,54 @@ public class ReporterTest extends TestCase {
      */
     public void testGroupByCategory() throws Exception {
         assertEquals(List.of(
-                        "# Public API changes", "", "Foo", "  Foo", "      public ~~int~~ long a",
+                        "# API changes", "",
+                        "~ Foo", "  Foo", "      public ~~int~~ long a", "      private ~~int~~ long b",
                         "",
-                        "# Private API changes", "", "Foo", "  Foo", "      private ~~int~~ long b",
+                        "# Implementation changes", "",
+                        "~ Foo", "  Foo", "      public int m()", "          return ~~1~~ 2;",
                         "",
-                        "# Implementation changes", "", "Foo", "  Foo", "      public int m()", "          return ~~1~~ 2;",
+                        "# Cosmetic changes", "",
+                        "~ Foo", "  Foo", "      int o()",
                         "",
-                        "# Cosmetic changes", "", "Foo", "  Foo", "      int o()",
-                        "",
-                        "# Imports", "", "Foo", "  - import java.util.List", "  + import java.util.Set"),
-                report(new ReportOptions(ChangeLevel.IMPORTS, true, ReportOptions.Grouping.BY_CATEGORY)));
+                        "# Imports", "",
+                        "~ Foo", "  - import java.util.List", "  + import java.util.Set"),
+                report(new ReportOptions(ChangeLevel.IMPORTS, ReportOptions.Grouping.BY_CATEGORY)));
+    }
+
+    /**
+     * Tests that the API changes list the public API of the new types, the names of the deleted ones and then
+     * the changes of the other types.
+     */
+    public void testApiStructure() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("a/Foo.java", "package a;\npublic class Foo {\n  int a;\n  class Gone { }\n}\n");
+            helper.writeFile("a/Old.java", "package a;\nclass Old { }\n");
+            helper.commit("init");
+            helper.writeFile("a/Foo.java", "package a;\npublic class Foo {\n  long a;\n"
+                    + "  public static class Fresh { public int x; private int y; protected void m() { } }\n}\n");
+            java.nio.file.Files.delete(helper.getRepositoryPath().resolve("a/Old.java"));
+            helper.writeFile("b/New.java", "package b;\npublic class New {\n  public New(int i) { }\n"
+                    + "  private int hidden;\n  public void m() { }\n}\n");
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                assertEquals(List.of(
+                                "# API changes", "",
+                                "+ public class New b",
+                                "    public New( int i )",
+                                "    public void m()",
+                                "",
+                                "- Old a",
+                                "- Gone a.Foo",
+                                "",
+                                "~ Foo a",
+                                "  Foo",
+                                "      ~~int~~ long a",
+                                "    + public static class Fresh",
+                                "        public Fresh()",
+                                "        public int x",
+                                "        protected void m()"),
+                        new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY))
+                                .report(analyzer.analyzeChanges()));
+            }
+        }
     }
 }

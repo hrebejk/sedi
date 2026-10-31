@@ -62,6 +62,18 @@ public final class SignatureDiffPrinter {
         return "  " + theme.code(render(Parts.of(pair.oldElement(), typeName), Parts.of(pair.newElement(), typeName)));
     }
 
+    /**
+     * Formats the signature of an element as it is, without a {@code +} or {@code -}.
+     *
+     * @param element  the element
+     * @param typeName simple name of the enclosing type, used to display constructors
+     * @return a one line description
+     */
+    public String declaration(ElementInfo element, String typeName) {
+        Parts parts = Parts.of(element, typeName);
+        return theme.code(render(parts, parts));
+    }
+
     /** Textual pieces of one element's signature. */
     private record Parts(ElementInfo.NodeType nodeType, List<String> modifiers, String typeParams, String type,
                          String name, List<String[]> params, List<String> throwsList, boolean hasParams) {

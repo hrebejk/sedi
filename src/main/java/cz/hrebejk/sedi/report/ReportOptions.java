@@ -14,11 +14,10 @@ import cz.hrebejk.sedi.analysis.ChangeLevel;
  * What a {@link Reporter} shows and how it arranges it.
  *
  * @param maxLevel        the least important level of changes to show; all more important ones are shown too
- * @param splitVisibility {@code true} to tell the changes of the public API from those of the private one
  * @param grouping        how the changes are grouped
  * @param bodyLines       the most lines shown of the changes of one body, {@code 0} to show none
  */
-public record ReportOptions(ChangeLevel maxLevel, boolean splitVisibility, Grouping grouping, int bodyLines) {
+public record ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyLines) {
 
     /** The default of {@link #bodyLines()}. */
     public static final int DEFAULT_BODY_LINES = 12;
@@ -27,11 +26,10 @@ public record ReportOptions(ChangeLevel maxLevel, boolean splitVisibility, Group
      * Creates options showing at most {@value #DEFAULT_BODY_LINES} lines of the changes of a body.
      *
      * @param maxLevel        the least important level of changes to show
-     * @param splitVisibility {@code true} to tell the changes of the public API from those of the private one
-     * @param grouping        how the changes are grouped
+         * @param grouping        how the changes are grouped
      */
-    public ReportOptions(ChangeLevel maxLevel, boolean splitVisibility, Grouping grouping) {
-        this(maxLevel, splitVisibility, grouping, DEFAULT_BODY_LINES);
+    public ReportOptions(ChangeLevel maxLevel, Grouping grouping) {
+        this(maxLevel, grouping, DEFAULT_BODY_LINES);
     }
 
     /** How the changes are grouped. */
@@ -43,5 +41,5 @@ public record ReportOptions(ChangeLevel maxLevel, boolean splitVisibility, Group
     }
 
     /** Only the API changes, grouped by type. */
-    public static final ReportOptions DEFAULT = new ReportOptions(ChangeLevel.API, false, Grouping.BY_TYPE);
+    public static final ReportOptions DEFAULT = new ReportOptions(ChangeLevel.API, Grouping.BY_TYPE);
 }

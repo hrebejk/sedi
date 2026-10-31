@@ -27,7 +27,7 @@ public class AstPrinterTest extends TestCase {
             helper.commit("init");
             helper.writeFile("Foo.java", "class Foo {\n" + newMembers + "\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                ReportOptions options = new ReportOptions(ChangeLevel.IMPLEMENTATION, false,
+                ReportOptions options = new ReportOptions(ChangeLevel.IMPLEMENTATION,
                         ReportOptions.Grouping.BY_TYPE, bodyLines);
                 List<String> lines = new Reporter(Theme.PLAIN, options).report(analyzer.analyzeChanges());
                 return lines.subList(2, lines.size()).stream().map(l -> l.substring(4)).toList();

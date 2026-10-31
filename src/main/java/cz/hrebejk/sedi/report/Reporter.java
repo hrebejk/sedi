@@ -12,9 +12,11 @@ import cz.hrebejk.sedi.analysis.ApiChanges;
 import cz.hrebejk.sedi.analysis.BodyChanges;
 import cz.hrebejk.sedi.analysis.ChangeLevel;
 import cz.hrebejk.sedi.analysis.DiffAnalysis;
+import cz.hrebejk.sedi.analysis.ElementInfo;
 import cz.hrebejk.sedi.analysis.ElementPair;
 import cz.hrebejk.sedi.analysis.FileAnalysis;
 import cz.hrebejk.sedi.analysis.MemberChange;
+import cz.hrebejk.sedi.analysis.Visibility;
 import org.eclipse.jgit.diff.DiffEntry;
 
 import java.util.ArrayList;
@@ -22,7 +24,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Predicate;
+import java.util.function.BiPredicate;
 
 /**
  * Renders a {@link DiffAnalysis} as text, as configured by {@link ReportOptions}. Changes are grouped either by
@@ -78,11 +80,15 @@ public final class Reporter {
             if (level.compareTo(options.maxLevel()) > 0) {
                 continue;
             }
-            if (level == ChangeLevel.API && options.splitVisibility()) {
-                section(result, files, "Public API changes", level, true, true);
-                section(result, files, "Private API changes", level, false, false);
-            } else {
-                section(result, files, SECTIONS.get(level), level, null, level == ChangeLevel.API);
+            List<String> lines = level == ChangeLevel.API ? apiLines(files) : levelLines(files, level);
+            if (!lines.isEmpty()) {
+                if (!result.isEmpty()) {
+                    result.add("");
+                }
+                result.add(theme.style(Theme.Role.HEADING_MARK, "#") + " "
+                        + theme.style(Theme.Role.HEADING, SECTIONS.get(level)));
+                result.add("");
+                result.addAll(lines);
             }
         }
         return result;
@@ -94,32 +100,115 @@ public final class Reporter {
             ChangeLevel.COSMETIC, "Cosmetic changes",
             ChangeLevel.IMPORTS, "Imports");
 
-    /**
-     * Adds a section of the changes of one level.
-     *
-     * @param publicApi  only the changes of the public (or private) API, {@code null} for both
-     * @param structural whether to show also the files added, deleted or renamed by git
-     */
-    private void section(List<String> result, List<FileAnalysis> files, String heading, ChangeLevel level,
-                         Boolean publicApi, boolean structural) {
+    /** The changes of one level other than the API, grouped by file. */
+    private List<String> levelLines(List<FileAnalysis> files, ChangeLevel level) {
         List<String> lines = new ArrayList<>();
         for (FileAnalysis file : files) {
             List<String> fileLines = new ArrayList<>();
             if (level == ChangeLevel.IMPORTS) {
                 importLines(file, false, fileLines);
             } else {
-                fileLines = lines(file, c -> c.level() == level && (publicApi == null || c.publicApi() == publicApi),
-                        level == ChangeLevel.API, false);
+                fileLines = lines(file, (container, c) -> c.level() == level, false, false);
             }
-            addFile(lines, file, fileLines, structural && file.isStructural());
+            addFile(lines, file, fileLines, false);
         }
-        if (!lines.isEmpty()) {
-            if (!result.isEmpty()) {
-                result.add("");
+        return lines;
+    }
+
+    /** A type added or removed, with the file it is in and the names of the types it is nested in. */
+    private record TypeRef(FileAnalysis file, String outer, ElementInfo element) { }
+
+    /**
+     * The API changes: the public API of the added types, the names of the removed types, then the changes of the
+     * types present in both versions. The parts are separated by an empty line.
+     */
+    private List<String> apiLines(List<FileAnalysis> files) {
+        List<TypeRef> added = new ArrayList<>();
+        List<TypeRef> removed = new ArrayList<>();
+        for (FileAnalysis file : files) {
+            if (file.primaryChanges() != null) {
+                collectTypes(file.primaryChanges(), file, file.primaryChanges().typeName() + ".", added, removed);
             }
-            result.add(theme.style(Theme.Role.HEADING_MARK, "#") + " " + theme.style(Theme.Role.HEADING, heading));
-            result.add("");
-            result.addAll(lines);
+            collectTypes(file.rootChanges(), file, "", added, removed);
+        }
+        List<List<String>> parts = new ArrayList<>();
+        for (TypeRef type : added) {
+            List<String> lines = new ArrayList<>();
+            lines.add(printer.format(new ElementPair(null, type.element(), Set.of()), "") + location(type, true));
+            addedMembers(type.element(), 2, lines);
+            parts.add(lines);
+        }
+        List<String> names = new ArrayList<>();
+        for (TypeRef type : removed) {
+            names.add(theme.sign(false) + " " + theme.style(Theme.Role.TITLE, type.element().getName())
+                    + location(type, false));
+        }
+        parts.add(names);
+        List<String> changed = new ArrayList<>();
+        for (FileAnalysis file : files) {
+            boolean renamed = file.diff().getChangeType() == DiffEntry.ChangeType.RENAME;
+            addFile(changed, file, lines(file, (container, c) -> c.level() == ChangeLevel.API && !isListedApart(container, c),
+                    true, false), renamed);
+        }
+        parts.add(changed);
+        List<String> result = new ArrayList<>();
+        for (List<String> part : parts) {
+            if (!part.isEmpty()) {
+                if (!result.isEmpty()) {
+                    result.add("");
+                }
+                result.addAll(part);
+            }
+        }
+        return result;
+    }
+
+    /** Whether the change is listed in a part of the API changes of its own: a new top level or a removed type. */
+    private static boolean isListedApart(ApiChanges container, MemberChange change) {
+        return isTypeAddedOrRemoved(change) && (change.pair().isRemoved() || container.typeName().isEmpty());
+    }
+
+    private static boolean isTypeAddedOrRemoved(MemberChange change) {
+        ElementPair pair = change.pair();
+        return (pair.isAdded() || pair.isRemoved())
+                && (pair.isAdded() ? pair.newElement() : pair.oldElement()).getNodeType() == ElementInfo.NodeType.TYPE;
+    }
+
+    private static void collectTypes(ApiChanges changes, FileAnalysis file, String outer, List<TypeRef> added,
+                                     List<TypeRef> removed) {
+        for (MemberChange change : changes.changes()) {
+            if (change.level() == ChangeLevel.API && isTypeAddedOrRemoved(change)) {
+                if (change.pair().isRemoved()) {
+                    removed.add(new TypeRef(file, outer, change.pair().oldElement()));
+                } else if (outer.isEmpty()) {
+                    added.add(new TypeRef(file, outer, change.pair().newElement()));
+                }
+            }
+        }
+        for (ApiChanges nested : changes.nested()) {
+            collectTypes(nested, file, outer + nested.typeName() + ".", added, removed);
+        }
+    }
+
+    /** Where the type is: its package and the types it is nested in, preceded by a space; empty if nowhere. */
+    private String location(TypeRef type, boolean added) {
+        String pkg = added ? type.file().newPackage() : type.file().oldPackage();
+        String outer = type.outer().isEmpty() ? "" : type.outer().substring(0, type.outer().length() - 1);
+        String where = pkg.isEmpty() ? outer : outer.isEmpty() ? pkg : pkg + "." + outer;
+        return where.isEmpty() ? "" : " " + theme.style(Theme.Role.PACKAGE, where);
+    }
+
+    /** Adds the members of an added type which are a part of the public API, and the types nested in it,
+     * without the {@code +} as all of them are new. */
+    private void addedMembers(ElementInfo type, int depth, List<String> lines) {
+        boolean inInterface = Visibility.isInterface(type);
+        for (ElementInfo member : type.getChildren()) {
+            if (Visibility.isExposed(member, true, inInterface)) {
+                lines.add("  ".repeat(depth) + printer.declaration(member, type.getName()));
+                if (member.getNodeType() == ElementInfo.NodeType.TYPE) {
+                    addedMembers(member, depth + 1, lines);
+                }
+            }
         }
     }
 
@@ -137,7 +226,7 @@ public final class Reporter {
      * @return indented lines, empty if there is nothing to show
      */
     public List<String> report(FileAnalysis file) {
-        List<String> lines = lines(file, c -> c.level().compareTo(options.maxLevel()) <= 0, true, true);
+        List<String> lines = lines(file, (container, c) -> c.level().compareTo(options.maxLevel()) <= 0, true, true);
         if (options.maxLevel() == ChangeLevel.IMPORTS) {
             importLines(file, true, lines);
         }
@@ -150,7 +239,7 @@ public final class Reporter {
      * @param header whether to show the type renamed together with the file
      * @param tagged whether to end the lines with the level of the change
      */
-    private List<String> lines(FileAnalysis file, Predicate<MemberChange> filter, boolean header, boolean tagged) {
+    private List<String> lines(FileAnalysis file, BiPredicate<ApiChanges, MemberChange> filter, boolean header, boolean tagged) {
         List<String> lines = new ArrayList<>();
         if (file.oldPrimary() != null) {
             List<String> members = new ArrayList<>();
@@ -179,10 +268,10 @@ public final class Reporter {
         return " " + theme.style(Theme.Role.TAG, "[" + text + "]");
     }
 
-    /** The marker of the level of a change, empty for the API changes unless told apart by their visibility. */
+    /** The marker of the level of a change, empty for the API changes. */
     private String tag(MemberChange change) {
         return switch (change.level()) {
-            case API -> options.splitVisibility() ? tag(change.publicApi() ? "public" : "private") : "";
+            case API -> "";
             case IMPLEMENTATION -> tag("impl");
             case COSMETIC -> tag("cosmetic");
             case IMPORTS -> tag("import");
@@ -208,9 +297,9 @@ public final class Reporter {
         String pkg = theme.style(Theme.Role.PACKAGE, deleted ? oldPackage : printer.slot(oldPackage, newPackage));
         String title = name + (pkg.isEmpty() ? "" : " " + pkg);
         return switch (type) {
-            case ADD -> theme.changed(true, "+ " + title);
-            case DELETE -> theme.changed(false, "- " + title);
-            default -> title;
+            case ADD -> theme.sign(true) + " " + title;
+            case DELETE -> theme.sign(false) + " " + title;
+            default -> theme.modified() + " " + title;
         };
     }
 
@@ -238,13 +327,17 @@ public final class Reporter {
     }
 
     /** Renders the changes of a container accepted by the filter, then the types nested in it which have some. */
-    private void render(ApiChanges changes, int depth, List<String> lines, Predicate<MemberChange> filter,
+    private void render(ApiChanges changes, int depth, List<String> lines, BiPredicate<ApiChanges, MemberChange> filter,
                         boolean tagged) {
         for (MemberChange change : changes.changes()) {
-            if (filter.test(change)) {
+            if (filter.test(changes, change)) {
                 ElementPair pair = change.level() == ChangeLevel.API ? change.pair()
                         : new ElementPair(change.pair().newElement(), change.pair().newElement(), Set.of());
                 lines.add("  ".repeat(depth + 1) + printer.format(pair, changes.typeName()) + (tagged ? tag(change) : ""));
+                if (change.level() == ChangeLevel.API && change.pair().isAdded()
+                        && change.pair().newElement().getNodeType() == ElementInfo.NodeType.TYPE) {
+                    addedMembers(change.pair().newElement(), depth + 3, lines);
+                }
                 if (change.body() != null) {
                     body(change.body()).forEach(l -> lines.add("  ".repeat(depth + 4) + l));
                 }

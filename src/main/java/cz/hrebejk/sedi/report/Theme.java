@@ -71,6 +71,8 @@ public final class Theme {
         HEADING,
         /** The {@code #} starting a section heading. */
         HEADING_MARK,
+        /** The {@code ~} starting the title of a changed file. */
+        CHANGED_MARK,
         /** The name of a changed file's class. */
         TITLE,
         /** The package in a file heading. */
@@ -106,10 +108,11 @@ public final class Theme {
             Map.entry(Role.COMMENT, "#7f8796"),
             Map.entry(Role.STRIKE, "#8c93a3 strike"),
             Map.entry(Role.REPLACEMENT, "underline"),
-            Map.entry(Role.ADDED, "bg:#1e3a2a"),
-            Map.entry(Role.REMOVED, "bg:#3f2226"),
-            Map.entry(Role.ADDED_MARK, "bold bg:#2f8f55"),
-            Map.entry(Role.REMOVED_MARK, "bold bg:#b0404c"),
+            Map.entry(Role.ADDED, "none"),
+            Map.entry(Role.REMOVED, "none"),
+            Map.entry(Role.ADDED_MARK, "bold #5fd787"),
+            Map.entry(Role.REMOVED_MARK, "bold #ff6b78"),
+            Map.entry(Role.CHANGED_MARK, "bold #e5c07b"),
             Map.entry(Role.DECLARATION, "bold"),
             Map.entry(Role.HEADING, "bold underline"),
             Map.entry(Role.HEADING_MARK, "#9cc4ff"),
@@ -280,9 +283,19 @@ public final class Theme {
         return strike(oldText) + " " + style(Role.REPLACEMENT, newText);
     }
 
+    /** The {@code +} or {@code -} starting a line of added or removed code. */
+    String sign(boolean added) {
+        return style(added ? Role.ADDED_MARK : Role.REMOVED_MARK, added ? "+" : "-");
+    }
+
+    /** The {@code ~} starting the title of a changed file. */
+    String modified() {
+        return style(Role.CHANGED_MARK, "~");
+    }
+
     /** A line of added ({@code added == true}) or removed code, starting with its {@code +} or {@code -}. */
     String changed(boolean added, String text) {
-        String marked = style(added ? Role.ADDED_MARK : Role.REMOVED_MARK, text.substring(0, 1)) + text.substring(1);
+        String marked = sign(added) + text.substring(1);
         return style(added ? Role.ADDED : Role.REMOVED, marked);
     }
 

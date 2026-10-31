@@ -54,9 +54,6 @@ public class Main implements Callable<Integer> {
             description = "Least important changes to show: api, impl, cosmetic or imports (default: api).")
     private ChangeLevel level = ChangeLevel.API;
 
-    @Option(names = {"-s", "--split-visibility"}, description = "Tell the changes of the public API from the private ones.")
-    private boolean splitVisibility;
-
     @Option(names = {"-g", "--group"}, paramLabel = "<grouping>", converter = GroupingConverter.class,
             description = "Group the changes by type or by category (default: type).")
     private ReportOptions.Grouping grouping = ReportOptions.Grouping.BY_TYPE;
@@ -75,7 +72,7 @@ public class Main implements Callable<Integer> {
 
     @Option(names = "--theme", paramLabel = "<file>",
             description = "Properties file with the colors, keyed by role (keyword, type, method, string, number, "
-                    + "constant, annotation, comment, strike, replacement, added, removed, added_mark, removed_mark, declaration, heading, "
+                    + "constant, annotation, comment, strike, replacement, added, removed, added_mark, removed_mark, declaration, heading, heading_mark, changed_mark, "
                     + "title, package, tag, note), "
                     + "e.g. keyword=#82aaff bold, added=bg:#1e3a2a. Attributes: #rrggbb, bg:#rrggbb, bold, "
                     + "underline, strike, none (default: ~/.config/sedi/theme.properties if it exists).")
@@ -159,7 +156,7 @@ public class Main implements Callable<Integer> {
             System.err.println("Cannot read the theme: " + e.getMessage());
             return 1;
         }
-        Reporter reporter = new Reporter(theme, new ReportOptions(level, splitVisibility, grouping, bodyLines));
+        Reporter reporter = new Reporter(theme, new ReportOptions(level, grouping, bodyLines));
         if (commit != null) {
             return reportCommit(reporter);
         }

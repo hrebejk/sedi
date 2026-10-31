@@ -20,7 +20,7 @@ import javax.lang.model.element.Modifier;
  * Decides which elements are a part of the public API: public or protected ones, and the members of interfaces,
  * all of them only if the enclosing types are part of it too.
  */
-final class Visibility {
+public final class Visibility {
 
     private Visibility() {
     }
@@ -33,7 +33,7 @@ final class Visibility {
      * @param inInterface      whether the enclosing type is an interface or annotation type
      * @return {@code true} if the element can be used from outside of its package
      */
-    static boolean isExposed(ElementInfo element, boolean containerExposed, boolean inInterface) {
+    public static boolean isExposed(ElementInfo element, boolean containerExposed, boolean inInterface) {
         ModifiersTree modifiers = switch (element.getOriginalTree()) {
             case ClassTree c -> c.getModifiers();
             case MethodTree m -> m.getModifiers();
@@ -58,7 +58,7 @@ final class Visibility {
      * @param type the type
      * @return {@code true} for an interface or annotation type
      */
-    static boolean isInterface(ElementInfo type) {
+    public static boolean isInterface(ElementInfo type) {
         return type.getOriginalTree() instanceof ClassTree c
                 && (c.getKind() == Tree.Kind.INTERFACE || c.getKind() == Tree.Kind.ANNOTATION_TYPE);
     }
