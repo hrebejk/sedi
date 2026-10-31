@@ -171,7 +171,7 @@ public class Main implements Callable<Integer> {
             return reportCommit(reporter);
         }
         boolean colored = theme != Theme.PLAIN;
-        Session session = new Session(reporter, System.out, terminal, colored, "Watching " + projectDir + " ...");
+        Session session = new Session(reporter, javadocContext, System.out, terminal, colored, "Watching " + projectDir + " ...");
         Terminal raw = null;
         if (terminal) {
             try {

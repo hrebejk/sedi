@@ -10,6 +10,7 @@ package cz.hrebejk.sedi;
 
 import cz.hrebejk.sedi.analysis.ChangeLevel;
 import cz.hrebejk.sedi.analysis.DiffAnalysis;
+import cz.hrebejk.sedi.report.ReportOptions;
 import cz.hrebejk.sedi.report.Reporter;
 import cz.hrebejk.sedi.util.DirectoryWatcher;
 import cz.hrebejk.sedi.util.Pager;
@@ -32,7 +33,7 @@ import java.util.stream.Collectors;
 /**
  * The running application: shows a report, keeps the analysis it was made from and reacts to the keys and
  * to the changes of the watched directory. The keys {@code a i c m} show only the changes of one category,
- * {@code h} shows the help, {@code Esc} leaves it and {@code q} quits. All rendering happens on the thread
+ * {@code d} cycles the javadoc shown, {@code h} shows the help, {@code Esc} leaves it and {@code q} quits. All rendering happens on the thread
  * that calls {@link #run}.
  */
 final class Session {
@@ -55,13 +56,18 @@ final class Session {
             "  i        show only the implementation changes",
             "  c        show only the cosmetic changes",
             "  m        show only the changed imports",
+            "  d        javadoc: none, 3 lines around changes, whole",
             "  h        this help",
             "  Esc      leave the help and show the last output again",
             "  q        quit",
             "  other    next page of a long output");
 
     private final String idleMessage;
-    private final Reporter reporter;
+    /** The unchanged javadoc lines shown around a change after {@code d} switched from no javadoc. */
+    private static final int JAVADOC_CONTEXT = 3;
+
+    private Reporter reporter;
+    private int javadocContext;
     private final PrintStream out;
     private final boolean interactive;
     private final boolean colored;
@@ -78,14 +84,16 @@ final class Session {
      * Creates a session.
      *
      * @param reporter    renders the analysis as the options of the command line say
+     * @param javadocContext the javadoc context the reporter was made with, see {@link ReportOptions#javadocContext()}
      * @param out         where to print
      * @param interactive whether the output is a terminal on which keys can be read
      * @param colored     whether the key hint may use colors
      * @param idleMessage printed after a report when the output is not a terminal
      */
-    Session(Reporter reporter, PrintStream out, boolean interactive, boolean colored, String idleMessage) {
+    Session(Reporter reporter, int javadocContext, PrintStream out, boolean interactive, boolean colored, String idleMessage) {
         this.idleMessage = idleMessage;
         this.reporter = reporter;
+        this.javadocContext = javadocContext;
         this.out = out;
         this.interactive = interactive;
         this.colored = colored;
@@ -234,6 +242,14 @@ final class Session {
                 return last == null || show();
             case 'm':
                 only = ChangeLevel.IMPORTS;
+                return last == null || show();
+            case 'd':
+                javadocContext = switch (javadocContext) {
+                    case ReportOptions.NO_JAVADOC -> JAVADOC_CONTEXT;
+                    case ReportOptions.WHOLE_JAVADOC -> ReportOptions.NO_JAVADOC;
+                    default -> ReportOptions.WHOLE_JAVADOC;
+                };
+                reporter = reporter.withJavadocContext(javadocContext);
                 return last == null || show();
             case 'h':
                 return help();

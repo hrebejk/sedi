@@ -30,6 +30,7 @@ public final class KeyHint {
             new Item('i', "impl", "impl"),
             new Item('c', "cosmetic", "cos"),
             new Item('m', "imports", "imp"),
+            new Item('d', "javadoc", "doc"),
             new Item('q', "quit", "quit"));
     private static final Item HELP = new Item('h', "help", "help");
 

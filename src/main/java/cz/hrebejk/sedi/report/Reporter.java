@@ -62,6 +62,17 @@ public final class Reporter {
     }
 
     /**
+     * Returns a reporter like this one showing javadoc as the context says.
+     *
+     * @param javadocContext see {@link ReportOptions#javadocContext()}
+     * @return the new reporter
+     */
+    public Reporter withJavadocContext(int javadocContext) {
+        return new Reporter(theme, new ReportOptions(options.maxLevel(), options.grouping(), options.bodyLines(),
+                javadocContext));
+    }
+
+    /**
      * Reports the changes of all the files of the diff. A file is left out if it has no change to show,
      * unless git added, deleted or renamed it.
      *
