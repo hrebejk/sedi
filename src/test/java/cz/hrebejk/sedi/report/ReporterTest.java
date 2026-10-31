@@ -174,11 +174,15 @@ public class ReporterTest extends TestCase {
      */
     public void testGroupByCategory() throws Exception {
         assertEquals(List.of(
-                        "=== Public API changes ===", "Foo", "  Foo", "      public ~~int~~ long a",
-                        "=== Private API changes ===", "Foo", "  Foo", "      private ~~int~~ long b",
-                        "=== Implementation changes ===", "Foo", "  Foo", "      public int m()", "          return ~~1~~ 2;",
-                        "=== Cosmetic changes ===", "Foo", "  Foo", "      int o()",
-                        "=== Imports ===", "Foo", "  - import java.util.List", "  + import java.util.Set"),
+                        "# Public API changes", "", "Foo", "  Foo", "      public ~~int~~ long a",
+                        "",
+                        "# Private API changes", "", "Foo", "  Foo", "      private ~~int~~ long b",
+                        "",
+                        "# Implementation changes", "", "Foo", "  Foo", "      public int m()", "          return ~~1~~ 2;",
+                        "",
+                        "# Cosmetic changes", "", "Foo", "  Foo", "      int o()",
+                        "",
+                        "# Imports", "", "Foo", "  - import java.util.List", "  + import java.util.Set"),
                 report(new ReportOptions(ChangeLevel.IMPORTS, true, ReportOptions.Grouping.BY_CATEGORY)));
     }
 }

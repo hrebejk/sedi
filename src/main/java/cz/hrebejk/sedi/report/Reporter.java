@@ -114,7 +114,11 @@ public final class Reporter {
             addFile(lines, file, fileLines, structural && file.isStructural());
         }
         if (!lines.isEmpty()) {
-            result.add(theme.style(Theme.Role.HEADING, "=== " + heading + " ==="));
+            if (!result.isEmpty()) {
+                result.add("");
+            }
+            result.add(theme.style(Theme.Role.HEADING_MARK, "#") + " " + theme.style(Theme.Role.HEADING, heading));
+            result.add("");
             result.addAll(lines);
         }
     }

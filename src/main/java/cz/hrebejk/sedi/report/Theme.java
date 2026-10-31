@@ -69,6 +69,8 @@ public final class Theme {
         DECLARATION,
         /** Section headings. */
         HEADING,
+        /** The {@code #} starting a section heading. */
+        HEADING_MARK,
         /** The name of a changed file's class. */
         TITLE,
         /** The package in a file heading. */
@@ -109,7 +111,8 @@ public final class Theme {
             Map.entry(Role.ADDED_MARK, "bold bg:#2f8f55"),
             Map.entry(Role.REMOVED_MARK, "bold bg:#b0404c"),
             Map.entry(Role.DECLARATION, "bold"),
-            Map.entry(Role.HEADING, "#9cc4ff bold underline"),
+            Map.entry(Role.HEADING, "bold underline"),
+            Map.entry(Role.HEADING_MARK, "#9cc4ff"),
             Map.entry(Role.TITLE, "#e4ecf7 bold"),
             Map.entry(Role.PACKAGE, "#8a93a5"),
             Map.entry(Role.TAG, "#7f8796"),
