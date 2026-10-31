@@ -119,7 +119,7 @@ public class ReporterTest extends TestCase {
                 Reporter reporter = new Reporter(Theme.PLAIN);
                 List<String> titles = analyzer.analyzeCommit("HEAD", p -> p.endsWith(".java")).files().stream()
                         .map(reporter::title).sorted().toList();
-                assertEquals(List.of("+ New.java n", "- Gone.java", "~ ~~Foo.java~~ Bar.java ~~a~~ b"), titles);
+                assertEquals(List.of("+ New.java n", "- Gone.java", "\u2192 ~~Foo.java~~ Bar.java ~~a~~ b"), titles);
             }
         }
     }
@@ -282,6 +282,55 @@ public class ReporterTest extends TestCase {
                                 "~ B.java", "    class B", "    ~ ~~int~~ long b"),
                         new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY))
                                 .report(analyzer.analyzeChanges()));
+            }
+        }
+    }
+
+    /**
+     * Tests that a file which git sees as deleted and added, but which holds a renamed type with the same members,
+     * is listed in a section of renames after the added and the removed files.
+     */
+    public void testRenamedFileSection() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("a/Foo.java", "package a;\npublic class Foo {\n  public int x = 1111111111;\n"
+                    + "  public int y = 2222222222;\n  public void run() { System.out.println(\"one\"); }\n}\n");
+            helper.writeFile("Gone.java", "class Gone { }\n");
+            helper.commit("init");
+            java.nio.file.Files.delete(helper.getRepositoryPath().resolve("a/Foo.java"));
+            java.nio.file.Files.delete(helper.getRepositoryPath().resolve("Gone.java"));
+            helper.writeFile("b/Bar.java", "package b;\npublic class Bar {\n  public int x = 7;\n"
+                    + "  public int y = 8;\n  public void run() { }\n}\n");
+            helper.writeFile("Fresh.java", "interface Fresh { void m(); void n(); }\n");
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                assertEquals(List.of("# API changes", "",
+                                "+ Fresh.java",
+                                "  interface Fresh",
+                                "    void m()",
+                                "    void n()",
+                                "",
+                                "- Gone.java",
+                                "",
+                                "\u2192 ~~Foo.java~~ Bar.java ~~a~~ b",
+                                "  ~ public class ~~Foo~~ Bar"),
+                        new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY))
+                                .report(analyzer.analyzeChanges()));
+            }
+        }
+    }
+
+    /** Tests that a file moved to another package, which changes nothing else, is shown by its title only. */
+    public void testMovedFileHasNoApiChange() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            String body = "public final class Foo {\n  private record Parts(int a) { static Parts of(int a) { return new Parts(a); } }\n"
+                    + "  private int render(Parts p) { return p.a(); }\n  private Parts make() { return Parts.of(1); }\n"
+                    + "  void other() { }\n  void more() { }\n}\n";
+            helper.writeFile("a/Foo.java", "package a;\n" + body);
+            helper.commit("init");
+            java.nio.file.Files.delete(helper.getRepositoryPath().resolve("a/Foo.java"));
+            helper.writeFile("b/Foo.java", "package b;\n" + body);
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                assertEquals(List.of("\u2192 Foo.java ~~a~~ b"),
+                        new Reporter(Theme.PLAIN).report(analyzer.analyzeChanges()));
             }
         }
     }

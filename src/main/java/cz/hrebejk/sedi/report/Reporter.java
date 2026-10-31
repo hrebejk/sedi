@@ -167,10 +167,19 @@ public final class Reporter {
         }
         parts.add(names);
         for (FileAnalysis file : files) {
+            if (file.diff().getChangeType() == DiffEntry.ChangeType.RENAME) {
+                List<String> renamed = new ArrayList<>();
+                addFile(renamed, file, lines(file, (container, c) -> c.level() == ChangeLevel.API
+                        && !isListedApart(container, c), true, false, true), true);
+                parts.add(renamed);
+            }
+        }
+        for (FileAnalysis file : files) {
             List<String> changed = new ArrayList<>();
-            boolean renamed = file.diff().getChangeType() == DiffEntry.ChangeType.RENAME;
-            addFile(changed, file, lines(file, (container, c) -> c.level() == ChangeLevel.API && !isListedApart(container, c),
-                    true, false, true), renamed);
+            if (file.diff().getChangeType() != DiffEntry.ChangeType.RENAME) {
+                addFile(changed, file, lines(file, (container, c) -> c.level() == ChangeLevel.API
+                        && !isListedApart(container, c), true, false, true), false);
+            }
             parts.add(changed);
         }
         List<String> result = new ArrayList<>();
@@ -371,6 +380,7 @@ public final class Reporter {
         return switch (type) {
             case ADD -> theme.sign(true) + " " + title;
             case DELETE -> theme.sign(false) + " " + title;
+            case RENAME -> theme.renamed() + " " + title;
             default -> theme.modified() + " " + title;
         };
     }

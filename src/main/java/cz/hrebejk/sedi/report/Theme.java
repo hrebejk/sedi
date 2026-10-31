@@ -293,6 +293,11 @@ public final class Theme {
         return style(Role.CHANGED_MARK, "~");
     }
 
+    /** The {@code →} starting the title of a renamed file. */
+    String renamed() {
+        return style(Role.CHANGED_MARK, "\u2192");
+    }
+
     /** A line of added ({@code added == true}) or removed code, starting with its {@code +} or {@code -}. */
     String changed(boolean added, String text) {
         String marked = sign(added) + text.substring(1);
