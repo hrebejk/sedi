@@ -143,11 +143,21 @@ public final class Reporter {
         for (FileAnalysis file : files) {
             List<String> fileLines = new ArrayList<>();
             if (level == ChangeLevel.IMPORTS) {
+                if (file.diff().getChangeType() == DiffEntry.ChangeType.DELETE) {
+                    continue;
+                }
                 importLines(file, false, fileLines);
             } else {
                 fileLines = lines(file, (container, c) -> c.level() == level, false, false, false);
             }
-            addFile(lines, file, fileLines, false);
+            List<String> part = new ArrayList<>();
+            addFile(part, file, fileLines, false);
+            if (!part.isEmpty()) {
+                if (!lines.isEmpty()) {
+                    lines.add("");
+                }
+                lines.addAll(part);
+            }
         }
         return lines;
     }
@@ -353,7 +363,7 @@ public final class Reporter {
     }
 
     private String importLine(boolean added, String name) {
-        return theme.changed(added, (added ? "+ " : "- ") + theme.code("import " + name));
+        return theme.changed(added, added ? "+ " + theme.code("import " + name) : "- " + theme.strike("import " + name));
     }
 
     private String tag(String text) {
@@ -411,8 +421,9 @@ public final class Reporter {
         String newPackage = type == DiffEntry.ChangeType.DELETE ? ""
                 : withSourceRoot(file.diff().getNewPath(), file.newPackage());
         boolean deleted = type == DiffEntry.ChangeType.DELETE;
-        String name = theme.style(Theme.Role.TITLE, deleted ? oldName : printer.slot(oldName, newName));
-        String pkg = theme.style(Theme.Role.PACKAGE, deleted ? oldPackage : printer.slot(oldPackage, newPackage));
+        String name = deleted ? theme.strike(oldName) : theme.style(Theme.Role.TITLE, printer.slot(oldName, newName));
+        String pkg = deleted ? (oldPackage.isEmpty() ? "" : theme.strike(oldPackage))
+                : theme.style(Theme.Role.PACKAGE, printer.slot(oldPackage, newPackage));
         String title = name + (pkg.isEmpty() ? "" : " " + pkg);
         return switch (type) {
             case ADD -> theme.sign(true) + " " + title;

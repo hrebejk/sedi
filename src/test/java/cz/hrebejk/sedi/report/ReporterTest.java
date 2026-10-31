@@ -119,7 +119,7 @@ public class ReporterTest extends TestCase {
                 Reporter reporter = new Reporter(Theme.PLAIN);
                 List<String> titles = analyzer.analyzeCommit("HEAD", p -> p.endsWith(".java")).files().stream()
                         .map(reporter::title).sorted().toList();
-                assertEquals(List.of("+ New.java n", "- Gone.java", "\u2192 ~~Foo.java~~ Bar.java ~~a~~ b"), titles);
+                assertEquals(List.of("+ New.java n", "- ~~Gone.java~~", "\u2192 ~~Foo.java~~ Bar.java ~~a~~ b"), titles);
             }
         }
     }
@@ -154,7 +154,7 @@ public class ReporterTest extends TestCase {
         assertEquals(List.of("~ Foo.java", "    public class Foo",
                         "    ~ public ~~int~~ long a", "    ~ private ~~int~~ long b",
                         "    ~ public int m() [impl]", "          return ~~1~~ 2;", "    ~ int o() [cosmetic]",
-                        "  - import java.util.List [import]", "  + import java.util.Set [import]"),
+                        "  - ~~import java.util.List~~ [import]", "  + import java.util.Set [import]"),
                 report(new ReportOptions(ChangeLevel.IMPORTS, ReportOptions.Grouping.BY_TYPE)));
         assertEquals(List.of("~ Foo.java", "    public class Foo",
                         "    ~ public ~~int~~ long a", "    ~ private ~~int~~ long b", "    ~ public int m() [impl]", "          return ~~1~~ 2;"),
@@ -176,7 +176,7 @@ public class ReporterTest extends TestCase {
                         "~ Foo.java", "    public class Foo", "    ~ int o()",
                         "",
                         "# Imports", "",
-                        "~ Foo.java", "  - import java.util.List", "  + import java.util.Set"),
+                        "~ Foo.java", "  - ~~import java.util.List~~", "  + import java.util.Set"),
                 report(new ReportOptions(ChangeLevel.IMPORTS, ReportOptions.Grouping.BY_CATEGORY)));
     }
 
@@ -202,7 +202,7 @@ public class ReporterTest extends TestCase {
                                 "    public New( int i )",
                                 "    public void m()",
                                 "",
-                                "- Old.java a",
+                                "- ~~Old.java~~ ~~a~~",
                                 "- Gone a.Foo",
                                 "",
                                 "~ Foo.java a",
@@ -308,7 +308,7 @@ public class ReporterTest extends TestCase {
                                 "    void m()",
                                 "    void n()",
                                 "",
-                                "- Gone.java",
+                                "- ~~Gone.java~~",
                                 "",
                                 "\u2192 ~~Foo.java~~ Bar.java ~~a~~ b",
                                 "  ~ public class ~~Foo~~ Bar"),
