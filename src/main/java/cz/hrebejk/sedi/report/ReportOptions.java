@@ -24,17 +24,17 @@ public record ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyLin
     /** The default of {@link #bodyLines()}. */
     public static final int DEFAULT_BODY_LINES = 12;
 
-    /** The default of {@link #javadocContext()}. */
-    public static final int DEFAULT_JAVADOC_CONTEXT = 1;
-
     /** The {@link #javadocContext()} showing no javadoc at all. */
     public static final int NO_JAVADOC = -2;
 
     /** The {@link #javadocContext()} showing the whole javadoc of an element whose javadoc changed. */
     public static final int WHOLE_JAVADOC = -1;
 
+    /** The default of {@link #javadocContext()}: no javadoc. */
+    public static final int DEFAULT_JAVADOC_CONTEXT = NO_JAVADOC;
+
     /**
-     * Creates options showing {@value #DEFAULT_JAVADOC_CONTEXT} unchanged javadoc line around a change.
+     * Creates options showing no javadoc.
      *
      * @param maxLevel  the least important level of changes to show
      * @param grouping  how the changes are grouped

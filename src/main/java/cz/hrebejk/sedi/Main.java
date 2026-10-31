@@ -69,7 +69,7 @@ public class Main implements Callable<Integer> {
 
     @Option(names = "--javadoc-context", paramLabel = "<n>",
             description = "Unchanged javadoc lines shown around a javadoc change, -1 for the whole javadoc, "
-                    + "-2 for no javadoc (default: " + ReportOptions.DEFAULT_JAVADOC_CONTEXT + ").")
+                    + "-2 for no javadoc (default: -2).")
     private int javadocContext = ReportOptions.DEFAULT_JAVADOC_CONTEXT;
 
     @Option(names = "--color", paramLabel = "<when>", converter = ColorConverter.class,
