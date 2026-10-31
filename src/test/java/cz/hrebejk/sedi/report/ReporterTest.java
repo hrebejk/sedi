@@ -379,8 +379,48 @@ public class ReporterTest extends TestCase {
             helper.writeFile("Foo.java", "public class Foo {\n  long a;\n}\n");
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                assertEquals(List.of("No imports."),
+                assertEquals(List.of("# Imports", "", "  NO CHANGES", ""),
                         new Reporter(Theme.PLAIN).reportOnly(analyzer.analyzeChanges(), ChangeLevel.IMPORTS));
+            }
+        }
+    }
+
+    /**
+     * Tests that a report by type with nothing to show lists every shown level with NO CHANGES.
+     */
+    public void testNothingToShowByType() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", "import java.util.List;\npublic class Foo {\n}\n");
+            helper.commit("init");
+            helper.writeFile("Foo.java", "import java.util.Set;\npublic class Foo {\n}\n");
+
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                assertEquals(List.of("# API changes", "", "  NO CHANGES", "",
+                                "# Implementation changes", "", "  NO CHANGES", ""),
+                        new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.IMPLEMENTATION,
+                                ReportOptions.Grouping.BY_TYPE)).report(analyzer.analyzeChanges()));
+            }
+        }
+    }
+
+    /**
+     * Tests that with only changed imports and the imports level, every level is listed.
+     */
+    public void testOnlyImportChangesShowAllLevels() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", "import java.util.List;\npublic class Foo {\n}\n");
+            helper.commit("init");
+            helper.writeFile("Foo.java", "import java.util.Set;\npublic class Foo {\n}\n");
+
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                List<String> lines = new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.IMPORTS,
+                        ReportOptions.Grouping.BY_TYPE)).report(analyzer.analyzeChanges());
+                assertEquals(List.of("# API changes", "", "  NO CHANGES", "",
+                                "# Implementation changes", "", "  NO CHANGES", "",
+                                "# Cosmetic changes", "", "  NO CHANGES", ""),
+                        lines.subList(0, 12));
+                assertEquals("# Imports", lines.get(12));
+                assertTrue(lines.toString(), lines.stream().anyMatch(l -> l.contains("java.util.Set")));
             }
         }
     }

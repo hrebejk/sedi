@@ -80,7 +80,9 @@ public final class Theme {
         /** The tag of the level of a change. */
         TAG,
         /** Remarks of the report, like collapsed or left out code. */
-        NOTE
+        NOTE,
+        /** The remark of a section without changes. */
+        NO_CHANGES
     }
 
     /** A theme without colors; struck through text is shown as {@code ~~text~~}. */
@@ -119,7 +121,8 @@ public final class Theme {
             Map.entry(Role.TITLE, "#e4ecf7 bold"),
             Map.entry(Role.PACKAGE, "#8a93a5"),
             Map.entry(Role.TAG, "#7f8796"),
-            Map.entry(Role.NOTE, "#8a93a5"));
+            Map.entry(Role.NOTE, "#8a93a5"),
+            Map.entry(Role.NO_CHANGES, "bold #ff9e3d"));
 
     /**
      * Text attributes; {@code null} colors are left as they are.

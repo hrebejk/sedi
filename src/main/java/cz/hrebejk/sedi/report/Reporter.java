@@ -63,28 +63,38 @@ public final class Reporter {
      * unless git added, deleted or renamed it.
      *
      * @param analysis the analyzed diff
-     * @return the headings and the indented lines under them
+     * @return the headings and the indented lines under them; if there is nothing to show but imports, the headings
+     *         of the shown levels, each with {@code NO CHANGES} or the changes
      */
     public List<String> report(DiffAnalysis analysis) {
         List<FileAnalysis> files = sorted(analysis);
         List<String> result = new ArrayList<>();
         if (options.grouping() == ReportOptions.Grouping.BY_TYPE) {
-            for (FileAnalysis file : files) {
-                addFile(result, file, report(file), file.isStructural());
+            // Changed imports alone are no reason to leave the other levels out: show every level then.
+            ReportOptions withoutImports = options.maxLevel() == ChangeLevel.IMPORTS
+                    ? new ReportOptions(ChangeLevel.COSMETIC, options.grouping(), options.bodyLines())
+                    : options;
+            if (!new Reporter(theme, withoutImports).byType(files).isEmpty()) {
+                return byType(files);
             }
-            return result;
+            // Nothing to show by type: say so for every shown level, as the grouping by category does.
         }
         for (ChangeLevel level : ChangeLevel.values()) {
             if (level.compareTo(options.maxLevel()) > 0) {
                 continue;
             }
-            List<String> section = section(files, level);
-            if (!section.isEmpty()) {
-                if (!result.isEmpty()) {
-                    result.add("");
-                }
-                result.addAll(section);
+            if (!result.isEmpty() && !result.get(result.size() - 1).isEmpty()) {
+                result.add("");
             }
+            result.addAll(section(files, level));
+        }
+        return result;
+    }
+
+    private List<String> byType(List<FileAnalysis> files) {
+        List<String> result = new ArrayList<>();
+        for (FileAnalysis file : files) {
+            addFile(result, file, report(file), file.isStructural());
         }
         return result;
     }
@@ -94,14 +104,10 @@ public final class Reporter {
      *
      * @param analysis the analyzed diff
      * @param level    the only level to show
-     * @return the heading of the level and the changes under it, or a note if there are none
+     * @return the heading of the level and the changes under it, or {@code NO CHANGES} if there are none
      */
     public List<String> reportOnly(DiffAnalysis analysis, ChangeLevel level) {
-        List<String> section = section(sorted(analysis), level);
-        if (section.isEmpty()) {
-            return List.of(theme.style(Theme.Role.NOTE, "No " + SECTIONS.get(level).toLowerCase() + "."));
-        }
-        return section;
+        return section(sorted(analysis), level);
     }
 
     private static List<FileAnalysis> sorted(DiffAnalysis analysis) {
@@ -110,16 +116,17 @@ public final class Reporter {
                 .toList();
     }
 
-    /** The heading of the level followed by its changes, empty if the level has no change. */
+    /** The heading of the level followed by its changes, or by a remark that there are none. */
     private List<String> section(List<FileAnalysis> files, ChangeLevel level) {
         List<String> lines = level == ChangeLevel.API ? apiLines(files) : levelLines(files, level);
-        if (lines.isEmpty()) {
-            return List.of();
-        }
         List<String> section = new ArrayList<>();
         section.add(theme.style(Theme.Role.HEADING_MARK, "#") + " "
                 + theme.style(Theme.Role.HEADING, SECTIONS.get(level)));
         section.add("");
+        if (lines.isEmpty()) {
+            section.add("  " + theme.style(Theme.Role.NO_CHANGES, "NO CHANGES"));
+            section.add("");
+        }
         section.addAll(lines);
         return section;
     }
