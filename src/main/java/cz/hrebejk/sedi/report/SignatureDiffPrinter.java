@@ -44,7 +44,7 @@ public final class SignatureDiffPrinter {
     }
 
     /**
-     * Formats the signature difference of the pair.
+     * Formats the signature difference of the pair, without the annotations, see {@link #annotations}.
      *
      * @param pair     the pair to print
      * @param typeName simple name of the enclosing type, used to display constructors
@@ -63,19 +63,56 @@ public final class SignatureDiffPrinter {
     }
 
     /**
-     * Formats the signature of an element as it is, without a {@code +} or {@code -}.
+     * Formats the annotations of the pair, each on a line of its own: all of them for an added or removed element,
+     * for a changed one only the annotations which were added, removed or changed.
+     *
+     * @param pair the pair to print
+     * @return the lines, empty if there is nothing to show
+     */
+    public List<String> annotations(ElementPair pair) {
+        if (pair.isAdded() || pair.isRemoved()) {
+            boolean added = pair.isAdded();
+            return Parts.of(added ? pair.newElement() : pair.oldElement(), "").annotations().stream()
+                    .map(a -> theme.changed(added, (added ? "+ " : "- ") + theme.code(a))).toList();
+        }
+        List<String> oldAnnotations = Parts.of(pair.oldElement(), "").annotations();
+        List<String> newAnnotations = Parts.of(pair.newElement(), "").annotations();
+        List<String> lines = new ArrayList<>();
+        for (String o : oldAnnotations) {
+            if (newAnnotations.stream().noneMatch(n -> annotationName(n).equals(annotationName(o)))) {
+                lines.add("  " + strike(o));
+            }
+        }
+        for (String n : newAnnotations) {
+            String o = oldAnnotations.stream().filter(a -> annotationName(a).equals(annotationName(n))).findFirst().orElse("");
+            if (!o.equals(n)) {
+                lines.add("  " + (o.isEmpty() ? theme.style(Theme.Role.REPLACEMENT, n) : slot(o, n)));
+            }
+        }
+        return lines;
+    }
+
+    private static String annotationName(String annotation) {
+        int paren = annotation.indexOf('(');
+        return paren < 0 ? annotation : annotation.substring(0, paren);
+    }
+
+    /**
+     * Formats the annotations and the signature of an element as it is, without a {@code +} or {@code -}.
      *
      * @param element  the element
      * @param typeName simple name of the enclosing type, used to display constructors
-     * @return a one line description
+     * @return the lines of the annotations, then the line of the signature
      */
-    public String declaration(ElementInfo element, String typeName) {
+    public List<String> declaration(ElementInfo element, String typeName) {
         Parts parts = Parts.of(element, typeName);
-        return theme.code(render(parts, parts));
+        List<String> lines = new ArrayList<>(parts.annotations().stream().map(theme::code).toList());
+        lines.add(theme.code(render(parts, parts)));
+        return lines;
     }
 
     /** Textual pieces of one element's signature. */
-    private record Parts(ElementInfo.NodeType nodeType, List<String> modifiers, List<String> typeParams, String type,
+    private record Parts(ElementInfo.NodeType nodeType, List<String> annotations, List<String> modifiers, List<String> typeParams, String type,
                          String name, List<String[]> params, List<String> throwsList, List<String> extendsList,
                          List<String> implementsList, List<String> permitsList) {
 
@@ -87,12 +124,12 @@ public final class SignatureDiffPrinter {
                 for (VariableTree p : m.getParameters()) {
                     params.add(new String[]{String.valueOf(p.getType()), p.getName().toString()});
                 }
-                return new Parts(info.getNodeType(), modifiers(m.getModifiers()), typeParams(m.getTypeParameters()),
+                return new Parts(info.getNodeType(), annotations(m.getModifiers()), modifiers(m.getModifiers()), typeParams(m.getTypeParameters()),
                         m.getReturnType() == null ? "" : m.getReturnType().toString(), name, params,
                         m.getThrows().stream().map(Object::toString).toList(), List.of(), List.of(), List.of());
             }
             if (tree instanceof VariableTree v) {
-                return new Parts(info.getNodeType(), modifiers(v.getModifiers()), List.of(), String.valueOf(v.getType()),
+                return new Parts(info.getNodeType(), annotations(v.getModifiers()), modifiers(v.getModifiers()), List.of(), String.valueOf(v.getType()),
                         v.getName().toString(), List.of(), List.of(), List.of(), List.of(), List.of());
             }
             if (tree instanceof ClassTree c) {
@@ -104,19 +141,20 @@ public final class SignatureDiffPrinter {
                 }
                 (c.getKind() == Tree.Kind.INTERFACE ? extended : implemented)
                         .addAll(c.getImplementsClause().stream().map(Object::toString).toList());
-                return new Parts(info.getNodeType(), modifiers(c.getModifiers()), typeParams(c.getTypeParameters()),
+                return new Parts(info.getNodeType(), annotations(c.getModifiers()), modifiers(c.getModifiers()), typeParams(c.getTypeParameters()),
                         keyword(c.getKind()), c.getSimpleName().toString(), List.of(), List.of(), extended, implemented,
                         c.getPermitsClause().stream().map(Object::toString).toList());
             }
-            return new Parts(info.getNodeType(), List.of(), List.of(), "", info.getName(), List.of(), List.of(),
+            return new Parts(info.getNodeType(), List.of(), List.of(), List.of(), "", info.getName(), List.of(), List.of(),
                     List.of(), List.of(), List.of());
+        }
+
+        private static List<String> annotations(ModifiersTree modifiers) {
+            return modifiers.getAnnotations().stream().map(AnnotationTree::toString).toList();
         }
 
         private static List<String> modifiers(ModifiersTree modifiers) {
             List<String> result = new ArrayList<>();
-            for (AnnotationTree a : modifiers.getAnnotations()) {
-                result.add(a.toString());
-            }
             for (Modifier m : modifiers.getFlags()) {
                 result.add(m.toString());
             }

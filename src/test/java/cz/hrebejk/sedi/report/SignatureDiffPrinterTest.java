@@ -37,7 +37,9 @@ public class SignatureDiffPrinterTest extends TestCase {
 
     private List<String> print(String oldMembers, String newMembers) throws Exception {
         SignatureDiffPrinter printer = new SignatureDiffPrinter(Theme.PLAIN);
-        return pairs(oldMembers, newMembers).stream().map(p -> printer.format(p, "T")).toList();
+        return pairs(oldMembers, newMembers).stream()
+                .flatMap(p -> java.util.stream.Stream.concat(printer.annotations(p).stream(), java.util.stream.Stream.of(printer.format(p, "T"))))
+                .toList();
     }
 
     public void testParameterTypeAndNameChange() throws Exception {
@@ -51,7 +53,7 @@ public class SignatureDiffPrinterTest extends TestCase {
     }
 
     public void testThrowsAndAnnotation() throws Exception {
-        assertEquals(List.of("  @Deprecated void m() throws Exception"),
+        assertEquals(List.of("  @Deprecated", "  void m() throws Exception"),
                 print("void m() {}", "@Deprecated void m() throws Exception {}"));
     }
 
