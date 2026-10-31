@@ -266,4 +266,23 @@ public class ReporterTest extends TestCase {
             }
         }
     }
+
+    /** Tests that the changed files of the API changes are separated by an empty line. */
+    public void testChangedFilesSeparated() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("A.java", "class A {\n  int a;\n}\n");
+            helper.writeFile("B.java", "class B {\n  int b;\n}\n");
+            helper.commit("init");
+            helper.writeFile("A.java", "class A {\n  long a;\n}\n");
+            helper.writeFile("B.java", "class B {\n  long b;\n}\n");
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                assertEquals(List.of("# API changes", "",
+                                "~ A.java", "  class A", "      ~~int~~ long a",
+                                "",
+                                "~ B.java", "  class B", "      ~~int~~ long b"),
+                        new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY))
+                                .report(analyzer.analyzeChanges()));
+            }
+        }
+    }
 }

@@ -166,13 +166,13 @@ public final class Reporter {
             }
         }
         parts.add(names);
-        List<String> changed = new ArrayList<>();
         for (FileAnalysis file : files) {
+            List<String> changed = new ArrayList<>();
             boolean renamed = file.diff().getChangeType() == DiffEntry.ChangeType.RENAME;
             addFile(changed, file, lines(file, (container, c) -> c.level() == ChangeLevel.API && !isListedApart(container, c),
                     true, false, true), renamed);
+            parts.add(changed);
         }
-        parts.add(changed);
         List<String> result = new ArrayList<>();
         for (List<String> part : parts) {
             if (!part.isEmpty()) {
