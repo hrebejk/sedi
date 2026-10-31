@@ -461,6 +461,15 @@ public class ReporterTest extends TestCase {
                 javadocReport(DOC_OLD, changed, 1));
     }
 
+    /** Tests that a change of the javadoc alone is not reported when the javadoc is not shown. */
+    public void testJavadocOnlyChangeHidden() throws Exception {
+        assertEquals(List.of(),
+                javadocReport(DOC_OLD, DOC_OLD.replace("first", "last"), ReportOptions.NO_JAVADOC));
+        String nested = "public class Foo {\n  /** Inner one. */\n  public static class In { }\n}\n";
+        assertEquals(List.of(),
+                javadocReport(nested, nested.replace("one.", "two."), ReportOptions.NO_JAVADOC));
+    }
+
     /** Tests that a block of completely changed lines shows all the removed lines first, then the new ones. */
     public void testJavadocChangedBlock() throws Exception {
         String changed = DOC_OLD.replace("@return the element", "Nothing here matches")
@@ -496,10 +505,7 @@ public class ReporterTest extends TestCase {
                         "      * @throws IOException never",
                         "    ~ public String get( int i )"),
                 javadocReport(DOC_OLD, changed, ReportOptions.WHOLE_JAVADOC));
-        assertEquals(List.of(
-                        "    public class Foo",
-                        "    ~ public String get( int i )"),
-                javadocReport(DOC_OLD, changed, ReportOptions.NO_JAVADOC));
+        assertEquals(List.of(), javadocReport(DOC_OLD, changed, ReportOptions.NO_JAVADOC));
     }
 
     /** Tests that an added member shows its javadoc, a removed one does not. */

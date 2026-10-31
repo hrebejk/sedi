@@ -357,8 +357,12 @@ public final class Reporter {
      * @param tagged whether to end the lines with the level of the change
      * @param diff   whether to show the changes of the signatures of the types
      */
-    private List<String> lines(FileAnalysis file, BiPredicate<ApiChanges, MemberChange> filter, boolean header,
+    private List<String> lines(FileAnalysis file, BiPredicate<ApiChanges, MemberChange> accepted, boolean header,
                                boolean tagged, boolean diff) {
+        // A change of the javadoc alone has nothing to show when the javadoc is not shown.
+        boolean hideJavadoc = options.javadocContext() == ReportOptions.NO_JAVADOC;
+        BiPredicate<ApiChanges, MemberChange> filter = (container, c) -> accepted.test(container, c)
+                && !(hideJavadoc && c.isJavadocOnly());
         List<String> lines = new ArrayList<>();
         if (file.oldPrimary() != null) {
             List<String> members = new ArrayList<>();

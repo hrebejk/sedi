@@ -29,4 +29,15 @@ public record MemberChange(ElementPair pair, ChangeLevel level, boolean publicAp
     public MemberChange(ElementPair pair, ChangeLevel level, boolean publicApi) {
         this(pair, level, publicApi, null);
     }
+
+    /**
+     * Returns whether only the javadoc of the element changed: an API change of an element present in both versions
+     * whose signature is the same.
+     *
+     * @return {@code true} for a change of the javadoc alone
+     */
+    public boolean isJavadocOnly() {
+        return level == ChangeLevel.API && !pair.isAdded() && !pair.isRemoved()
+                && pair.oldElement().getSha(ChangeCategory.SIGNATURE).equals(pair.newElement().getSha(ChangeCategory.SIGNATURE));
+    }
 }
