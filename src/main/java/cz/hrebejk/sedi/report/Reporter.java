@@ -192,9 +192,12 @@ public final class Reporter {
 
     /** Where the type is: its package and the types it is nested in, preceded by a space; empty if nowhere. */
     private String location(TypeRef type, boolean added) {
+        String path = added ? type.file().diff().getNewPath() : type.file().diff().getOldPath();
         String pkg = added ? type.file().newPackage() : type.file().oldPackage();
         String outer = type.outer().isEmpty() ? "" : type.outer().substring(0, type.outer().length() - 1);
+        String root = sourceRoot(path, pkg);
         String where = pkg.isEmpty() ? outer : outer.isEmpty() ? pkg : pkg + "." + outer;
+        where = root.isEmpty() || where.isEmpty() ? where : where + " " + root;
         return where.isEmpty() ? "" : " " + theme.style(Theme.Role.PACKAGE, where);
     }
 
@@ -279,6 +282,26 @@ public final class Reporter {
     }
 
     /**
+     * Returns the source root of the file, e.g. {@code src/test/java}: what remains of its path after the
+     * directories of the package and the file name are removed. Empty if there is no package or the file
+     * is not in the directories of its package.
+     */
+    private static String sourceRoot(String path, String pkg) {
+        if (pkg.isEmpty()) {
+            return "";
+        }
+        String dir = path.contains("/") ? path.substring(0, path.lastIndexOf('/')) : "";
+        String packageDir = pkg.replace('.', '/');
+        return dir.endsWith("/" + packageDir) ? dir.substring(0, dir.length() - packageDir.length() - 1) : "";
+    }
+
+    /** Follows the package with the source root it is in, e.g. {@code com.acme src/test/java}. */
+    private static String withSourceRoot(String path, String pkg) {
+        String root = sourceRoot(path, pkg);
+        return root.isEmpty() ? pkg : pkg + " " + root;
+    }
+
+    /**
      * Returns the heading of a changed file: the simple name of its top level class, a space and its package,
      * e.g. {@code Foo com.acme}. Added files are prefixed with {@code +}, deleted ones with {@code -}, and
      * a renamed class or moved package shows the old value struck through.
@@ -290,8 +313,10 @@ public final class Reporter {
         DiffEntry.ChangeType type = file.diff().getChangeType();
         String oldName = type == DiffEntry.ChangeType.ADD ? "" : file.oldClassName();
         String newName = type == DiffEntry.ChangeType.DELETE ? "" : file.newClassName();
-        String oldPackage = type == DiffEntry.ChangeType.ADD ? "" : file.oldPackage();
-        String newPackage = file.newPackage();
+        String oldPackage = type == DiffEntry.ChangeType.ADD ? ""
+                : withSourceRoot(file.diff().getOldPath(), file.oldPackage());
+        String newPackage = type == DiffEntry.ChangeType.DELETE ? ""
+                : withSourceRoot(file.diff().getNewPath(), file.newPackage());
         boolean deleted = type == DiffEntry.ChangeType.DELETE;
         String name = theme.style(Theme.Role.TITLE, deleted ? oldName : printer.slot(oldName, newName));
         String pkg = theme.style(Theme.Role.PACKAGE, deleted ? oldPackage : printer.slot(oldPackage, newPackage));
