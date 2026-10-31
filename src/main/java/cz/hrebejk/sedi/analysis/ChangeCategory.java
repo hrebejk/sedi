@@ -31,7 +31,11 @@ public enum ChangeCategory implements HashCalculation {
      */
     WITHOUT_RENAMES(new HashIgnoreLocalNames()),
 
-    /** Only the signatures of elements; see {@link HashSignature}. */
+    /**
+     * Only the signatures of elements; see {@link HashSignature}. The references to renamed elements, such as a
+     * parameter of a renamed type, are hashed with their old names, but the name of the element itself is not:
+     * a signature changes when the element is renamed, not when an element it refers to is.
+     */
     SIGNATURE(new HashSignature()),
 
     /**
@@ -53,6 +57,16 @@ public enum ChangeCategory implements HashCalculation {
      */
     boolean undoesRenames() {
         return this == WITHOUT_RENAMES || this == BODY;
+    }
+
+    /**
+     * Returns whether the digest of this category contains the old names of renamed elements where they are
+     * referred to, not where they are declared.
+     *
+     * @return {@code true} for {@link #SIGNATURE} and the categories which {@link #undoesRenames() undo renames}
+     */
+    boolean undoesRenamedReferences() {
+        return undoesRenames() || this == SIGNATURE;
     }
 
     @Override

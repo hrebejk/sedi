@@ -39,6 +39,7 @@ public class DiffAstAnalyzer implements AutoCloseable {
     private static final List<String> CONVENTIONAL_ROOTS = List.of("src/main/java", "src/test/java");
 
     private final Path repositoryPath;
+    private final GitInspector inspector;
     private final AstLoader astLoader;
     private final List<String> sourceRoots;
     private Git git;
@@ -60,6 +61,21 @@ public class DiffAstAnalyzer implements AutoCloseable {
      * @param astLoader      loader used to parse and attribute the old and new versions of files
      */
     public DiffAstAnalyzer(Path repositoryPath, AstLoader astLoader) {
+        this(repositoryPath, astLoader, GitInspector.DEFAULT_RENAME_SCORE);
+    }
+
+    /**
+     * Creates a new DiffAstAnalyzer which attributes the sources using the given loader, see
+     * {@link #DiffAstAnalyzer(Path, AstLoader)}.
+     *
+     * @param repositoryPath path to the Git repository
+     * @param astLoader      loader used to parse and attribute the old and new versions of files
+     * @param renameScore    the least similarity, in percent (0 - 100), of an added and a deleted file for git to
+     *                       report them as a rename
+     * @throws IllegalArgumentException if the score is not between 0 and 100
+     */
+    public DiffAstAnalyzer(Path repositoryPath, AstLoader astLoader, int renameScore) {
+        this.inspector = new GitInspector(repositoryPath, renameScore);
         this.repositoryPath = repositoryPath;
         this.astLoader = astLoader;
         List<String> roots = CONVENTIONAL_ROOTS.stream()
@@ -99,7 +115,6 @@ public class DiffAstAnalyzer implements AutoCloseable {
      * @throws GitAPIException if a Git API error occurs
      */
     public DiffAnalysis analyzeChanges(Predicate<String> filter) throws IOException, GitAPIException {
-        GitInspector inspector = new GitInspector(repositoryPath);
         GitInspector.Range range = inspector.resolveWorkingCopy();
         return analyze(inspector.getChanges(range), filter, range);
     }
@@ -116,7 +131,6 @@ public class DiffAstAnalyzer implements AutoCloseable {
      * @throws IllegalArgumentException if the revision cannot be resolved to a commit
      */
     public DiffAnalysis analyzeCommit(String revision, Predicate<String> filter) throws IOException {
-        GitInspector inspector = new GitInspector(repositoryPath);
         GitInspector.Range range = inspector.resolveRange(revision);
         return analyze(inspector.getChanges(revision), filter, range);
     }

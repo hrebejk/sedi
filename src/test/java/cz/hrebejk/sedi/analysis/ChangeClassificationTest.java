@@ -73,6 +73,32 @@ public class ChangeClassificationTest extends TestCase {
                 classify("class Foo { int help() { return 1; } }", "class Foo { int helper() { return 2; } }"));
     }
 
+    /**
+     * When a class is renamed, its constructors and the members referring to it change only by the rename, which
+     * is cosmetic; a constructor whose signature changed otherwise is an API change.
+     */
+    public void testTypeRenameChangesReferencesOnlyCosmetically() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("A.java", "public class A {\n    public A() { }\n    public A(A other) { }\n"
+                    + "    public A(int x) { }\n    public A copy() { return new A(this); }\n}\n");
+            helper.commit("init");
+            java.nio.file.Files.delete(helper.getRepositoryPath().resolve("A.java"));
+            helper.writeFile("B.java", "public class B {\n    public B() { }\n    public B(B other) { }\n"
+                    + "    public B(long x) { }\n    public B copy() { return new B(this); }\n}\n");
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                FileAnalysis file = analyzer.analyzeChanges().files().get(0);
+                assertEquals("B", file.newPrimary().getName());
+                List<String> changes = file.primaryChanges().changes().stream()
+                        .map(c -> c.level() + ":" + c.pair().newElement().getName() + "/"
+                                + c.pair().newElement().getParamCount()
+                                + (c.pair().isAdded() || c.pair().isRemoved() ? "!" : ""))
+                        .sorted().toList();
+                assertEquals(List.of("API:<init>/1", "COSMETIC:<init>/0", "COSMETIC:<init>/1", "COSMETIC:copy/0"),
+                        changes);
+            }
+        }
+    }
+
     public void testVisibility() throws Exception {
         try (GitTestHelper helper = new GitTestHelper()) {
             helper.writeFile("Foo.java", "public class Foo { }\n");

@@ -16,6 +16,7 @@ import cz.hrebejk.sedi.report.ReportOptions;
 import cz.hrebejk.sedi.report.Reporter;
 import cz.hrebejk.sedi.report.Theme;
 import cz.hrebejk.sedi.util.DirectoryWatcher;
+import cz.hrebejk.sedi.util.GitInspector;
 import cz.hrebejk.sedi.util.MavenClasspath;
 import cz.hrebejk.sedi.util.Terminal;
 import org.eclipse.jgit.api.errors.GitAPIException;
@@ -71,6 +72,11 @@ public class Main implements Callable<Integer> {
             description = "Unchanged javadoc lines shown around a javadoc change, -1 for the whole javadoc, "
                     + "-2 for no javadoc (default: -2).")
     private int javadocContext = ReportOptions.DEFAULT_JAVADOC_CONTEXT;
+
+    @Option(names = "--rename-score", paramLabel = "<percent>",
+            description = "Least similarity of a deleted and an added file for git to report them as a rename, "
+                    + "0 - 100 (default: " + GitInspector.DEFAULT_RENAME_SCORE + ", as in the git command line).")
+    private int renameScore = GitInspector.DEFAULT_RENAME_SCORE;
 
     @Option(names = "--color", paramLabel = "<when>", converter = ColorConverter.class,
             description = "Colors: auto (when the output is a terminal), always or never (default: auto).")
@@ -141,6 +147,10 @@ public class Main implements Callable<Integer> {
 
     @Override
     public Integer call() throws IOException {
+        if (renameScore < 0 || renameScore > 100) {
+            System.err.println("--rename-score must be between 0 and 100: " + renameScore);
+            return 2;
+        }
         projectDir = projectDir.toAbsolutePath().normalize();
         Path pom = projectDir.resolve("pom.xml");
         if (Files.isRegularFile(pom)) {
@@ -201,13 +211,13 @@ public class Main implements Callable<Integer> {
     }
 
     private DiffAnalysis analyzeChanges(Predicate<String> filter) throws IOException, GitAPIException {
-        try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader)) {
+        try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader, renameScore)) {
             return analyzer.analyzeChanges(filter);
         }
     }
 
     private DiffAnalysis analyzeCommit(Predicate<String> filter) throws IOException {
-        try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader)) {
+        try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader, renameScore)) {
             return analyzer.analyzeCommit(commit, filter);
         }
     }
@@ -224,7 +234,7 @@ public class Main implements Callable<Integer> {
 
     /** Prints the API changes of the selected commit and returns the process exit code. */
     private int reportCommit(Reporter reporter) {
-        try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader)) {
+        try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader, renameScore)) {
             reporter.report(analyzer.analyzeCommit(commit, path -> path.endsWith(".java"))).forEach(System.out::println);
             return 0;
         } catch (IOException | IllegalArgumentException e) {

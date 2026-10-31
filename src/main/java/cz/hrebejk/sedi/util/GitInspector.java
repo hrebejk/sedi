@@ -9,13 +9,16 @@
 package cz.hrebejk.sedi.util;
 
 import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.api.errors.CanceledException;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.errors.AmbiguousObjectException;
 import org.eclipse.jgit.errors.IncorrectObjectTypeException;
 import org.eclipse.jgit.errors.RevisionSyntaxException;
+import org.eclipse.jgit.diff.ContentSource;
 import org.eclipse.jgit.diff.DiffEntry;
 import org.eclipse.jgit.diff.DiffFormatter;
 import org.eclipse.jgit.diff.RenameDetector;
+import org.eclipse.jgit.lib.NullProgressMonitor;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectReader;
 import org.eclipse.jgit.lib.Repository;
@@ -25,6 +28,7 @@ import org.eclipse.jgit.revwalk.filter.RevFilter;
 import org.eclipse.jgit.treewalk.AbstractTreeIterator;
 import org.eclipse.jgit.treewalk.CanonicalTreeParser;
 import org.eclipse.jgit.treewalk.EmptyTreeIterator;
+import org.eclipse.jgit.treewalk.FileTreeIterator;
 import org.eclipse.jgit.util.io.DisabledOutputStream;
 
 import java.io.IOException;
@@ -36,15 +40,34 @@ import java.util.List;
  */
 public class GitInspector {
 
+    /** The least similarity, in percent, of an added and a deleted file to be a rename; as in the git command line. */
+    public static final int DEFAULT_RENAME_SCORE = 50;
+
     private final Path repositoryPath;
+    private final int renameScore;
+
+    /**
+     * Creates a new GitInspector for the given repository path, with the {@link #DEFAULT_RENAME_SCORE}.
+     *
+     * @param repositoryPath the path to the git repository
+     */
+    public GitInspector(Path repositoryPath) {
+        this(repositoryPath, DEFAULT_RENAME_SCORE);
+    }
 
     /**
      * Creates a new GitInspector for the given repository path.
      *
      * @param repositoryPath the path to the git repository
+     * @param renameScore    the least similarity, in percent (0 - 100), of an added and a deleted file to be a rename
+     * @throws IllegalArgumentException if the score is not between 0 and 100
      */
-    public GitInspector(Path repositoryPath) {
+    public GitInspector(Path repositoryPath, int renameScore) {
+        if (renameScore < 0 || renameScore > 100) {
+            throw new IllegalArgumentException("Rename score must be between 0 and 100: " + renameScore);
+        }
         this.repositoryPath = repositoryPath;
+        this.renameScore = renameScore;
     }
 
     /**
@@ -99,7 +122,7 @@ public class GitInspector {
         }
     }
 
-    private static List<DiffEntry> getChanges(Git git, Range range) throws IOException, GitAPIException {
+    private List<DiffEntry> getChanges(Git git, Range range) throws IOException, GitAPIException {
         Repository repo = git.getRepository();
         if (range.newCommit() != null) {
             return diff(repo, range.oldCommit(), range.newCommit());
@@ -110,8 +133,11 @@ public class GitInspector {
         try (RevWalk revWalk = new RevWalk(repo); ObjectReader reader = repo.newObjectReader()) {
             CanonicalTreeParser oldTree = new CanonicalTreeParser();
             oldTree.reset(reader, revWalk.parseCommit(range.oldCommit()).getTree());
-            // No new tree, so the working tree is compared.
-            return detectRenames(repo, git.diff().setOldTree(oldTree).call());
+            // No new tree, so the working tree is compared. Its files are read from the disk, as their
+            // content is usually not in the object database.
+            ContentSource.Pair contents = new ContentSource.Pair(ContentSource.create(reader),
+                    ContentSource.create(new FileTreeIterator(repo)));
+            return detectRenames(repo, git.diff().setOldTree(oldTree).call(), contents);
         }
     }
 
@@ -204,7 +230,7 @@ public class GitInspector {
     }
 
     /** Diffs two commits; a {@code null} old commit stands for the empty tree. */
-    private static List<DiffEntry> diff(Repository repo, ObjectId oldCommit, ObjectId newCommit) throws IOException {
+    private List<DiffEntry> diff(Repository repo, ObjectId oldCommit, ObjectId newCommit) throws IOException {
         try (DiffFormatter diffFormatter = new DiffFormatter(DisabledOutputStream.INSTANCE);
              RevWalk revWalk = new RevWalk(repo);
              ObjectReader reader = repo.newObjectReader()) {
@@ -217,14 +243,26 @@ public class GitInspector {
             }
             CanonicalTreeParser newParser = new CanonicalTreeParser();
             newParser.reset(reader, revWalk.parseCommit(newCommit).getTree());
-            return detectRenames(repo, diffFormatter.scan(oldTree, newParser));
+            ContentSource source = ContentSource.create(reader);
+            return detectRenames(repo, diffFormatter.scan(oldTree, newParser), new ContentSource.Pair(source, source));
         }
     }
 
-    /** Pairs added and deleted files with similar content into {@code RENAME} (or {@code COPY}) entries. */
-    private static List<DiffEntry> detectRenames(Repository repo, List<DiffEntry> entries) throws IOException {
+    /**
+     * Pairs added and deleted files with similar content into {@code RENAME} (or {@code COPY}) entries.
+     *
+     * @param contents reads the old and the new content of the files
+     */
+    private List<DiffEntry> detectRenames(Repository repo, List<DiffEntry> entries,
+                                          ContentSource.Pair contents) throws IOException {
         RenameDetector detector = new RenameDetector(repo);
+        detector.setRenameScore(renameScore);
         detector.addAll(entries);
-        return detector.compute();
+        try {
+            return detector.compute(contents, NullProgressMonitor.INSTANCE);
+        } catch (CanceledException e) {
+            // Not possible, nothing cancels the null monitor.
+            throw new IOException(e);
+        }
     }
 }

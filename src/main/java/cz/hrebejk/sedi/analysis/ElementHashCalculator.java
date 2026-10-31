@@ -365,7 +365,7 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
                 }
             }
             for (ChangeCategory category : ChangeCategory.values()) {
-                if (category.undoesRenames() && !isLocalOrParam && name != null) {
+                if (category.undoesRenamedReferences() && !isLocalOrParam && name != null) {
                     category.onAttribute(category, current, "KIND:" + node.getKind(), region());
                     category.onAttribute(category, current,
                             "IDENTIFIER:" + oldName(trees.getElement(getCurrentPath()), name.toString()), region());
@@ -394,8 +394,11 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
         ElementInfo current = context.getCurrentNode();
         if (current != null && name != null) {
             updateAttribute(current, "KIND:" + kind);
-            updateAttribute(current, "IDENTIFIER:" + name,
-                    "IDENTIFIER:" + oldName(trees.getElement(getCurrentPath()), name.toString()));
+            String oldName = oldName(trees.getElement(getCurrentPath()), name.toString());
+            for (ChangeCategory category : ChangeCategory.values()) {
+                category.onAttribute(category, current,
+                        "IDENTIFIER:" + (category.undoesRenamedReferences() ? oldName : name), region());
+            }
         }
     }
 
@@ -436,17 +439,19 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
     }
 
     /**
-     * Updates the digests of all categories.
+     * Updates the digests of all categories. The categories which undo renamed references get the attribute with
+     * the old qualified names of types.
      *
-     * @param withoutRenames what goes into {@link ChangeCategory#WITHOUT_RENAMES} instead of the attribute,
-     *                       {@code null} to use the attribute with the old qualified names of types
+     * @param withoutRenames what the categories which {@link ChangeCategory#undoesRenames() undo renames} get
+     *                       instead of the attribute, {@code null} for the attribute with the old type names
      */
     private void updateAttribute(ElementInfo node, String attribute, String withoutRenames) {
         for (ChangeCategory category : ChangeCategory.values()) {
             String text = attribute;
-            if (category.undoesRenames()) {
-                text = withoutRenames != null ? withoutRenames
-                        : attribute.startsWith("LITERAL:") ? attribute : renames.undoTypeNames(attribute);
+            if (category.undoesRenames() && withoutRenames != null) {
+                text = withoutRenames;
+            } else if (category.undoesRenamedReferences() && !attribute.startsWith("LITERAL:")) {
+                text = renames.undoTypeNames(attribute);
             }
             category.onAttribute(category, node, text, region());
         }

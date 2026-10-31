@@ -72,4 +72,43 @@ public class GitInspectorTest extends TestCase {
             assertEquals(List.of("A.java", "B.java", "Untracked.java"), changes.stream().map(DiffEntry::getNewPath).sorted().toList());
         }
     }
+
+    /**
+     * Tests that a file renamed and edited in the working copy is a rename, also when it is just similar enough
+     * for the git command line (50%), as is a small class whose name changed.
+     */
+    public void testWorkingCopyRenameWithChanges() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("ClassV1.java", "package cz.hrebejk.misc;\n\npublic class ClassV1 {\n}\n");
+            helper.commit("Initial commit");
+
+            java.nio.file.Files.delete(helper.getRepositoryPath().resolve("ClassV1.java"));
+            helper.writeFile("ClassV2.java", "package cz.hrebejk.misc;\n\npublic class ClassV2 {\n}\n");
+
+            List<DiffEntry> changes = new GitInspector(helper.getRepositoryPath()).getChanges();
+            assertEquals(1, changes.size());
+            assertEquals(DiffEntry.ChangeType.RENAME, changes.get(0).getChangeType());
+            assertEquals("ClassV1.java", changes.get(0).getOldPath());
+            assertEquals("ClassV2.java", changes.get(0).getNewPath());
+
+            // The files are 54% similar, too little for a higher score.
+            List<DiffEntry> strict = new GitInspector(helper.getRepositoryPath(), 60).getChanges();
+            assertEquals(List.of(DiffEntry.ChangeType.DELETE, DiffEntry.ChangeType.ADD),
+                    strict.stream().map(DiffEntry::getChangeType).toList());
+        }
+    }
+
+    /**
+     * Tests that a rename score out of 0 - 100 is refused.
+     */
+    public void testInvalidRenameScore() {
+        for (int score : new int[]{-1, 101}) {
+            try {
+                new GitInspector(Path.of("."), score);
+                fail("Accepted score " + score);
+            } catch (IllegalArgumentException expected) {
+                // expected
+            }
+        }
+    }
 }
