@@ -6,11 +6,11 @@
 
 ## IMPL
 
-* [ ] ~ List<String> l
-  new LinkedList ArrayList<>() should be ~ List<String> l = new LinkedList ArrayList<>()
 * [ ] Ignore all renames, but not signature changes
 * [ ] When something is added e.g. parameter it should be underscored (maybe works)
 * [ ] Expansion/collapse of context using -> <-
+* [x] ~ List<String> l
+  new LinkedList ArrayList<>() should be ~ List<String> l = new LinkedList ArrayList<>()
 
 ## IMPORTS
 

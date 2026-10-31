@@ -8,6 +8,7 @@
  */
 package cz.hrebejk.sedi.report;
 
+import com.sun.source.tree.BlockTree;
 import cz.hrebejk.sedi.analysis.ApiChanges;
 import cz.hrebejk.sedi.analysis.BodyChanges;
 import cz.hrebejk.sedi.analysis.ChangeLevel;
@@ -307,9 +308,15 @@ public final class Reporter {
      * @param suffix the text added to the line of the signature
      */
     private void addDeclaration(List<String> lines, int depth, ElementPair pair, String typeName, String suffix) {
+        addDeclaration(lines, depth, pair, typeName, "", suffix);
+    }
+
+    /** @param initializer text following the signature on its line, such as {@code = value}, may be empty */
+    private void addDeclaration(List<String> lines, int depth, ElementPair pair, String typeName, String initializer,
+                                String suffix) {
         String indent = "  ".repeat(depth);
         printer.annotations(pair).forEach(l -> lines.add(indent + l));
-        lines.add(indent + printer.format(pair, typeName) + suffix);
+        lines.add(indent + printer.format(pair, typeName) + (initializer.isEmpty() ? "" : " " + initializer) + suffix);
     }
 
     /**
@@ -468,13 +475,17 @@ public final class Reporter {
             if (filter.test(changes, change) && !isSignatureOfNested(changes, change)) {
                 ElementPair pair = change.level() == ChangeLevel.API ? change.pair()
                         : new ElementPair(change.pair().newElement(), change.pair().newElement(), Set.of());
-                addDeclaration(lines, depth, pair, changes.typeName(), tagged ? tag(change) : "");
+                List<String> body = change.body() == null ? List.of() : body(change.body());
+                // The initializer of a field continues the line of its declaration.
+                boolean inline = body.size() == 1 && !(change.body().newRoot() instanceof BlockTree);
+                addDeclaration(lines, depth, pair, changes.typeName(), inline ? body.get(0) : "",
+                        tagged ? tag(change) : "");
                 if (change.level() == ChangeLevel.API && change.pair().isAdded()
                         && change.pair().newElement().getNodeType() == ElementInfo.NodeType.TYPE) {
                     addedMembers(change.pair().newElement(), depth + 2, lines);
                 }
-                if (change.body() != null) {
-                    body(change.body()).forEach(l -> lines.add("  ".repeat(depth + 3) + l));
+                if (!inline) {
+                    body.forEach(l -> lines.add("  ".repeat(depth + 3) + l));
                 }
             }
         }

@@ -127,7 +127,9 @@ final class AstPrinter {
         if (changes.newRoot() instanceof BlockTree block) {
             statements(block, 0, mode);
         } else {
+            // A field initializer: the source between the declaration and the expression is not part of the body.
             begin(0, "");
+            append("= ");
             emit(changes.newRoot(), mode, 0, null);
             end();
         }
