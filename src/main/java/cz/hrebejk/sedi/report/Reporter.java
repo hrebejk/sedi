@@ -295,9 +295,9 @@ public final class Reporter {
     /** Adds the annotations and the signature of a changed type, the changes of them shown if {@code diff}. */
     private void addType(List<String> lines, int depth, ElementPair type, String outerName, boolean diff) {
         ElementPair shown = diff ? type : new ElementPair(type.newElement(), type.newElement(), Set.of());
-        List<String> typeLines = new ArrayList<>(printer.annotations(shown));
-        typeLines.add(printer.format(shown, outerName));
-        typeLines.forEach(l -> lines.add("  ".repeat(depth) + l.stripLeading()));
+        String indent = "  ".repeat(depth);
+        printer.annotations(shown).forEach(l -> lines.add(indent + l));
+        lines.add(indent + printer.formatType(shown, outerName));
     }
 
     private void importLines(FileAnalysis file, boolean tagged, List<String> lines) {

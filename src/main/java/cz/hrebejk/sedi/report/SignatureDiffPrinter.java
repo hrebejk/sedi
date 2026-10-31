@@ -51,15 +51,35 @@ public final class SignatureDiffPrinter {
      * @return a one line description
      */
     public String format(ElementPair pair, String typeName) {
+        return format(pair, typeName, true);
+    }
+
+    /**
+     * Formats the signature of a type which is shown because something in it changed. It starts with {@code ~} only
+     * if the signature itself changed.
+     *
+     * @param pair     the old and new version of the type
+     * @param typeName simple name of the enclosing type
+     * @return a one line description
+     */
+    public String formatType(ElementPair pair, String typeName) {
+        return format(pair, typeName, false);
+    }
+
+    private String format(ElementPair pair, String typeName, boolean alwaysMarked) {
         if (pair.isAdded()) {
             Parts parts = Parts.of(pair.newElement(), typeName);
             return theme.changed(true, "+ " + theme.code(render(parts, parts)));
         }
         if (pair.isRemoved()) {
             Parts parts = Parts.of(pair.oldElement(), typeName);
-            return theme.changed(false, "- " + theme.code(render(parts, parts)));
+            return theme.changed(false, "- " + strike(render(parts, parts)));
         }
-        return "  " + theme.code(render(Parts.of(pair.oldElement(), typeName), Parts.of(pair.newElement(), typeName)));
+        Parts o = Parts.of(pair.oldElement(), typeName);
+        Parts n = Parts.of(pair.newElement(), typeName);
+        String signature = render(o, n);
+        boolean changed = alwaysMarked || !signature.equals(render(n, n));
+        return (changed ? theme.modified() : " ") + " " + theme.code(signature);
     }
 
     /**
@@ -73,20 +93,20 @@ public final class SignatureDiffPrinter {
         if (pair.isAdded() || pair.isRemoved()) {
             boolean added = pair.isAdded();
             return Parts.of(added ? pair.newElement() : pair.oldElement(), "").annotations().stream()
-                    .map(a -> theme.changed(added, (added ? "+ " : "- ") + theme.code(a))).toList();
+                    .map(a -> theme.changed(added, (added ? "+ " : "- ") + (added ? theme.code(a) : strike(a)))).toList();
         }
         List<String> oldAnnotations = Parts.of(pair.oldElement(), "").annotations();
         List<String> newAnnotations = Parts.of(pair.newElement(), "").annotations();
         List<String> lines = new ArrayList<>();
         for (String o : oldAnnotations) {
             if (newAnnotations.stream().noneMatch(n -> annotationName(n).equals(annotationName(o)))) {
-                lines.add("  " + strike(o));
+                lines.add(theme.modified() + " " + strike(o));
             }
         }
         for (String n : newAnnotations) {
             String o = oldAnnotations.stream().filter(a -> annotationName(a).equals(annotationName(n))).findFirst().orElse("");
             if (!o.equals(n)) {
-                lines.add("  " + (o.isEmpty() ? theme.style(Theme.Role.REPLACEMENT, n) : slot(o, n)));
+                lines.add(theme.modified() + " " + (o.isEmpty() ? theme.style(Theme.Role.REPLACEMENT, n) : slot(o, n)));
             }
         }
         return lines;

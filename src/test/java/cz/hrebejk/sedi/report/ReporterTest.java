@@ -34,9 +34,9 @@ public class ReporterTest extends TestCase {
                 List<FileAnalysis> analyses = analyzer.analyzeChanges().files();
                 assertEquals(1, analyses.size());
                 assertEquals(List.of(
-                                "  public class Foo",
-                                "      ~~int~~ long a",
-                                "    static class In",
+                                "    public class Foo",
+                                "    ~ ~~int~~ long a",
+                                "      static class In",
                                 "      + void y()"),
                         new Reporter(Theme.PLAIN).report(analyses.get(0)));
             }
@@ -76,8 +76,8 @@ public class ReporterTest extends TestCase {
                 assertEquals(1, analyses.size());
                 assertEquals(org.eclipse.jgit.diff.DiffEntry.ChangeType.RENAME, analyses.get(0).diff().getChangeType());
                 assertEquals(List.of(
-                                "  public class ~~Foo~~ Bar",
-                                "      ~~int~~ long a"),
+                                "  ~ public class ~~Foo~~ Bar",
+                                "    ~ ~~int~~ long a"),
                         new Reporter(Theme.PLAIN).report(analyses.get(0)));
             }
         }
@@ -93,7 +93,7 @@ public class ReporterTest extends TestCase {
             helper.writeFile("Foo.java", "public class Foo {\n}\nclass New { }\n");
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                assertEquals(List.of("  - class Gone", "  + class New"),
+                assertEquals(List.of("  - ~~class Gone~~", "  + class New"),
                         new Reporter(Theme.PLAIN).report(analyzer.analyzeChanges().files().get(0)));
             }
         }
@@ -144,20 +144,20 @@ public class ReporterTest extends TestCase {
      * Tests that the default options show the API changes only.
      */
     public void testDefaultShowsOnlyApi() throws Exception {
-        assertEquals(List.of("~ Foo.java", "  public class Foo", "      public ~~int~~ long a", "      private ~~int~~ long b"), report(ReportOptions.DEFAULT));
+        assertEquals(List.of("~ Foo.java", "    public class Foo", "    ~ public ~~int~~ long a", "    ~ private ~~int~~ long b"), report(ReportOptions.DEFAULT));
     }
 
     /**
      * Tests that a deeper level adds the less important changes, tagged, and the imports last.
      */
     public void testLevelsByType() throws Exception {
-        assertEquals(List.of("~ Foo.java", "  public class Foo",
-                        "      public ~~int~~ long a", "      private ~~int~~ long b",
-                        "      public int m() [impl]", "          return ~~1~~ 2;", "      int o() [cosmetic]",
+        assertEquals(List.of("~ Foo.java", "    public class Foo",
+                        "    ~ public ~~int~~ long a", "    ~ private ~~int~~ long b",
+                        "    ~ public int m() [impl]", "          return ~~1~~ 2;", "    ~ int o() [cosmetic]",
                         "  - import java.util.List [import]", "  + import java.util.Set [import]"),
                 report(new ReportOptions(ChangeLevel.IMPORTS, ReportOptions.Grouping.BY_TYPE)));
-        assertEquals(List.of("~ Foo.java", "  public class Foo",
-                        "      public ~~int~~ long a", "      private ~~int~~ long b", "      public int m() [impl]", "          return ~~1~~ 2;"),
+        assertEquals(List.of("~ Foo.java", "    public class Foo",
+                        "    ~ public ~~int~~ long a", "    ~ private ~~int~~ long b", "    ~ public int m() [impl]", "          return ~~1~~ 2;"),
                 report(new ReportOptions(ChangeLevel.IMPLEMENTATION, ReportOptions.Grouping.BY_TYPE)));
     }
 
@@ -167,13 +167,13 @@ public class ReporterTest extends TestCase {
     public void testGroupByCategory() throws Exception {
         assertEquals(List.of(
                         "# API changes", "",
-                        "~ Foo.java", "  public class Foo", "      public ~~int~~ long a", "      private ~~int~~ long b",
+                        "~ Foo.java", "    public class Foo", "    ~ public ~~int~~ long a", "    ~ private ~~int~~ long b",
                         "",
                         "# Implementation changes", "",
-                        "~ Foo.java", "  public class Foo", "      public int m()", "          return ~~1~~ 2;",
+                        "~ Foo.java", "    public class Foo", "    ~ public int m()", "          return ~~1~~ 2;",
                         "",
                         "# Cosmetic changes", "",
-                        "~ Foo.java", "  public class Foo", "      int o()",
+                        "~ Foo.java", "    public class Foo", "    ~ int o()",
                         "",
                         "# Imports", "",
                         "~ Foo.java", "  - import java.util.List", "  + import java.util.Set"),
@@ -206,8 +206,8 @@ public class ReporterTest extends TestCase {
                                 "- Gone a.Foo",
                                 "",
                                 "~ Foo.java a",
-                                "  public class Foo",
-                                "      ~~int~~ long a",
+                                "    public class Foo",
+                                "    ~ ~~int~~ long a",
                                 "    + public static class Fresh",
                                 "        public Fresh()",
                                 "        public int x",
@@ -232,8 +232,8 @@ public class ReporterTest extends TestCase {
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
                 assertEquals(List.of(
                                 "~ Foo.java p",
-                                "  public abstract class Foo<T, U> extends ~~Object~~ Number implements Runnable, Cloneable",
-                                "    static final class In implements Runnable",
+                                "  ~ public abstract class Foo<T, U> extends ~~Object~~ Number implements Runnable, Cloneable",
+                                "      static final class In implements Runnable",
                                 "      + public void run()"),
                         new Reporter(Theme.PLAIN).report(analyzer.analyzeChanges()));
             }
@@ -253,13 +253,13 @@ public class ReporterTest extends TestCase {
                     + "  int b;\n  @SuppressWarnings(\"y\") int c;\n  @Deprecated int d;\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
                 assertEquals(List.of(
-                                "  @SuppressWarnings(value = \"all\")",
-                                "  public class Foo",
-                                "      ~~int~~ long a",
-                                "      ~~@Deprecated~~",
-                                "      int b",
-                                "      ~~@SuppressWarnings(value = \"x\")~~ @SuppressWarnings(value = \"y\")",
-                                "      int c",
+                                "  ~ @SuppressWarnings(value = \"all\")",
+                                "    public class Foo",
+                                "    ~ ~~int~~ long a",
+                                "    ~ ~~@Deprecated~~",
+                                "    ~ int b",
+                                "    ~ ~~@SuppressWarnings(value = \"x\")~~ @SuppressWarnings(value = \"y\")",
+                                "    ~ int c",
                                 "    + @Deprecated",
                                 "    + int d"),
                         new Reporter(Theme.PLAIN).report(analyzer.analyzeChanges().files().get(0)));
@@ -277,9 +277,9 @@ public class ReporterTest extends TestCase {
             helper.writeFile("B.java", "class B {\n  long b;\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
                 assertEquals(List.of("# API changes", "",
-                                "~ A.java", "  class A", "      ~~int~~ long a",
+                                "~ A.java", "    class A", "    ~ ~~int~~ long a",
                                 "",
-                                "~ B.java", "  class B", "      ~~int~~ long b"),
+                                "~ B.java", "    class B", "    ~ ~~int~~ long b"),
                         new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY))
                                 .report(analyzer.analyzeChanges()));
             }
