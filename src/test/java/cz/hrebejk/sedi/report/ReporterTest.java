@@ -461,6 +461,22 @@ public class ReporterTest extends TestCase {
                 javadocReport(DOC_OLD, changed, 1));
     }
 
+    /** Tests that a block of completely changed lines shows all the removed lines first, then the new ones. */
+    public void testJavadocChangedBlock() throws Exception {
+        String changed = DOC_OLD.replace("@return the element", "Nothing here matches")
+                .replace("@throws IOException never", "@since 2.0");
+        assertEquals(List.of(
+                        "    public class Foo",
+                        "      …",
+                        "      * @param i the index",
+                        "    - * ~~@return the element~~",
+                        "    - * ~~@throws IOException never~~",
+                        "    + * Nothing here matches",
+                        "    + * @since 2.0",
+                        "    ~ public String get( int i )"),
+                javadocReport(DOC_OLD, changed, 1));
+    }
+
     /** Tests the context of a javadoc change: none, the whole javadoc and no javadoc at all. */
     public void testJavadocContext() throws Exception {
         String changed = DOC_OLD.replace("   * @return the element\n", "");

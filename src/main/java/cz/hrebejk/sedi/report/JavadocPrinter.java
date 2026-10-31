@@ -18,7 +18,8 @@ import java.util.List;
  * Renders the javadoc of an {@link ElementPair}: the changes of the javadoc of a changed element, the whole javadoc
  * of an added one, nothing for a removed one. Every line starts with a mark, {@code ~} for a line changed by a few
  * words (the removed words struck through, the added ones underlined), {@code -} for a removed line, struck through,
- * and {@code +} for an added one. A line changed completely is shown as removed, the new line right under it.
+ * and {@code +} for an added one. A block of lines changed completely is shown as all the removed lines,
+ * then all the new ones.
  */
 final class JavadocPrinter {
 
@@ -98,13 +99,14 @@ final class JavadocPrinter {
 
     /**
      * Renders the removed lines and the lines inserted in their place, then clears both. A removed line similar to an
-     * inserted one is shown with the changed words; one which is not is followed by the next inserted line which is
-     * not similar to any other removed line.
+     * inserted one is shown with the changed words. The lines which are not, up to the next similar pair, are shown
+     * as a block: first all the removed lines, then all the inserted ones.
      */
     private void hunk(List<String> removed, List<String> inserted, List<Line> out) {
+        List<String> blockRemoved = new ArrayList<>();
+        List<String> blockInserted = new ArrayList<>();
         int next = 0;
-        for (int r = 0; r < removed.size(); r++) {
-            String old = removed.get(r);
+        for (String old : removed) {
             int similar = -1;
             for (int i = next; i < inserted.size() && similar < 0; i++) {
                 if (similarity(old, inserted.get(i)) >= SIMILAR) {
@@ -112,24 +114,24 @@ final class JavadocPrinter {
                 }
             }
             if (similar >= 0) {
-                for (int i = next; i < similar; i++) {
-                    out.add(new Line(added(inserted.get(i)), true));
-                }
+                blockInserted.addAll(inserted.subList(next, similar));
+                block(blockRemoved, blockInserted, out);
                 out.add(new Line(theme.modified() + " " + comment(words(old, inserted.get(similar))), true));
                 next = similar + 1;
             } else {
-                out.add(new Line(removed(old), true));
-                List<String> laterRemoved = removed.subList(r + 1, removed.size());
-                String candidate = next < inserted.size() ? inserted.get(next) : null;
-                if (candidate != null && laterRemoved.stream().noneMatch(l -> similarity(l, candidate) >= SIMILAR)) {
-                    out.add(new Line(added(inserted.get(next)), true));
-                    next++;
-                }
+                blockRemoved.add(old);
             }
         }
-        for (int i = next; i < inserted.size(); i++) {
-            out.add(new Line(added(inserted.get(i)), true));
-        }
+        blockInserted.addAll(inserted.subList(next, inserted.size()));
+        block(blockRemoved, blockInserted, out);
+        removed.clear();
+        inserted.clear();
+    }
+
+    /** Renders the removed lines, then the inserted ones, and clears both. */
+    private void block(List<String> removed, List<String> inserted, List<Line> out) {
+        removed.forEach(l -> out.add(new Line(removed(l), true)));
+        inserted.forEach(l -> out.add(new Line(added(l), true)));
         removed.clear();
         inserted.clear();
     }
