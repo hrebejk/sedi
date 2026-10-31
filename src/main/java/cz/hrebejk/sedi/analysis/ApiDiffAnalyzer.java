@@ -237,6 +237,10 @@ final class ApiDiffAnalyzer {
         for (ElementPair pair : matches.unchanged()) {
             ChangeLevel level = isCode(pair) ? bodyLevel(pair, sources) : null;
             boolean publicApi = Visibility.isExposed(pair.newElement(), exposed, inInterface);
+            if (!pair.oldElement().getJavadoc().equals(pair.newElement().getJavadoc())) {
+                // The javadoc is a part of the API, even when the signature did not change.
+                changes.add(new MemberChange(pair, ChangeLevel.API, publicApi));
+            }
             if (level == ChangeLevel.IMPLEMENTATION) {
                 changes.add(sources.implementation(pair, publicApi));
             } else if (level != null) {

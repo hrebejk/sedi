@@ -2,7 +2,7 @@
 
 * [ ] Ignore type renames
 * [ ] Incorrect printing of diffs in API changes
-* [ ] Javadoc - word diff
+* [x] Javadoc - word diff
 
 ## IMPL
 

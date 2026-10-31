@@ -221,6 +221,7 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
         context.setCurrentNode(typeNode);
         Element el = trees.getElement(getCurrentPath());
         typeNode.setElementId(ElementIds.of(el));
+        typeNode.setJavadoc(trees.getDocComment(getCurrentPath()));
         updateAllCategories(context, "KIND:" + node.getKind());
         if (node.getSimpleName() != null) {
             updateAttribute(typeNode, "NAME:" + node.getSimpleName(), "NAME:" + oldName(el, className));
@@ -256,6 +257,7 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
             context.setCurrentNode(methodNode);
             Element el = trees.getElement(getCurrentPath());
             methodNode.setElementId(ElementIds.of(el));
+            methodNode.setJavadoc(trees.getDocComment(getCurrentPath()));
             updateAllCategories(context, "KIND:" + node.getKind());
             if (node.getName() != null) {
                 updateAttribute(methodNode, "NAME:" + node.getName(), "NAME:" + oldName(el, methodName));
@@ -304,6 +306,7 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
             context.setCurrentNode(varNode);
             Element el = trees.getElement(getCurrentPath());
             varNode.setElementId(ElementIds.of(el));
+            varNode.setJavadoc(trees.getDocComment(getCurrentPath()));
             updateAttribute(varNode, "KIND:" + node.getKind());
             if (node.getName() != null) {
                 updateAttribute(varNode, "NAME:" + node.getName(), "NAME:" + oldName(el, varName));

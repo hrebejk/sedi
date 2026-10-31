@@ -424,4 +424,101 @@ public class ReporterTest extends TestCase {
             }
         }
     }
+
+    /** Reports the change of Foo.java from one content to the other, with the given javadoc context. */
+    private static List<String> javadocReport(String oldSource, String newSource, int context) throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", oldSource);
+            helper.commit("init");
+            helper.writeFile("Foo.java", newSource);
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                return new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_TYPE,
+                        ReportOptions.DEFAULT_BODY_LINES, context)).report(analyzer.analyzeChanges().files().get(0));
+            }
+        }
+    }
+
+    private static final String DOC_OLD = "public class Foo {\n"
+            + "  /**\n   * Returns the first element.\n   *\n   * @param i the index\n"
+            + "   * @return the element\n   * @throws IOException never\n   */\n"
+            + "  public String get(int i) { return null; }\n}\n";
+
+    /**
+     * Tests that a javadoc-only change is an API change: a similar line shows the changed words, a line changed
+     * completely is followed by the new one, and the unchanged lines around are limited by the context.
+     */
+    public void testJavadocChange() throws Exception {
+        String changed = DOC_OLD.replace("first", "last").replace("@throws IOException never", "@since 2.0");
+        assertEquals(List.of(
+                        "    public class Foo",
+                        "    ~ * Returns the ~~first~~ last element.",
+                        "      *",
+                        "      …",
+                        "      * @return the element",
+                        "    - * ~~@throws IOException never~~",
+                        "    + * @since 2.0",
+                        "    ~ public String get( int i )"),
+                javadocReport(DOC_OLD, changed, 1));
+    }
+
+    /** Tests the context of a javadoc change: none, the whole javadoc and no javadoc at all. */
+    public void testJavadocContext() throws Exception {
+        String changed = DOC_OLD.replace("   * @return the element\n", "");
+        assertEquals(List.of(
+                        "    public class Foo",
+                        "      …",
+                        "    - * ~~@return the element~~",
+                        "      …",
+                        "    ~ public String get( int i )"),
+                javadocReport(DOC_OLD, changed, 0));
+        assertEquals(List.of(
+                        "    public class Foo",
+                        "      * Returns the first element.",
+                        "      *",
+                        "      * @param i the index",
+                        "    - * ~~@return the element~~",
+                        "      * @throws IOException never",
+                        "    ~ public String get( int i )"),
+                javadocReport(DOC_OLD, changed, ReportOptions.WHOLE_JAVADOC));
+        assertEquals(List.of(
+                        "    public class Foo",
+                        "    ~ public String get( int i )"),
+                javadocReport(DOC_OLD, changed, ReportOptions.NO_JAVADOC));
+    }
+
+    /** Tests that an added member shows its javadoc, a removed one does not. */
+    public void testJavadocOfAddedAndRemoved() throws Exception {
+        String old = "public class Foo {\n  /** Gone. */\n  public int gone(String s) { return 0; }\n}\n";
+        String added = "public class Foo {\n  /**\n   * Fresh.\n   * Really.\n   */\n  public void fresh() { }\n}\n";
+        assertEquals(List.of(
+                        "    public class Foo",
+                        "    - ~~public int gone( String s )~~",
+                        "    + * Fresh.",
+                        "    + * Really.",
+                        "    + public void fresh()"),
+                javadocReport(old, added, 1));
+    }
+
+    /** Tests that a renamed member shows the change of its javadoc too. */
+    public void testJavadocOfRenamed() throws Exception {
+        String old = "public class Foo {\n  /** Gone. */\n  public void gone() { }\n}\n";
+        String added = "public class Foo {\n  /**\n   * Fresh.\n   * Really.\n   */\n  public void fresh() { }\n}\n";
+        assertEquals(List.of(
+                        "    public class Foo",
+                        "    - * ~~Gone.~~",
+                        "    + * Fresh.",
+                        "    + * Really.",
+                        "    ~ public void ~~gone~~ fresh()"),
+                javadocReport(old, added, 1));
+    }
+
+    /** Tests that a changed javadoc of a nested type is shown above its heading. */
+    public void testJavadocOfType() throws Exception {
+        String old = "public class Foo {\n  /** Inner one. */\n  public static class In { }\n}\n";
+        assertEquals(List.of(
+                        "    public class Foo",
+                        "    ~ * Inner ~~one.~~ two.",
+                        "      public static class In"),
+                javadocReport(old, old.replace("one.", "two."), 1));
+    }
 }

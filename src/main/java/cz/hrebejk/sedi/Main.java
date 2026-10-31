@@ -67,6 +67,11 @@ public class Main implements Callable<Integer> {
                     + ReportOptions.DEFAULT_BODY_LINES + ").")
     private int bodyLines = ReportOptions.DEFAULT_BODY_LINES;
 
+    @Option(names = "--javadoc-context", paramLabel = "<n>",
+            description = "Unchanged javadoc lines shown around a javadoc change, -1 for the whole javadoc, "
+                    + "-2 for no javadoc (default: " + ReportOptions.DEFAULT_JAVADOC_CONTEXT + ").")
+    private int javadocContext = ReportOptions.DEFAULT_JAVADOC_CONTEXT;
+
     @Option(names = "--color", paramLabel = "<when>", converter = ColorConverter.class,
             description = "Colors: auto (when the output is a terminal), always or never (default: auto).")
     private ColorMode color = ColorMode.AUTO;
@@ -160,7 +165,7 @@ public class Main implements Callable<Integer> {
             System.err.println("Cannot read the theme: " + e.getMessage());
             return 1;
         }
-        Reporter reporter = new Reporter(theme, new ReportOptions(level, grouping, bodyLines));
+        Reporter reporter = new Reporter(theme, new ReportOptions(level, grouping, bodyLines, javadocContext));
         boolean keepRunning = commit == null || interactive;
         if (!keepRunning || !terminal && commit != null) {
             return reportCommit(reporter);

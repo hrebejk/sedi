@@ -35,6 +35,7 @@ public class ElementInfo {
     private final Map<Facet, MessageDigest> facetDigests;
     private int paramCount;
     private String elementId;
+    private List<String> javadoc = List.of();
     /** The nodes of the body being scanned, innermost last. */
     private final Deque<NodeInfo> openNodes = new ArrayDeque<>();
     private NodeInfo body;
@@ -121,6 +122,42 @@ public class ElementInfo {
      */
     void setParamCount(int paramCount) {
         this.paramCount = paramCount;
+    }
+
+    /**
+     * Returns the lines of the javadoc of the element, without the comment delimiters, the leading stars and
+     * the indentation common to all lines.
+     *
+     * @return the lines, empty if the element has no javadoc
+     */
+    public List<String> getJavadoc() {
+        return javadoc;
+    }
+
+    /**
+     * Sets the javadoc of the element from the text javac returns for it.
+     *
+     * @param comment the comment text, {@code null} if there is none
+     */
+    void setJavadoc(String comment) {
+        this.javadoc = javadocLines(comment);
+    }
+
+    /** Splits the comment into lines, drops the blank lines at its ends and the common indentation. */
+    static List<String> javadocLines(String comment) {
+        if (comment == null) {
+            return List.of();
+        }
+        List<String> lines = new ArrayList<>(comment.lines().map(String::stripTrailing).toList());
+        while (!lines.isEmpty() && lines.get(0).isEmpty()) {
+            lines.remove(0);
+        }
+        while (!lines.isEmpty() && lines.get(lines.size() - 1).isEmpty()) {
+            lines.remove(lines.size() - 1);
+        }
+        int indent = lines.stream().filter(l -> !l.isEmpty())
+                .mapToInt(l -> l.length() - l.stripLeading().length()).min().orElse(0);
+        return lines.stream().map(l -> l.isEmpty() ? l : l.substring(indent)).toList();
     }
 
     /**

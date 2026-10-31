@@ -35,6 +35,7 @@ import java.util.function.BiPredicate;
 public final class Reporter {
 
     private final SignatureDiffPrinter printer;
+    private final JavadocPrinter javadoc;
     private final ReportOptions options;
     private final Theme theme;
 
@@ -55,6 +56,7 @@ public final class Reporter {
      */
     public Reporter(Theme theme, ReportOptions options) {
         this.printer = new SignatureDiffPrinter(theme);
+        this.javadoc = new JavadocPrinter(theme, options.javadocContext());
         this.options = options;
         this.theme = theme;
     }
@@ -73,7 +75,8 @@ public final class Reporter {
         if (options.grouping() == ReportOptions.Grouping.BY_TYPE) {
             // Changed imports alone are no reason to leave the other levels out: show every level then.
             ReportOptions withoutImports = options.maxLevel() == ChangeLevel.IMPORTS
-                    ? new ReportOptions(ChangeLevel.COSMETIC, options.grouping(), options.bodyLines())
+                    ? new ReportOptions(ChangeLevel.COSMETIC, options.grouping(), options.bodyLines(),
+                    options.javadocContext())
                     : options;
             if (!new Reporter(theme, withoutImports).byType(files).isEmpty()) {
                 return byType(files);
@@ -186,6 +189,7 @@ public final class Reporter {
                 list.add(title(file));
                 for (TypeRef type : added) {
                     if (type.file() == file) {
+                        javadoc.plain(type.element().getJavadoc()).forEach(l -> list.add("  " + l));
                         printer.declaration(type.element(), "").forEach(l -> list.add("  " + l));
                         addedMembers(type.element(), 2, list);
                     }
@@ -286,6 +290,7 @@ public final class Reporter {
         boolean inInterface = Visibility.isInterface(type);
         for (ElementInfo member : type.getChildren()) {
             if (Visibility.isExposed(member, true, inInterface)) {
+                javadoc.plain(member.getJavadoc()).forEach(l -> lines.add("  ".repeat(depth) + l));
                 printer.declaration(member, type.getName()).forEach(l -> lines.add("  ".repeat(depth) + l));
                 if (member.getNodeType() == ElementInfo.NodeType.TYPE) {
                     addedMembers(member, depth + 1, lines);
@@ -303,7 +308,7 @@ public final class Reporter {
     }
 
     /**
-     * Adds the annotations and the signature of an element, each on a line of its own and indented by levels.
+     * Adds the javadoc, the annotations and the signature of an element, each on a line of its own and indented by levels.
      *
      * @param suffix the text added to the line of the signature
      */
@@ -315,6 +320,7 @@ public final class Reporter {
     private void addDeclaration(List<String> lines, int depth, ElementPair pair, String typeName, String initializer,
                                 String suffix) {
         String indent = "  ".repeat(depth);
+        javadoc.print(pair).forEach(l -> lines.add(indent + l));
         printer.annotations(pair).forEach(l -> lines.add(indent + l));
         lines.add(indent + printer.format(pair, typeName) + (initializer.isEmpty() ? "" : " " + initializer) + suffix);
     }
@@ -355,10 +361,11 @@ public final class Reporter {
         return lines;
     }
 
-    /** Adds the annotations and the signature of a changed type, the changes of them shown if {@code diff}. */
+    /** Adds the javadoc, the annotations and the signature of a changed type, the changes of them shown if {@code diff}. */
     private void addType(List<String> lines, int depth, ElementPair type, String outerName, boolean diff) {
         ElementPair shown = diff ? type : new ElementPair(type.newElement(), type.newElement(), Set.of());
         String indent = "  ".repeat(depth);
+        javadoc.print(shown).forEach(l -> lines.add(indent + l));
         printer.annotations(shown).forEach(l -> lines.add(indent + l));
         lines.add(indent + printer.formatType(shown, outerName));
     }
