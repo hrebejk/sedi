@@ -334,4 +334,54 @@ public class ReporterTest extends TestCase {
             }
         }
     }
+
+    private static final String ONLY_OLD = "import java.util.List;\npublic class Foo {\n  int a;\n  void m() { int x = 1; }\n}\n";
+    private static final String ONLY_NEW = "import java.util.Set;\npublic class Foo {\n  long a;\n  void m() { int y = 1; }\n}\n";
+
+    /**
+     * Tests that reportOnly shows just the section of one level, whatever the options are.
+     */
+    public void testReportOnly() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", ONLY_OLD);
+            helper.commit("init");
+            helper.writeFile("Foo.java", ONLY_NEW);
+
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                var analysis = analyzer.analyzeChanges();
+                Reporter reporter = new Reporter(Theme.PLAIN,
+                        new ReportOptions(ChangeLevel.IMPORTS, ReportOptions.Grouping.BY_TYPE));
+                List<String> api = reporter.reportOnly(analysis, ChangeLevel.API);
+                assertEquals("# API changes", api.get(0));
+                assertTrue(api.toString(), api.stream().anyMatch(l -> l.contains("long a")));
+                assertFalse(api.toString(), api.stream().anyMatch(l -> l.contains("Cosmetic") || l.contains("Imports")));
+
+                List<String> imports = reporter.reportOnly(analysis, ChangeLevel.IMPORTS);
+                assertEquals("# Imports", imports.get(0));
+                assertTrue(imports.toString(), imports.stream().anyMatch(l -> l.contains("java.util.Set")));
+                assertFalse(imports.toString(), imports.stream().anyMatch(l -> l.contains("long a")));
+
+                // The API section is the same as in the report grouped by category.
+                List<String> grouped = new Reporter(Theme.PLAIN,
+                        new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY)).report(analysis);
+                assertEquals(grouped, api);
+            }
+        }
+    }
+
+    /**
+     * Tests that a level without changes gives a single note.
+     */
+    public void testReportOnlyEmptyLevel() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", "public class Foo {\n  int a;\n}\n");
+            helper.commit("init");
+            helper.writeFile("Foo.java", "public class Foo {\n  long a;\n}\n");
+
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                assertEquals(List.of("No imports."),
+                        new Reporter(Theme.PLAIN).reportOnly(analyzer.analyzeChanges(), ChangeLevel.IMPORTS));
+            }
+        }
+    }
 }

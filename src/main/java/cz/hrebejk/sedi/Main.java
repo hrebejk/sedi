@@ -9,6 +9,7 @@
 package cz.hrebejk.sedi;
 
 import cz.hrebejk.sedi.analysis.ChangeLevel;
+import cz.hrebejk.sedi.analysis.DiffAnalysis;
 import cz.hrebejk.sedi.analysis.DiffAstAnalyzer;
 import cz.hrebejk.sedi.compilation.AstLoader;
 import cz.hrebejk.sedi.report.ReportOptions;
@@ -16,7 +17,7 @@ import cz.hrebejk.sedi.report.Reporter;
 import cz.hrebejk.sedi.report.Theme;
 import cz.hrebejk.sedi.util.DirectoryWatcher;
 import cz.hrebejk.sedi.util.MavenClasspath;
-import cz.hrebejk.sedi.util.Pager;
+import cz.hrebejk.sedi.util.Terminal;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
@@ -29,7 +30,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -44,11 +44,15 @@ public class Main implements Callable<Integer> {
     private Path projectDir = Path.of("").toAbsolutePath();
 
     @Parameters(arity = "0..1", paramLabel = "<rev>",
-            description = "Show the API diff of the given commit (SHA, abbreviated SHA, tag, branch, HEAD~2, ...) or range (a..b, a...b) and exit.")
+            description = "Show the API diff of the given commit (SHA, abbreviated SHA, tag, branch, HEAD~2, ...) or range (a..b, a...b) and exit, unless --interactive is given.")
     private String commit;
 
-    @Option(names = {"-i", "--info"}, description = "Print the resolved class path.")
+    @Option(names = "--info", description = "Print the resolved class path.")
     private boolean info;
+
+    @Option(names = {"-i", "--interactive"},
+            description = "Keep running after the diff of <rev> is shown, reacting to keys (h shows the help).")
+    private boolean interactive;
 
     @Option(names = {"-l", "--level"}, paramLabel = "<level>", converter = LevelConverter.class,
             description = "Least important changes to show: api, impl, cosmetic or imports (default: api).")
@@ -147,35 +151,60 @@ public class Main implements Callable<Integer> {
         }
 
         Console console = System.console();
-        boolean interactive = console != null && console.isTerminal();
+        boolean terminal = console != null && console.isTerminal();
         Theme theme;
         try {
-            boolean colored = color == ColorMode.ALWAYS || color == ColorMode.AUTO && interactive;
+            boolean colored = color == ColorMode.ALWAYS || color == ColorMode.AUTO && terminal;
             theme = colored ? theme() : Theme.PLAIN;
         } catch (IOException | IllegalArgumentException e) {
             System.err.println("Cannot read the theme: " + e.getMessage());
             return 1;
         }
         Reporter reporter = new Reporter(theme, new ReportOptions(level, grouping, bodyLines));
-        if (commit != null) {
+        boolean keepRunning = commit == null || interactive;
+        if (!keepRunning || !terminal && commit != null) {
             return reportCommit(reporter);
         }
-        Pager pager = new Pager(System.out, interactive);
-        if (!report(reporter, pager, path -> path.endsWith(".java"))) {
+        boolean colored = theme != Theme.PLAIN;
+        Session session = new Session(reporter, System.out, terminal, colored, "Watching " + projectDir + " ...");
+        Terminal raw = null;
+        if (terminal) {
+            try {
+                raw = Terminal.enterRaw();
+                session.listenToKeys();
+            } catch (IOException e) {
+                System.err.println("Cannot read keys: " + e.getMessage());
+                return 1;
+            }
+        }
+        try {
+            if (commit != null) {
+                session.run(filter -> analyzeCommit(filter), path -> path.endsWith(".java"));
+                return 0;
+            }
+            try (DirectoryWatcher watcher = new DirectoryWatcher(projectDir)) {
+                session.watch(watcher, projectDir);
+                session.run(this::analyzeChanges, path -> path.endsWith(".java"));
+            }
             return 0;
+        } finally {
+            if (raw != null) {
+                raw.close();
+                System.out.println();
+            }
         }
-        try (DirectoryWatcher watcher = new DirectoryWatcher(projectDir)) {
-            watcher.run(changed -> {
-                Set<String> relative = changed.stream()
-                        .map(p -> projectDir.relativize(p).toString().replace(File.separatorChar, '/'))
-                        .collect(Collectors.toSet());
-                if (!report(reporter, pager, relative::contains)) {
-                    // Makes the watcher's next wait for events end the run.
-                    Thread.currentThread().interrupt();
-                }
-            });
+    }
+
+    private DiffAnalysis analyzeChanges(Predicate<String> filter) throws IOException, GitAPIException {
+        try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader)) {
+            return analyzer.analyzeChanges(filter);
         }
-        return 0;
+    }
+
+    private DiffAnalysis analyzeCommit(Predicate<String> filter) throws IOException {
+        try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader)) {
+            return analyzer.analyzeCommit(commit, filter);
+        }
     }
 
     /** The theme of {@code --theme}, or of the default file if there is one, or the default colors. */
@@ -186,26 +215,6 @@ public class Main implements Callable<Integer> {
             file = Files.isRegularFile(home) ? home : null;
         }
         return file == null ? Theme.defaults() : Theme.load(file);
-    }
-
-    /**
-     * Shows the API changes of the changed files accepted by the filter.
-     *
-     * @return {@code false} if the user asked to quit
-     */
-    private boolean report(Reporter reporter, Pager pager, Predicate<String> filter) {
-        List<String> lines;
-        try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader)) {
-            lines = reporter.report(analyzer.analyzeChanges(filter));
-        } catch (IOException | GitAPIException e) {
-            System.err.println("Cannot analyze changes: " + e.getMessage());
-            return true;
-        }
-        if (!lines.isEmpty() && !pager.show(lines)) {
-            return false;
-        }
-        System.out.println("Watching " + projectDir + " ...");
-        return true;
     }
 
     /** Prints the API changes of the selected commit and returns the process exit code. */

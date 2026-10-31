@@ -66,9 +66,7 @@ public final class Reporter {
      * @return the headings and the indented lines under them
      */
     public List<String> report(DiffAnalysis analysis) {
-        List<FileAnalysis> files = analysis.files().stream()
-                .sorted(Comparator.comparing(FileAnalysis::newPackage).thenComparing(FileAnalysis::newClassName))
-                .toList();
+        List<FileAnalysis> files = sorted(analysis);
         List<String> result = new ArrayList<>();
         if (options.grouping() == ReportOptions.Grouping.BY_TYPE) {
             for (FileAnalysis file : files) {
@@ -80,18 +78,50 @@ public final class Reporter {
             if (level.compareTo(options.maxLevel()) > 0) {
                 continue;
             }
-            List<String> lines = level == ChangeLevel.API ? apiLines(files) : levelLines(files, level);
-            if (!lines.isEmpty()) {
+            List<String> section = section(files, level);
+            if (!section.isEmpty()) {
                 if (!result.isEmpty()) {
                     result.add("");
                 }
-                result.add(theme.style(Theme.Role.HEADING_MARK, "#") + " "
-                        + theme.style(Theme.Role.HEADING, SECTIONS.get(level)));
-                result.add("");
-                result.addAll(lines);
+                result.addAll(section);
             }
         }
         return result;
+    }
+
+    /**
+     * Reports only the changes of one level, ignoring {@link ReportOptions#maxLevel()} and the grouping.
+     *
+     * @param analysis the analyzed diff
+     * @param level    the only level to show
+     * @return the heading of the level and the changes under it, or a note if there are none
+     */
+    public List<String> reportOnly(DiffAnalysis analysis, ChangeLevel level) {
+        List<String> section = section(sorted(analysis), level);
+        if (section.isEmpty()) {
+            return List.of(theme.style(Theme.Role.NOTE, "No " + SECTIONS.get(level).toLowerCase() + "."));
+        }
+        return section;
+    }
+
+    private static List<FileAnalysis> sorted(DiffAnalysis analysis) {
+        return analysis.files().stream()
+                .sorted(Comparator.comparing(FileAnalysis::newPackage).thenComparing(FileAnalysis::newClassName))
+                .toList();
+    }
+
+    /** The heading of the level followed by its changes, empty if the level has no change. */
+    private List<String> section(List<FileAnalysis> files, ChangeLevel level) {
+        List<String> lines = level == ChangeLevel.API ? apiLines(files) : levelLines(files, level);
+        if (lines.isEmpty()) {
+            return List.of();
+        }
+        List<String> section = new ArrayList<>();
+        section.add(theme.style(Theme.Role.HEADING_MARK, "#") + " "
+                + theme.style(Theme.Role.HEADING, SECTIONS.get(level)));
+        section.add("");
+        section.addAll(lines);
+        return section;
     }
 
     private static final Map<ChangeLevel, String> SECTIONS = Map.of(

@@ -8,127 +8,97 @@
  */
 package cz.hrebejk.sedi.util;
 
-import java.io.IOException;
 import java.io.PrintStream;
 import java.util.List;
+import java.util.function.IntSupplier;
 
 /**
  * Shows lines page by page on an interactive terminal, clearing the screen before the first page
- * and waiting for a key between pages (later pages just scroll the console; there is no wait after
- * the last page). When the output is not a terminal everything is simply printed.
- * <p>
- * Single key reading and the terminal height are obtained through {@code stty}, which keeps the
- * project free of terminal libraries.
+ * and waiting for a key between pages (later pages just scroll the console). The last line of the output
+ * is always the {@link KeyHint}. When the output is not a terminal everything is simply printed.
  */
 public final class Pager {
 
-    private static final int DEFAULT_HEIGHT = 24;
-    private static final String CLEAR = "\033[H\033[2J\033[3J";
-    private static final String ERASE_LINE = "\r\033[K";
+    /** The keys that interrupt paging and are handed to the caller: the categories and the help. */
+    public static final String HOT_KEYS = "aicmh";
+
+    /** How showing the lines ended. */
+    public enum Kind {
+        /** All the lines were shown. */
+        DONE,
+        /** The user asked to quit. */
+        QUIT,
+        /** The user pressed one of the {@link #HOT_KEYS}. */
+        KEY
+    }
+
+    /**
+     * The result of showing the lines.
+     *
+     * @param kind how showing ended
+     * @param key  the key pressed for {@link Kind#KEY}, otherwise 0
+     */
+    public record Outcome(Kind kind, int key) {
+        /** All the lines were shown. */
+        public static final Outcome DONE = new Outcome(Kind.DONE, 0);
+        /** The user asked to quit. */
+        public static final Outcome QUIT = new Outcome(Kind.QUIT, 0);
+    }
 
     private final PrintStream out;
     private final boolean interactive;
+    private final boolean colored;
+    private final IntSupplier keySource;
 
     /**
      * Creates a pager.
      *
      * @param out         where to print
      * @param interactive {@code true} if the output is a terminal; otherwise lines are printed as they are
+     * @param colored     whether the key hint may use colors
+     * @param keySource   supplies the next key press, -1 at the end of the input
      */
-    public Pager(PrintStream out, boolean interactive) {
+    public Pager(PrintStream out, boolean interactive, boolean colored, IntSupplier keySource) {
         this.out = out;
         this.interactive = interactive;
+        this.colored = colored;
+        this.keySource = keySource;
     }
 
     /**
      * Shows the lines.
      *
      * @param lines the lines to show
-     * @return {@code false} if the user asked to quit, {@code true} otherwise
+     * @return how showing ended
      */
-    public boolean show(List<String> lines) {
+    public Outcome show(List<String> lines) {
         if (!interactive) {
             lines.forEach(out::println);
-            return true;
+            return Outcome.DONE;
         }
-        int pageSize = Math.max(1, terminalHeight() - 1);
+        int pageSize = Math.max(1, Terminal.height() - 1);
+        int width = Terminal.width();
         int pages = Math.max(1, (lines.size() + pageSize - 1) / pageSize);
-        out.print(CLEAR);
+        out.print(Terminal.CLEAR);
         for (int page = 0; page < pages; page++) {
             lines.subList(page * pageSize, Math.min(lines.size(), (page + 1) * pageSize)).forEach(out::println);
             if (page + 1 == pages) {
+                out.print(KeyHint.render(width, colored));
                 out.flush();
                 break;
             }
-            out.print("-- page " + (page + 1) + "/" + pages + ", q: quit, any other key: next page --");
+            String prompt = "-- page " + (page + 1) + "/" + pages + " -- ";
+            out.print(prompt + KeyHint.render(width - prompt.length(), colored));
             out.flush();
-            boolean quit = readKey() == 'q';
-            out.print(ERASE_LINE);
-            if (quit) {
-                return false;
+            int key = keySource.getAsInt();
+            out.print(Terminal.ERASE_LINE);
+            if (key == 'q' || key == -1) {
+                return Outcome.QUIT;
+            }
+            if (HOT_KEYS.indexOf(key) >= 0) {
+                return new Outcome(Kind.KEY, key);
             }
         }
-        return true;
-    }
-
-    private static int terminalHeight() {
-        try {
-            String size = stty("size").trim();
-            return Integer.parseInt(size.substring(0, size.indexOf(' ')));
-        } catch (IOException | RuntimeException e) {
-            return DEFAULT_HEIGHT;
-        }
-    }
-
-    /** Reads a single key press without waiting for enter; returns -1 at the end of input. */
-    private static int readKey() {
-        String saved = null;
-        Thread restoreHook = null;
-        try {
-            saved = stty("-g").trim();
-            // Ctrl+C ends the JVM without running the finally block below, so restore from a hook too.
-            String settings = saved;
-            restoreHook = new Thread(() -> restore(settings));
-            Runtime.getRuntime().addShutdownHook(restoreHook);
-            stty("-icanon", "-echo", "min", "1");
-            return System.in.read();
-        } catch (IOException e) {
-            return -1;
-        } finally {
-            if (saved != null) {
-                restore(saved);
-            }
-            if (restoreHook != null) {
-                try {
-                    Runtime.getRuntime().removeShutdownHook(restoreHook);
-                } catch (IllegalStateException ignored) {
-                    // shutdown already in progress; the hook does the restoring
-                }
-            }
-        }
-    }
-
-    private static void restore(String saved) {
-        try {
-            stty(saved);
-        } catch (IOException ignored) {
-            // nothing more can be done to restore the terminal
-        }
-    }
-
-    /** Runs {@code stty} against the controlling terminal and returns its output. */
-    private static String stty(String... args) throws IOException {
-        String command = "stty " + String.join(" ", args) + " < /dev/tty";
-        Process process = new ProcessBuilder("sh", "-c", command).redirectErrorStream(true).start();
-        String output = new String(process.getInputStream().readAllBytes());
-        try {
-            if (process.waitFor() != 0) {
-                throw new IOException("stty failed: " + output.trim());
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("Interrupted", e);
-        }
-        return output;
+        return Outcome.DONE;
     }
 }
