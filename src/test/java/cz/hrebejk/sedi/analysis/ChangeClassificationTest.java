@@ -99,6 +99,28 @@ public class ChangeClassificationTest extends TestCase {
         }
     }
 
+    /**
+     * The constants of a renamed enum do not change, even though javac gives them the type of the enum; a changed
+     * argument of a constant is an implementation change.
+     */
+    public void testEnumRenameDoesNotChangeConstants() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("E1.java", "public enum E1 {\n    YES(1),\n    NO(2),\n    MAYBE { },\n    ;\n"
+                    + "    E1() { this(0); }\n    E1(int v) { }\n}\n");
+            helper.commit("init");
+            java.nio.file.Files.delete(helper.getRepositoryPath().resolve("E1.java"));
+            helper.writeFile("E2.java", "public enum E2 {\n    YES(1),\n    NO(3),\n    MAYBE { },\n    ;\n"
+                    + "    E2() { this(0); }\n    E2(int v) { }\n}\n");
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                FileAnalysis file = analyzer.analyzeChanges().files().get(0);
+                assertEquals("E2", file.newPrimary().getName());
+                List<String> changes = file.primaryChanges().changes().stream()
+                        .map(c -> c.level() + ":" + c.pair().newElement().getName()).sorted().toList();
+                assertEquals(List.of("COSMETIC:<init>", "COSMETIC:<init>", "IMPLEMENTATION:NO"), changes);
+            }
+        }
+    }
+
     public void testVisibility() throws Exception {
         try (GitTestHelper helper = new GitTestHelper()) {
             helper.writeFile("Foo.java", "public class Foo { }\n");

@@ -14,6 +14,7 @@ import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
 
 import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Name;
 import javax.lang.model.element.TypeElement;
@@ -32,6 +33,11 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
     private final Deque<Set<String>> localScopeStack = new ArrayDeque<>();
     /** Greater than zero while scanning method bodies, field initializers and initializer blocks. */
     private int bodyDepth;
+    /**
+     * Trees javac adds to enum constants, not in the source and always naming the enum: the type of the constant,
+     * the class of its {@code new} and the superclass of its body. They are not hashed.
+     */
+    private final Set<Tree> synthesized = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
     /**
      * Creates a new MemberShaCalculator with required Trees utility for attributed FQN resolution.
@@ -96,6 +102,9 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
      */
     @Override
     public Void scan(Tree tree, HashContext context) {
+        if (tree != null && synthesized.contains(tree)) {
+            return null;
+        }
         ElementInfo current = context.getCurrentNode();
         if (current == null) {
             return super.scan(tree, context);
@@ -318,6 +327,15 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
                 varNode.updateFacet(Facet.RETURN_TYPE, typeText(varEl.asType()));
             }
 
+            if (el != null && el.getKind() == ElementKind.ENUM_CONSTANT) {
+                synthesized.add(node.getType());
+                if (node.getInitializer() instanceof NewClassTree newClass) {
+                    synthesized.add(newClass.getIdentifier());
+                    if (newClass.getClassBody() != null) {
+                        synthesized.add(newClass.getClassBody().getExtendsClause());
+                    }
+                }
+            }
             scan(node.getModifiers(), context);
             scan(node.getType(), context);
             scan(node.getNameExpression(), context);
