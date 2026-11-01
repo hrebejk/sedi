@@ -108,8 +108,9 @@ public final class Theme {
             Map.entry(Role.CONSTANT, "#f7c59f"),
             Map.entry(Role.ANNOTATION, "#a6e3e9"),
             Map.entry(Role.COMMENT, "#7f8796"),
-            Map.entry(Role.STRIKE, "#8c93a3 strike"),
-            Map.entry(Role.REPLACEMENT, "underline"),
+            // Removed text on red and added text on green, enough to stand out of the dark background.
+            Map.entry(Role.STRIKE, "#d8aeb3 bg:#4f242a strike"),
+            Map.entry(Role.REPLACEMENT, "bg:#1c4429 underline"),
             Map.entry(Role.ADDED, "none"),
             Map.entry(Role.REMOVED, "none"),
             Map.entry(Role.ADDED_MARK, "bold #5fd787"),
