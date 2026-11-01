@@ -124,6 +124,29 @@ public class ReporterTest extends TestCase {
         }
     }
 
+    /**
+     * Tests that the files grouped by type are separated by an empty line, as in the grouping by category, and that
+     * {@link Reporter#withGrouping} switches the grouping.
+     */
+    public void testFilesGroupedByTypeAreSeparated() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("A.java", "public class A { public int a; }\n");
+            helper.writeFile("B.java", "public class B { public int b; }\n");
+            helper.commit("init");
+            helper.writeFile("A.java", "public class A { public long a; }\n");
+            helper.writeFile("B.java", "public class B { public long b; }\n");
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                Reporter byType = new Reporter(Theme.PLAIN, ReportOptions.DEFAULT);
+                assertEquals(List.of("~ A.java", "    public class A", "    ~ public ~~int~~ long a", "",
+                                "~ B.java", "    public class B", "    ~ public ~~int~~ long b"),
+                        byType.report(analyzer.analyzeChanges()));
+                Reporter byCategory = byType.withGrouping(ReportOptions.Grouping.BY_CATEGORY);
+                assertEquals(ReportOptions.Grouping.BY_CATEGORY, byCategory.grouping());
+                assertEquals("# API changes", byCategory.report(analyzer.analyzeChanges()).get(0));
+            }
+        }
+    }
+
     private static final String BEFORE = "import java.util.List;\npublic class Foo {\n  public int a;\n  private int b;\n"
             + "  public int m() { return 1; }\n  private int n() { return 1; }\n  int o() { int x = 1; return x; }\n}\n";
     private static final String AFTER = "import java.util.Set;\npublic class Foo {\n  public long a;\n  private long b;\n"

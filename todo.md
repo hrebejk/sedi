@@ -1,6 +1,6 @@
 ## API
 
-* [ ] Ignore type renames
+* [x] Ignore type renames
 * [ ] Incorrect printing of diffs in API changes
 * [x] Javadoc - word diff
 

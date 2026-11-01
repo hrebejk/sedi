@@ -73,6 +73,26 @@ public final class Reporter {
     }
 
     /**
+     * Returns a reporter like this one grouping the changes as given.
+     *
+     * @param grouping see {@link ReportOptions#grouping()}
+     * @return the new reporter
+     */
+    public Reporter withGrouping(ReportOptions.Grouping grouping) {
+        return new Reporter(theme, new ReportOptions(options.maxLevel(), grouping, options.bodyLines(),
+                options.javadocContext()));
+    }
+
+    /**
+     * Returns how this reporter groups the changes.
+     *
+     * @return the grouping
+     */
+    public ReportOptions.Grouping grouping() {
+        return options.grouping();
+    }
+
+    /**
      * Reports the changes of all the files of the diff. A file is left out if it has no change to show,
      * unless git added, deleted or renamed it.
      *
@@ -106,10 +126,18 @@ public final class Reporter {
         return result;
     }
 
+    /** The changes of every file, the files separated by an empty line as in the sections of the levels. */
     private List<String> byType(List<FileAnalysis> files) {
         List<String> result = new ArrayList<>();
         for (FileAnalysis file : files) {
-            addFile(result, file, report(file), file.isStructural());
+            List<String> part = new ArrayList<>();
+            addFile(part, file, report(file), file.isStructural());
+            if (!part.isEmpty()) {
+                if (!result.isEmpty()) {
+                    result.add("");
+                }
+                result.addAll(part);
+            }
         }
         return result;
     }

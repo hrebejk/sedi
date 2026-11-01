@@ -33,7 +33,8 @@ import java.util.stream.Collectors;
 /**
  * The running application: shows a report, keeps the analysis it was made from and reacts to the keys and
  * to the changes of the watched directory. The keys {@code a i c m} show only the changes of one category,
- * {@code d} cycles the javadoc shown, {@code h} shows the help, {@code Esc} leaves it and {@code q} quits. All rendering happens on the thread
+ * {@code d} cycles the javadoc shown, {@code g} shows all the changes again, switching between grouping them by
+ * category and by type, {@code h} shows the help, {@code Esc} leaves it and {@code q} quits. All rendering happens on the thread
  * that calls {@link #run}.
  */
 final class Session {
@@ -57,6 +58,7 @@ final class Session {
             "  c        show only the cosmetic changes",
             "  m        show only the changed imports",
             "  d        javadoc: none, 3 lines around changes, whole",
+            "  g        group all the changes by category or by type",
             "  h        this help",
             "  Esc      leave the help and show the last output again",
             "  q        quit",
@@ -76,6 +78,8 @@ final class Session {
     private final Set<String> pending = new LinkedHashSet<>();
 
     private Analysis analysis;
+    /** The files of the report, the same after every change. */
+    private Predicate<String> filter;
     private DiffAnalysis last;
     private ChangeLevel only;
     private boolean shown;
@@ -139,10 +143,11 @@ final class Session {
      * Shows the first report and then reacts to keys and changes until the user quits.
      *
      * @param analysis the analysis to run, also for the changes reported later
-     * @param filter   the files of the first report
+     * @param filter   the files of the reports; a change of another file does not refresh the report
      */
     void run(Analysis analysis, Predicate<String> filter) {
         this.analysis = analysis;
+        this.filter = filter;
         if (!analyze(filter)) {
             return;
         }
@@ -185,10 +190,11 @@ final class Session {
         }
     }
 
+    /** Shows the whole diff again, as after the start, if a file it is made of changed. */
     private boolean refreshPending() {
-        Set<String> changed = Set.copyOf(pending);
+        boolean relevant = pending.stream().anyMatch(filter);
         pending.clear();
-        return analyze(changed::contains);
+        return !relevant || analyze(filter);
     }
 
     /** Analyzes the files, remembers the result and shows it. Returns {@code false} if the user quit. */
@@ -250,6 +256,12 @@ final class Session {
                     default -> ReportOptions.WHOLE_JAVADOC;
                 };
                 reporter = reporter.withJavadocContext(javadocContext);
+                return last == null || show();
+            case 'g':
+                // One level alone has no grouping, so all the levels are shown again.
+                only = null;
+                reporter = reporter.withGrouping(reporter.grouping() == ReportOptions.Grouping.BY_TYPE
+                        ? ReportOptions.Grouping.BY_CATEGORY : ReportOptions.Grouping.BY_TYPE);
                 return last == null || show();
             case 'h':
                 return help();

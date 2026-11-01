@@ -60,8 +60,8 @@ public class Main implements Callable<Integer> {
     private ChangeLevel level = ChangeLevel.API;
 
     @Option(names = {"-g", "--group"}, paramLabel = "<grouping>", converter = GroupingConverter.class,
-            description = "Group the changes by type or by category (default: type).")
-    private ReportOptions.Grouping grouping = ReportOptions.Grouping.BY_TYPE;
+            description = "Group the changes by category or by type (default: category).")
+    private ReportOptions.Grouping grouping = ReportOptions.Grouping.BY_CATEGORY;
 
     @Option(names = {"-b", "--body-lines"}, paramLabel = "<n>",
             description = "Most lines shown of the changes of one method body, 0 for none (default: "

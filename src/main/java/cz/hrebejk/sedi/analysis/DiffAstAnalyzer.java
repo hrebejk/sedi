@@ -106,11 +106,12 @@ public class DiffAstAnalyzer implements AutoCloseable {
     }
 
     /**
-     * Analyzes the changed files accepted by the filter.
+     * Analyzes the changed files accepted by the filter. The renames are found in all the changed Java files,
+     * so the accepted files are analyzed the same as when all the files are.
      *
-     * @param filter accepts repository relative paths ({@code /} separated); a change is analyzed if
+     * @param filter accepts repository relative paths ({@code /} separated); a change is in the result if
      *               either its old or new path is accepted
-     * @return the analysis of the diff: hashes, renames and API changes of every changed file
+     * @return the analysis of the diff: hashes, renames and API changes of every accepted file
      * @throws IOException     if an I/O error occurs
      * @throws GitAPIException if a Git API error occurs
      */
@@ -142,12 +143,23 @@ public class DiffAstAnalyzer implements AutoCloseable {
         return git.getRepository();
     }
 
-    /** @param range the compared versions; a {@code null} new commit stands for the working copy */
+    /**
+     * Analyzes the files accepted by the filter. All the changed Java files are analyzed with them, as a file can
+     * refer to elements renamed in the others, but only the accepted ones are in the result.
+     *
+     * @param range the compared versions; a {@code null} new commit stands for the working copy
+     */
     private DiffAnalysis analyze(List<DiffEntry> allDiffs, Predicate<String> filter,
                                  GitInspector.Range range) throws IOException {
+        Predicate<DiffEntry> accepted = d -> filter.test(d.getOldPath()) || filter.test(d.getNewPath());
         List<DiffEntry> diffs = allDiffs.stream()
-                .filter(d -> filter.test(d.getOldPath()) || filter.test(d.getNewPath()))
+                .filter(d -> accepted.test(d) || d.getOldPath().endsWith(".java") || d.getNewPath().endsWith(".java"))
                 .toList();
+        DiffAnalysis all = analyzeAll(diffs, range);
+        return new DiffAnalysis(all.files().stream().filter(f -> accepted.test(f.diff())).toList(), all.renames());
+    }
+
+    private DiffAnalysis analyzeAll(List<DiffEntry> diffs, GitInspector.Range range) throws IOException {
         Repository repo = repository();
 
         List<SourceFileProvider> oldProviders = new ArrayList<>();

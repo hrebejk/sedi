@@ -65,6 +65,31 @@ public class DiffAnalysisTest extends TestCase {
         }
     }
 
+    /**
+     * Tests that a file analyzed alone, as when the watched file changes, knows the types renamed in the other
+     * changed files: its references to them do not change its API.
+     */
+    public void testFilteredFileKnowsRenamesOfOtherFiles() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("ClassV1.java", "public class ClassV1 {\n    int value() { return 1; }\n}\n");
+            helper.writeFile("Usages.java", "public class Usages {\n    ClassV1 obj = new ClassV1();\n"
+                    + "    ClassV1 m(ClassV1 p, boolean b) { return b ? p : obj; }\n}\n");
+            helper.commit("init");
+            java.nio.file.Files.delete(helper.getRepositoryPath().resolve("ClassV1.java"));
+            helper.writeFile("ClassV2.java", "public class ClassV2 {\n    int value() { return 1; }\n}\n");
+            helper.writeFile("Usages.java", "public class Usages {\n    ClassV2 obj = new ClassV2();\n"
+                    + "    ClassV2 m(ClassV2 p, boolean b) { return !b ? p : obj; }\n}\n");
+
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                DiffAnalysis analysis = analyzer.analyzeChanges("Usages.java"::equals);
+                assertEquals(1, analysis.files().size());
+                ApiChanges usages = analysis.files().get(0).rootChanges().nested().get(0);
+                assertEquals(java.util.List.of("COSMETIC:obj", "IMPLEMENTATION:m"), usages.changes().stream()
+                        .map(c -> c.level() + ":" + c.pair().newElement().getName()).sorted().toList());
+            }
+        }
+    }
+
     private static ElementInfo member(ElementInfo root, String name) {
         ElementInfo type = root.getChildren().get(0);
         return type.getChildren().stream().filter(c -> c.getName().equals(name)).findFirst().orElseThrow();
