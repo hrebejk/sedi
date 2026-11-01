@@ -18,6 +18,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.EnumMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -36,9 +37,11 @@ public class ElementInfo {
     private int paramCount;
     private String elementId;
     private List<String> javadoc = List.of();
-    /** The nodes of the body being scanned, innermost last. */
+    /** The nodes of the body or of the signature being scanned, innermost last. */
     private final Deque<NodeInfo> openNodes = new ArrayDeque<>();
     private NodeInfo body;
+    /** The nodes of the signature, by their trees (identity map). */
+    private final Map<Tree, NodeInfo> signatureNodes = new IdentityHashMap<>();
 
     /**
      * Enum defining the type of reduced AST node.
@@ -199,8 +202,8 @@ public class ElementInfo {
             synchronized (md) {
                 md.update(attribute.getBytes(StandardCharsets.UTF_8));
             }
-            if (category == ChangeCategory.BODY) {
-                for (NodeInfo node : openNodes) {
+            for (NodeInfo node : openNodes) {
+                if (node.getCategory() == category) {
                     node.update(attribute, node == openNodes.getLast());
                 }
             }
@@ -208,22 +211,40 @@ public class ElementInfo {
     }
 
     /**
-     * Starts a node of the body; everything hashed into {@link ChangeCategory#BODY} until it is closed goes into it.
+     * Starts a node; everything hashed into the category until it is closed goes into it.
      *
-     * @param path the path to the node
+     * @param path     the path to the node
+     * @param category {@link ChangeCategory#BODY} for a node of the body, {@link ChangeCategory#SIGNATURE} for one of
+     *                 the signature
      */
-    void openNode(TreePath path) {
-        openNodes.addLast(new NodeInfo(path));
+    void openNode(TreePath path, ChangeCategory category) {
+        openNodes.addLast(new NodeInfo(path, category));
     }
 
     /** Completes the innermost open node and attaches it to its parent, or makes it the body. */
     void closeNode() {
         NodeInfo node = openNodes.removeLast();
-        if (openNodes.isEmpty()) {
-            body = node;
-        } else {
-            openNodes.getLast().addChild(node);
+        if (node.getCategory() == ChangeCategory.SIGNATURE) {
+            signatureNodes.put(node.getTree(), node);
         }
+        if (!openNodes.isEmpty()) {
+            openNodes.getLast().addChild(node);
+        } else if (node.getCategory() == ChangeCategory.BODY) {
+            body = node;
+        }
+    }
+
+    /**
+     * Returns the hash of a part of the signature of the element, such as the type of a parameter or an annotation:
+     * references to renamed elements are hashed with their old names, so the old and the new version of a part
+     * which changed only by such renames have the same hash.
+     *
+     * @param tree a tree of the signature of the element
+     * @return the hash, {@code null} if the tree is not a part of the signature, e.g. one javac added
+     */
+    public String getSignatureSha(Tree tree) {
+        NodeInfo node = signatureNodes.get(tree);
+        return node == null ? null : node.getSha();
     }
 
     /**

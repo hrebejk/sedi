@@ -18,19 +18,29 @@ import java.util.List;
 
 /**
  * A node of the body of a method or of a field initializer, with the {@link ChangeCategory#BODY} hash of its subtree:
- * renames undone and names of locals ignored, so two nodes with an equal hash differ at most cosmetically.
+ * renames undone and names of locals ignored, so two nodes with an equal hash differ at most cosmetically. A node of
+ * a signature, such as the type of a parameter, has the {@link ChangeCategory#SIGNATURE} hash instead: references to
+ * renamed elements undone.
  */
 final class NodeInfo {
 
     private final TreePath path;
+    private final ChangeCategory category;
     private final MessageDigest digest = ElementInfo.newDigest();
     private final MessageDigest ownDigest = ElementInfo.newDigest();
     private final List<NodeInfo> children = new ArrayList<>();
     private String sha;
     private String ownSha;
 
-    NodeInfo(TreePath path) {
+    /** @param category the category whose attributes go into the hash: {@code BODY} or {@code SIGNATURE} */
+    NodeInfo(TreePath path, ChangeCategory category) {
         this.path = path;
+        this.category = category;
+    }
+
+    /** The category whose attributes go into the hash. */
+    ChangeCategory getCategory() {
+        return category;
     }
 
     /**

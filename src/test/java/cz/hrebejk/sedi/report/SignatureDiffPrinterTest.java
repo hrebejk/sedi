@@ -42,6 +42,37 @@ public class SignatureDiffPrinterTest extends TestCase {
                 .toList();
     }
 
+    /**
+     * Tests that the types renamed in another file are not shown as changes of the signature: only the added
+     * modifier is struck through or added, the renamed types are printed once.
+     */
+    public void testRenamedTypesAreNotChanges() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("E1.java", "public enum E1 {\n    YES, NO\n}\n");
+            helper.writeFile("I1.java", "public interface I1 {\n    void run();\n}\n");
+            helper.writeFile("T.java", "public class T implements I1 {\n"
+                    + "    E1 yesno(boolean p, java.util.List<E1> all) throws Exception { return p ? E1.YES : E1.NO; }\n"
+                    + "    public void run() { }\n}\n");
+            helper.commit("init");
+            java.nio.file.Files.delete(helper.getRepositoryPath().resolve("E1.java"));
+            java.nio.file.Files.delete(helper.getRepositoryPath().resolve("I1.java"));
+            helper.writeFile("E2.java", "public enum E2 {\n    YES, NO\n}\n");
+            helper.writeFile("I2.java", "public interface I2 {\n    void run();\n}\n");
+            helper.writeFile("T.java", "public class T implements I2 {\n"
+                    + "    private E2 yesno(boolean p, java.util.List<E2> all) throws Exception { return p ? E2.YES : E2.NO; }\n"
+                    + "    public void run() { }\n}\n");
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                var t = analyzer.analyzeChanges().files().stream()
+                        .filter(f -> f.diff().getNewPath().equals("T.java")).findFirst().orElseThrow()
+                        .rootChanges().nested().get(0);
+                SignatureDiffPrinter printer = new SignatureDiffPrinter(Theme.PLAIN);
+                assertEquals("  public class T implements I2", printer.formatType(t.type(), ""));
+                assertEquals(List.of("~ private E2 yesno( boolean p, java.util.List<E2> all ) throws Exception"),
+                        t.pairs().stream().map(p -> printer.format(p, "T")).toList());
+            }
+        }
+    }
+
     public void testParameterTypeAndNameChange() throws Exception {
         assertEquals(List.of("~ public String method( ~~int~~ float ~~i~~ f )"),
                 print("public String method(int i) { return null; }", "public String method(float f) { return null; }"));

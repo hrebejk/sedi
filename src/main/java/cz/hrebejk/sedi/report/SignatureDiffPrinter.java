@@ -92,24 +92,30 @@ public final class SignatureDiffPrinter {
     public List<String> annotations(ElementPair pair) {
         if (pair.isAdded() || pair.isRemoved()) {
             boolean added = pair.isAdded();
-            return Parts.of(added ? pair.newElement() : pair.oldElement(), "").annotations().stream()
+            return Parts.of(added ? pair.newElement() : pair.oldElement(), "").annotations().stream().map(Piece::text)
                     .map(a -> theme.changed(added, (added ? "+ " : "- ") + (added ? theme.code(a) : strike(a)))).toList();
         }
-        List<String> oldAnnotations = Parts.of(pair.oldElement(), "").annotations();
-        List<String> newAnnotations = Parts.of(pair.newElement(), "").annotations();
+        List<Piece> oldAnnotations = Parts.of(pair.oldElement(), "").annotations();
+        List<Piece> newAnnotations = Parts.of(pair.newElement(), "").annotations();
         List<String> lines = new ArrayList<>();
-        for (String o : oldAnnotations) {
-            if (newAnnotations.stream().noneMatch(n -> annotationName(n).equals(annotationName(o)))) {
-                lines.add(theme.modified() + " " + strike(o));
+        for (Piece o : oldAnnotations) {
+            if (newAnnotations.stream().noneMatch(n -> sameAnnotation(o, n))) {
+                lines.add(theme.modified() + " " + strike(o.text()));
             }
         }
-        for (String n : newAnnotations) {
-            String o = oldAnnotations.stream().filter(a -> annotationName(a).equals(annotationName(n))).findFirst().orElse("");
-            if (!o.equals(n)) {
-                lines.add(theme.modified() + " " + (o.isEmpty() ? theme.style(Theme.Role.REPLACEMENT, n) : slot(o, n)));
+        for (Piece n : newAnnotations) {
+            Piece o = oldAnnotations.stream().filter(a -> sameAnnotation(a, n)).findFirst().orElse(Piece.NONE);
+            if (!o.sameAs(n)) {
+                lines.add(theme.modified() + " "
+                        + (o.text().isEmpty() ? theme.style(Theme.Role.REPLACEMENT, n.text()) : slot(o, n)));
             }
         }
         return lines;
+    }
+
+    /** Whether two annotations are of the same type: equal names, or equal as a whole, e.g. a renamed type. */
+    private static boolean sameAnnotation(Piece a, Piece b) {
+        return a.sameAs(b) || annotationName(a.text()).equals(annotationName(b.text()));
     }
 
     private static String annotationName(String annotation) {
@@ -126,63 +132,96 @@ public final class SignatureDiffPrinter {
      */
     public List<String> declaration(ElementInfo element, String typeName) {
         Parts parts = Parts.of(element, typeName);
-        List<String> lines = new ArrayList<>(parts.annotations().stream().map(theme::code).toList());
+        List<String> lines = new ArrayList<>(parts.annotations().stream().map(Piece::text).map(theme::code).toList());
         lines.add(theme.code(render(parts, parts)));
         return lines;
     }
 
-    /** Textual pieces of one element's signature. */
-    private record Parts(ElementInfo.NodeType nodeType, List<String> annotations, List<String> modifiers, List<String> typeParams, String type,
-                         String name, List<String[]> params, List<String> throwsList, List<String> extendsList,
-                         List<String> implementsList, List<String> permitsList) {
+    /**
+     * A part of a signature: the text shown and the key it is compared by. The key of a tree is its hash, in which
+     * references to renamed elements are undone, so a part which only refers to a renamed type is unchanged.
+     */
+    private record Piece(String text, String key) {
+
+        static final Piece NONE = new Piece("", "");
+
+        /** A part compared by its text, like a modifier or a name. */
+        static Piece text(String text) {
+            return new Piece(text, text);
+        }
+
+        /** A part of the signature of the element, compared by its hash if it has one, else by its text. */
+        static Piece of(ElementInfo info, Tree tree) {
+            if (tree == null) {
+                return NONE;
+            }
+            String sha = info.getSignatureSha(tree);
+            return new Piece(tree.toString(), sha == null ? tree.toString() : sha);
+        }
+
+        boolean sameAs(Piece other) {
+            return key.equals(other.key);
+        }
+    }
+
+    /** The pieces of one element's signature. */
+    private record Parts(ElementInfo.NodeType nodeType, List<Piece> annotations, List<Piece> modifiers,
+                         List<Piece> typeParams, Piece type, String name, List<Piece[]> params, List<Piece> throwsList,
+                         List<Piece> extendsList, List<Piece> implementsList, List<Piece> permitsList) {
 
         static Parts of(ElementInfo info, String typeName) {
             Tree tree = info.getOriginalTree();
             if (tree instanceof MethodTree m) {
                 String name = m.getName().contentEquals("<init>") ? typeName : m.getName().toString();
-                List<String[]> params = new ArrayList<>();
+                List<Piece[]> params = new ArrayList<>();
                 for (VariableTree p : m.getParameters()) {
-                    params.add(new String[]{String.valueOf(p.getType()), p.getName().toString()});
+                    params.add(new Piece[]{Piece.of(info, p.getType()), Piece.text(p.getName().toString())});
                 }
-                return new Parts(info.getNodeType(), annotations(m.getModifiers()), modifiers(m.getModifiers()), typeParams(m.getTypeParameters()),
-                        m.getReturnType() == null ? "" : m.getReturnType().toString(), name, params,
-                        m.getThrows().stream().map(Object::toString).toList(), List.of(), List.of(), List.of());
+                return new Parts(info.getNodeType(), annotations(info, m.getModifiers()), modifiers(m.getModifiers()),
+                        pieces(info, m.getTypeParameters()), Piece.of(info, m.getReturnType()), name, params,
+                        pieces(info, m.getThrows()), List.of(), List.of(), List.of());
             }
             if (tree instanceof VariableTree v) {
-                return new Parts(info.getNodeType(), annotations(v.getModifiers()), modifiers(v.getModifiers()), List.of(), String.valueOf(v.getType()),
-                        v.getName().toString(), List.of(), List.of(), List.of(), List.of(), List.of());
+                Piece type = Piece.of(info, v.getType());
+                if (info.getSignatureSha(v.getType()) == null) {
+                    // A type javac added, as to an enum constant: compared by the type itself, renames undone.
+                    type = new Piece(type.text(), info.getFacetSha(cz.hrebejk.sedi.analysis.Facet.RETURN_TYPE));
+                }
+                return new Parts(info.getNodeType(), annotations(info, v.getModifiers()), modifiers(v.getModifiers()),
+                        List.of(), type, v.getName().toString(), List.of(), List.of(), List.of(), List.of(), List.of());
             }
             if (tree instanceof ClassTree c) {
                 // An interface lists the interfaces it extends where a class lists the ones it implements.
-                List<String> extended = new ArrayList<>();
-                List<String> implemented = new ArrayList<>();
+                List<Piece> extended = new ArrayList<>();
+                List<Piece> implemented = new ArrayList<>();
                 if (c.getExtendsClause() != null) {
-                    extended.add(c.getExtendsClause().toString());
+                    extended.add(Piece.of(info, c.getExtendsClause()));
                 }
                 (c.getKind() == Tree.Kind.INTERFACE ? extended : implemented)
-                        .addAll(c.getImplementsClause().stream().map(Object::toString).toList());
-                return new Parts(info.getNodeType(), annotations(c.getModifiers()), modifiers(c.getModifiers()), typeParams(c.getTypeParameters()),
-                        keyword(c.getKind()), c.getSimpleName().toString(), List.of(), List.of(), extended, implemented,
-                        c.getPermitsClause().stream().map(Object::toString).toList());
+                        .addAll(pieces(info, c.getImplementsClause()));
+                return new Parts(info.getNodeType(), annotations(info, c.getModifiers()), modifiers(c.getModifiers()),
+                        pieces(info, c.getTypeParameters()), Piece.text(keyword(c.getKind())),
+                        c.getSimpleName().toString(), List.of(), List.of(), extended, implemented,
+                        pieces(info, c.getPermitsClause()));
             }
-            return new Parts(info.getNodeType(), List.of(), List.of(), List.of(), "", info.getName(), List.of(), List.of(),
-                    List.of(), List.of(), List.of());
+            return new Parts(info.getNodeType(), List.of(), List.of(), List.of(), Piece.NONE, info.getName(), List.of(),
+                    List.of(), List.of(), List.of(), List.of());
         }
 
-        private static List<String> annotations(ModifiersTree modifiers) {
-            return modifiers.getAnnotations().stream().map(AnnotationTree::toString).toList();
+        private static List<Piece> annotations(ElementInfo info, ModifiersTree modifiers) {
+            return pieces(info, modifiers.getAnnotations());
         }
 
-        private static List<String> modifiers(ModifiersTree modifiers) {
-            List<String> result = new ArrayList<>();
+        private static List<Piece> modifiers(ModifiersTree modifiers) {
+            List<Piece> result = new ArrayList<>();
             for (Modifier m : modifiers.getFlags()) {
-                result.add(m.toString());
+                result.add(Piece.text(m.toString()));
             }
             return result;
         }
 
-        private static List<String> typeParams(List<? extends Tree> params) {
-            return params.stream().map(Object::toString).toList();
+        private static List<Piece> pieces(ElementInfo info, List<? extends Tree> trees) {
+            return trees.stream().map(t -> Piece.of(info, t)).toList();
         }
 
         private static String keyword(Tree.Kind kind) {
@@ -219,7 +258,7 @@ public final class SignatureDiffPrinter {
     }
 
     /** Adds the clause with its keyword, if the old or the new version has it; the changed items show the change. */
-    private void addClause(List<String> out, String keyword, List<String> oldItems, List<String> newItems) {
+    private void addClause(List<String> out, String keyword, List<Piece> oldItems, List<Piece> newItems) {
         String items = tokens(oldItems, newItems, ", ");
         if (!items.isEmpty()) {
             out.add(keyword + " " + items);
@@ -234,13 +273,22 @@ public final class SignatureDiffPrinter {
 
     private String params(Parts o, Parts n) {
         List<String> out = new ArrayList<>();
+        Piece[] none = {Piece.NONE, Piece.NONE};
         int count = Math.max(o.params().size(), n.params().size());
         for (int i = 0; i < count; i++) {
-            String[] op = i < o.params().size() ? o.params().get(i) : new String[]{"", ""};
-            String[] np = i < n.params().size() ? n.params().get(i) : new String[]{"", ""};
+            Piece[] op = i < o.params().size() ? o.params().get(i) : none;
+            Piece[] np = i < n.params().size() ? n.params().get(i) : none;
             out.add(join(List.of(slot(op[0], np[0]), slot(op[1], np[1])), " "));
         }
         return out.isEmpty() ? "" : " " + join(out, ", ") + " ";
+    }
+
+    /** Like {@link #slot(String, String)}, the parts compared by their keys. */
+    private String slot(Piece oldPiece, Piece newPiece) {
+        if (oldPiece.sameAs(newPiece) || oldPiece.text().isEmpty()) {
+            return newPiece.text();
+        }
+        return newPiece.text().isEmpty() ? strike(oldPiece.text()) : theme.replace(oldPiece.text(), newPiece.text());
     }
 
     /**
@@ -265,20 +313,20 @@ public final class SignatureDiffPrinter {
     }
 
     /** Removed tokens struck through, followed by all tokens of the new version, the added ones underlined. */
-    private String tokens(List<String> oldTokens, List<String> newTokens) {
+    private String tokens(List<Piece> oldTokens, List<Piece> newTokens) {
         return tokens(oldTokens, newTokens, " ");
     }
 
-    private String tokens(List<String> oldTokens, List<String> newTokens, String separator) {
+    private String tokens(List<Piece> oldTokens, List<Piece> newTokens, String separator) {
         List<String> removed = new ArrayList<>();
-        for (String t : oldTokens) {
-            if (!newTokens.contains(t)) {
-                removed.add(strike(t));
+        for (Piece t : oldTokens) {
+            if (newTokens.stream().noneMatch(t::sameAs)) {
+                removed.add(strike(t.text()));
             }
         }
         List<String> current = new ArrayList<>();
-        for (String t : newTokens) {
-            current.add(oldTokens.contains(t) ? t : theme.style(Theme.Role.REPLACEMENT, t));
+        for (Piece t : newTokens) {
+            current.add(oldTokens.stream().anyMatch(t::sameAs) ? t.text() : theme.style(Theme.Role.REPLACEMENT, t.text()));
         }
         return join(List.of(join(removed, separator), join(current, separator)), " ");
     }

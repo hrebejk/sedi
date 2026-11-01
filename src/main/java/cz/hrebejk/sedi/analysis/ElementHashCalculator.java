@@ -122,11 +122,14 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
         if (initializer) {
             bodyDepth++;
         }
-        // The nodes of bodies of methods and fields are kept with their hashes, to diff the bodies.
-        boolean node = bodyDepth > 0 && (current.getNodeType() == ElementInfo.NodeType.METHOD
-                || current.getNodeType() == ElementInfo.NodeType.FIELD);
+        // The nodes of bodies of methods and fields are kept with their hashes, to diff the bodies, and so are the
+        // nodes of the signatures of methods, fields and types, to diff the signatures.
+        boolean member = current.getNodeType() == ElementInfo.NodeType.METHOD
+                || current.getNodeType() == ElementInfo.NodeType.FIELD;
+        boolean node = bodyDepth > 0 ? member : member || current.getNodeType() == ElementInfo.NodeType.TYPE;
         if (node) {
-            current.openNode(new TreePath(getCurrentPath(), tree));
+            current.openNode(new TreePath(getCurrentPath(), tree),
+                    bodyDepth > 0 ? ChangeCategory.BODY : ChangeCategory.SIGNATURE);
         }
         try {
             updateAttribute(current, "KIND:" + tree.getKind());
