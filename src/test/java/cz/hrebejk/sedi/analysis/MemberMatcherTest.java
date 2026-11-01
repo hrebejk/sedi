@@ -60,15 +60,20 @@ public class MemberMatcherTest extends TestCase {
         assertEquals(Set.of(Facet.ANNOTATIONS, Facet.THROWS, Facet.RETURN_TYPE), pairs.get(0).changedFacets());
     }
 
-    public void testParameterRenameKeepsParamTypesFacet() throws Exception {
-        List<ElementPair> pairs = match("void a(int x) {}", "void a(int y) {}");
-        assertEquals(1, pairs.size());
-        assertTrue(pairs.get(0).changedFacets().isEmpty());
+    /** The name of a parameter is not a part of the signature: a renamed parameter is cosmetic, like a local. */
+    public void testParameterRenameIsUnchangedSignature() throws Exception {
+        assertTrue(match("void a(int x) {}", "void a(int y) {}").isEmpty());
     }
 
     public void testEqualIgnoreLocalNamesHashPairsMembers() throws Exception {
-        List<ElementPair> pairs = match("void a(int x) { int i = x; } void a(String s) { String t = s; }",
-                "void a(String q) { String r = q; } void a(int y) { int j = y; }");
+        List<ElementPair> pairs;
+        try (GitTestHelper helper = new GitTestHelper()) {
+            ElementInfo oldType = type(helper, "void a(int x) { int i = x; } void a(String s) { String t = s; }");
+            ElementInfo newType = type(helper, "void a(String q) { String r = q; } void a(int y) { int j = y; }");
+            assertTrue(MemberMatcher.match(oldType, newType).isEmpty());
+            pairs = MemberMatcher.matchAll(oldType, newType).unchanged().stream()
+                    .filter(p -> p.newElement().getName().equals("a")).toList();
+        }
         assertEquals(2, pairs.size());
         for (ElementPair pair : pairs) {
             assertNotNull(pair.oldElement());

@@ -46,6 +46,13 @@ public class ChangeClassificationTest extends TestCase {
                 classify("class Foo { int m() { int a = 1; return a; } }", "class Foo { int m() { int b = 1; return b; } }"));
     }
 
+    /** A renamed parameter is cosmetic, like a renamed local, also in a public method. */
+    public void testParameterRenameIsCosmetic() throws Exception {
+        assertEquals(List.of("COSMETIC:yesno"),
+                classify("public class Foo { public int yesno(boolean p) { return p ? 1 : 0; } }",
+                        "public class Foo { public int yesno(boolean bool) { return bool ? 1 : 0; } }"));
+    }
+
     public void testWhitespaceIsCosmetic() throws Exception {
         assertEquals(List.of("COSMETIC:m"),
                 classify("class Foo { int m() { return 1; } }", "class Foo { int m() {\n    return 1;  // one\n  } }"));

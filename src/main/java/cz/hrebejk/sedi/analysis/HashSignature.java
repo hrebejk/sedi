@@ -12,7 +12,7 @@ import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.VariableTree;
 
 /**
- * Only the signatures of elements: modifiers, annotations, names, types, type parameters,
+ * Only the signatures of elements: modifiers, annotations, names (not those of parameters), types, type parameters,
  * parameters and thrown exceptions. Ignores method bodies, field initializers and
  * members of types (nested nodes do not cascade into their parents).
  */
@@ -27,9 +27,10 @@ final class HashSignature extends HashBase {
 
     @Override
     public void onLocalVariable(ChangeCategory category, ElementInfo node, VariableTree variable, Region region) {
-        // Reached in the signature region only for method parameters
+        // Reached in the signature region only for method parameters. Their names are left out: a renamed
+        // parameter is a cosmetic change, like a renamed local.
         if (region == Region.SIGNATURE) {
-            appendVariable(category, node, variable);
+            node.updateDigest(category, "KIND:" + variable.getKind());
         }
     }
 

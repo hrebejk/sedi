@@ -74,7 +74,7 @@ public class SignatureDiffPrinterTest extends TestCase {
     }
 
     public void testParameterTypeAndNameChange() throws Exception {
-        assertEquals(List.of("~ public String method( ~~int~~ float ~~i~~ f )"),
+        assertEquals(List.of("~ public String method( ~~int~~ float f )"),
                 print("public String method(int i) { return null; }", "public String method(float f) { return null; }"));
     }
 

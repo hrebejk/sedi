@@ -26,7 +26,7 @@ import java.util.stream.Collectors;
 /**
  * Renders the signature of an {@link ElementPair} as a single line in which every changed part
  * shows the old value struck through followed by the new value, for example
- * {@code public String method( ~~int~~ float ~~i~~ f )}.
+ * {@code public String method( ~~int~~ float f )}. Renamed parameters show only the new name: the rename is cosmetic.
  * Added elements are prefixed with {@code +}, removed elements with {@code -}. The line is colored by a
  * {@link Theme}.
  */
@@ -278,7 +278,9 @@ public final class SignatureDiffPrinter {
         for (int i = 0; i < count; i++) {
             Piece[] op = i < o.params().size() ? o.params().get(i) : none;
             Piece[] np = i < n.params().size() ? n.params().get(i) : none;
-            out.add(join(List.of(slot(op[0], np[0]), slot(op[1], np[1])), " "));
+            // A renamed parameter is a cosmetic change, not one of the signature: only the new name is shown.
+            String name = np[1].text().isEmpty() ? slot(op[1], np[1]) : np[1].text();
+            out.add(join(List.of(slot(op[0], np[0]), name), " "));
         }
         return out.isEmpty() ? "" : " " + join(out, ", ") + " ";
     }
