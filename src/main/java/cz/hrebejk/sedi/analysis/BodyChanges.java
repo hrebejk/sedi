@@ -25,6 +25,7 @@ import cz.hrebejk.sedi.compilation.CompilationUnitInfo;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * The difference of two versions of the body of a method or of a field initializer, as marks on the nodes of the new
@@ -46,7 +47,54 @@ public record BodyChanges(CompilationUnitInfo oldUnit, CompilationUnitInfo newUn
                           int oldStatements, int newStatements, int unchangedStatements) {
 
     /** What happened to a node of the new version. */
-    public sealed interface Mark permits Changed, Edited, Added, Replaced {
+    public sealed interface Mark permits Changed, Edited, Added, Replaced, Wrapped, Unwrapped, WrappedStatements,
+            UnwrappedStatements, Kept {
+    }
+
+    /**
+     * A new statement around old statements, like an {@code if} or a {@code try} added around them; shown with its
+     * own lines marked as added and the old statements as they are.
+     *
+     * @param kept the statements inside the new one which are old statements, up to renames and names of locals
+     *             (identity set)
+     */
+    public record WrappedStatements(Set<Tree> kept) implements Mark {
+    }
+
+    /**
+     * New statements which were inside a removed statement, like the body of a removed {@code if}; shown, at the
+     * place of the first of them, as the removed statement with its own lines marked as removed and, in place of
+     * its statements kept, the new statements. The other new statements are marked {@link Kept}.
+     *
+     * @param oldTree the removed statement
+     * @param kept    the statements inside the removed one by the new statements they are (identity map)
+     */
+    public record UnwrappedStatements(Tree oldTree, Map<Tree, Tree> kept) implements Mark {
+    }
+
+    /**
+     * A new statement shown as a part of the {@link UnwrappedStatements} of another one.
+     */
+    public record Kept() implements Mark {
+    }
+
+    /**
+     * An expression made of its old version and new code around it, like {@code p} changed to {@code !p} or to
+     * {@code f(p, 1)}; shown with the new code marked as added and the old version as it is.
+     *
+     * @param kept the tree inside the new version which is the old version, up to renames and names of locals
+     */
+    public record Wrapped(Tree kept) implements Mark {
+    }
+
+    /**
+     * An expression which is a part of its old version, the code around it removed, like {@code !p} changed to
+     * {@code p}; shown as the old version with the removed code struck through.
+     *
+     * @param oldTree the old version
+     * @param oldKept the tree inside the old version which is the new version, up to renames and names of locals
+     */
+    public record Unwrapped(Tree oldTree, Tree oldKept) implements Mark {
     }
 
     /**

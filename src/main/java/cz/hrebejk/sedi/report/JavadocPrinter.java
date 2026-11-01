@@ -211,7 +211,7 @@ final class JavadocPrinter {
             out.add(theme.strike(String.join(" ", removed)));
         }
         if (!inserted.isEmpty()) {
-            out.add(theme.style(Theme.Role.REPLACEMENT, String.join(" ", inserted)));
+            out.add(theme.added(String.join(" ", inserted)));
         }
         removed.clear();
         inserted.clear();

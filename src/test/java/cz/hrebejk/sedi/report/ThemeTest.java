@@ -42,7 +42,7 @@ public class ThemeTest extends TestCase {
     public void testReplacementUnderlined() {
         assertEquals(E + "9mold" + E + "29m " + E + "4mnew" + E + "24m",
                 only("strike", "strike", "replacement", "underline").replace("old", "new"));
-        assertEquals("~~old~~ new", Theme.PLAIN.replace("old", "new"));
+        assertEquals("~~old~~ __new__", Theme.PLAIN.replace("old", "new"));
     }
 
     public void testNoneLeavesTextAsItIs() {

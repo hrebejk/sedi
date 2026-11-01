@@ -16,9 +16,12 @@ import com.sun.source.util.SourcePositions;
 import cz.hrebejk.sedi.compilation.CompilationUnitInfo;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Diffs two versions of a body node by node. The children of two nodes are aligned by their hashes; the children
@@ -76,6 +79,19 @@ final class BodyDiff {
         if (oldNode.getSha().equals(newNode.getSha())) {
             return;
         }
+        if (isExpression(oldNode.getTree()) && isExpression(newNode.getTree())) {
+            // Code added around the old expression, or removed around the new one: only that code is the change.
+            NodeInfo kept = find(newNode, oldNode.getSha(), newUnit);
+            if (kept != null && isKept(kept, newNode)) {
+                marks.put(newNode.getTree(), new BodyChanges.Wrapped(kept.getTree()));
+                return;
+            }
+            NodeInfo oldKept = find(oldNode, newNode.getSha(), oldUnit);
+            if (oldKept != null && isKept(oldKept, oldNode)) {
+                marks.put(newNode.getTree(), new BodyChanges.Unwrapped(oldNode.getTree(), oldKept.getTree()));
+                return;
+            }
+        }
         if (oldNode.getTree().getKind() != newNode.getTree().getKind()) {
             // A small expression is struck through as a whole, e.g. a literal replaced by a field access.
             boolean small = isExpression(oldNode.getTree()) && isExpression(newNode.getTree())
@@ -105,7 +121,8 @@ final class BodyDiff {
             if (mark instanceof BodyChanges.Added || mark instanceof BodyChanges.Replaced) {
                 return false;
             }
-            if (mark instanceof BodyChanges.Edited) {
+            if (mark instanceof BodyChanges.Edited || mark instanceof BodyChanges.Wrapped
+                    || mark instanceof BodyChanges.Unwrapped) {
                 edits++;
             }
         }
@@ -153,6 +170,8 @@ final class BodyDiff {
         }
         int o = 0;
         int lastPaired = -1;
+        List<NodeInfo> added = new ArrayList<>();
+        List<Removal> removals = new ArrayList<>();
         for (int n = 0; n < news.size(); n++) {
             NodeInfo newChild = news.get(n);
             int match = -1;
@@ -163,10 +182,11 @@ final class BodyDiff {
             }
             if (match < 0) {
                 marks.put(newChild.getTree(), new BodyChanges.Added());
+                added.add(newChild);
                 continue;
             }
             for (int i = o; i < match; i++) {
-                remove(olds.get(i), newChild.getTree(), parent);
+                removals.add(new Removal(olds.get(i), newChild.getTree()));
             }
             pair(olds.get(match), newChild, isUnit(parent, newChild.getTree()));
             o = match + 1;
@@ -175,8 +195,92 @@ final class BodyDiff {
         // What was not paired was replaced by the following added children, or just removed.
         Tree anchor = lastPaired + 1 < news.size() ? news.get(lastPaired + 1).getTree() : next;
         for (int i = o; i < olds.size(); i++) {
-            remove(olds.get(i), anchor, parent);
+            removals.add(new Removal(olds.get(i), anchor));
         }
+        wrapStatements(added, removals);
+        for (Removal removal : removals) {
+            remove(removal.old(), removal.before(), parent);
+        }
+    }
+
+    /** An old child without a counterpart, shown in front of a new child, or at the end if {@code before} is null. */
+    private record Removal(NodeInfo old, Tree before) {
+    }
+
+    /**
+     * Finds the added statements which are made of removed ones and code around them, like an {@code if} added around
+     * statements, and the removed statements which were made of added ones, like a removed {@code if}. The removed
+     * statements kept this way are taken out of the removals.
+     */
+    private void wrapStatements(List<NodeInfo> added, List<Removal> removals) {
+        Set<Tree> used = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (NodeInfo wrapper : added) {
+            if (!(wrapper.getTree() instanceof StatementTree)) {
+                continue;
+            }
+            Set<Tree> kept = Collections.newSetFromMap(new IdentityHashMap<>());
+            for (Iterator<Removal> it = removals.iterator(); it.hasNext(); ) {
+                NodeInfo old = it.next().old();
+                NodeInfo inside = old.getTree() instanceof StatementTree
+                        ? findStatement(wrapper, old.getSha(), newUnit, used) : null;
+                if (inside != null) {
+                    kept.add(inside.getTree());
+                    used.add(inside.getTree());
+                    it.remove();
+                }
+            }
+            if (!kept.isEmpty()) {
+                marks.put(wrapper.getTree(), new BodyChanges.WrappedStatements(kept));
+            }
+        }
+        for (Iterator<Removal> it = removals.iterator(); it.hasNext(); ) {
+            NodeInfo old = it.next().old();
+            if (!(old.getTree() instanceof StatementTree)) {
+                continue;
+            }
+            Map<Tree, Tree> kept = new IdentityHashMap<>();
+            List<NodeInfo> shown = new ArrayList<>();
+            for (NodeInfo statement : added) {
+                if (statement.getTree() instanceof StatementTree
+                        && marks.get(statement.getTree()) instanceof BodyChanges.Added) {
+                    NodeInfo inside = findStatement(old, statement.getSha(), oldUnit, used);
+                    if (inside != null) {
+                        kept.put(inside.getTree(), statement.getTree());
+                        used.add(inside.getTree());
+                        shown.add(statement);
+                    }
+                }
+            }
+            if (!kept.isEmpty()) {
+                marks.put(shown.getFirst().getTree(), new BodyChanges.UnwrappedStatements(old.getTree(), kept));
+                for (NodeInfo other : shown.subList(1, shown.size())) {
+                    marks.put(other.getTree(), new BodyChanges.Kept());
+                }
+                it.remove();
+            }
+        }
+    }
+
+    /**
+     * The outermost statement inside the node (not the node itself) with the hash and not used yet, the first in the
+     * source; only statements with a place in the source count.
+     *
+     * @return the node, {@code null} if there is none
+     */
+    private static NodeInfo findStatement(NodeInfo node, String sha, CompilationUnitInfo unit, Set<Tree> used) {
+        List<NodeInfo> level = present(node.getChildren(), unit);
+        while (!level.isEmpty()) {
+            List<NodeInfo> next = new ArrayList<>();
+            for (NodeInfo child : level) {
+                if (child.getTree() instanceof StatementTree && !used.contains(child.getTree())
+                        && child.getSha().equals(sha)) {
+                    return child;
+                }
+                next.addAll(present(child.getChildren(), unit));
+            }
+            level = next;
+        }
+        return null;
     }
 
     private void remove(NodeInfo old, Tree before, Tree parent) {
@@ -185,6 +289,39 @@ final class BodyDiff {
         } else {
             removedAtEnd.computeIfAbsent(parent, t -> new ArrayList<>()).add(old.getTree());
         }
+    }
+
+    /**
+     * Whether an expression found inside another one is kept in it rather than equal by chance: a single name or
+     * literal, like the {@code 1} of {@code return 1;} changed to {@code return list.size() > 1 ? 2 : 0;}, is kept
+     * only in a small expression, like {@code !p} or {@code i + 1}.
+     */
+    private static boolean isKept(NodeInfo kept, NodeInfo container) {
+        return !isLeaf(kept) || size(container) <= MAX_STRUCK_NODES;
+    }
+
+    /**
+     * The outermost expression inside the node (not the node itself) with the hash, the first in the source; only
+     * expressions with a place in the source count, and blocks, as of lambdas, are not searched.
+     *
+     * @return the node, {@code null} if there is none
+     */
+    private static NodeInfo find(NodeInfo node, String sha, CompilationUnitInfo unit) {
+        List<NodeInfo> level = present(node.getChildren(), unit);
+        while (!level.isEmpty()) {
+            List<NodeInfo> next = new ArrayList<>();
+            for (NodeInfo child : level) {
+                if (!isExpression(child.getTree())) {
+                    continue;
+                }
+                if (child.getSha().equals(sha)) {
+                    return child;
+                }
+                next.addAll(present(child.getChildren(), unit));
+            }
+            level = next;
+        }
+        return null;
     }
 
     /** The nodes which have a place in the source of the unit. */

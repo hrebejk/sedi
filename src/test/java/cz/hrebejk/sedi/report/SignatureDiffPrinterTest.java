@@ -67,33 +67,33 @@ public class SignatureDiffPrinterTest extends TestCase {
                         .rootChanges().nested().get(0);
                 SignatureDiffPrinter printer = new SignatureDiffPrinter(Theme.PLAIN);
                 assertEquals("  public class T implements I2", printer.formatType(t.type(), ""));
-                assertEquals(List.of("~ private E2 yesno( boolean p, java.util.List<E2> all ) throws Exception"),
+                assertEquals(List.of("~ __private__ E2 yesno( boolean p, java.util.List<E2> all ) throws Exception"),
                         t.pairs().stream().map(p -> printer.format(p, "T")).toList());
             }
         }
     }
 
     public void testParameterTypeAndNameChange() throws Exception {
-        assertEquals(List.of("~ public String method( ~~int~~ float f )"),
+        assertEquals(List.of("~ public String method( ~~int~~ __float__ f )"),
                 print("public String method(int i) { return null; }", "public String method(float f) { return null; }"));
     }
 
     public void testModifierAndReturnTypeChange() throws Exception {
-        assertEquals(List.of("~ ~~private~~ public static ~~int~~ long m()"),
+        assertEquals(List.of("~ ~~private~~ __public__ __static__ ~~int~~ __long__ m()"),
                 print("private int m() { return 0; }", "public static long m() { return 0; }"));
     }
 
     public void testThrowsAndAnnotation() throws Exception {
-        assertEquals(List.of("~ @Deprecated", "~ void m() throws Exception"),
+        assertEquals(List.of("~ __@Deprecated__", "~ void m() throws __Exception__"),
                 print("void m() {}", "@Deprecated void m() throws Exception {}"));
     }
 
     public void testRename() throws Exception {
-        assertEquals(List.of("~ int ~~a~~ b( String s )"), print("int a(String s) { return 0; }", "int b(String s) { return 0; }"));
+        assertEquals(List.of("~ int ~~a~~ __b__( String s )"), print("int a(String s) { return 0; }", "int b(String s) { return 0; }"));
     }
 
     public void testFieldTypeChange() throws Exception {
-        assertEquals(List.of("~ private ~~int~~ long f"), print("private int f;", "private long f;"));
+        assertEquals(List.of("~ private ~~int~~ __long__ f"), print("private int f;", "private long f;"));
     }
 
     public void testAddedAndRemoved() throws Exception {

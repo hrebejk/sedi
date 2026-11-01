@@ -39,13 +39,90 @@ public class AstPrinterTest extends TestCase {
         return body(oldMembers, newMembers, ReportOptions.DEFAULT_BODY_LINES);
     }
 
+    /**
+     * The changed lines of the bodies printed in the default colors, the added text shown as {@code _text_}, the
+     * struck through as {@code ~text~} and the other colors left out.
+     */
+    private static List<String> marked(String oldMembers, String newMembers) throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", "class Foo {\n" + oldMembers + "\n}\n");
+            helper.commit("init");
+            helper.writeFile("Foo.java", "class Foo {\n" + newMembers + "\n}\n");
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                ReportOptions options = new ReportOptions(ChangeLevel.IMPLEMENTATION, ReportOptions.Grouping.BY_TYPE);
+                return new Reporter(Theme.defaults(), options).report(analyzer.analyzeChanges()).stream()
+                        .map(l -> l.replace("\u001b[4m", "_").replace("\u001b[24m", "_")
+                                .replace("\u001b[9m", "~").replace("\u001b[29m", "~")
+                                .replaceAll("\u001b\\[[0-9;]*m", "").strip())
+                        .filter(l -> l.startsWith("return")).toList();
+            }
+        }
+    }
+
+    /** Code added around an expression is marked alone, the expression kept as it is, renamed locals too. */
+    public void testWrappedExpressionMarksOnlyTheAddedCode() throws Exception {
+        assertEquals(List.of("return _!_bool ? 1 : 0;", "return _f(_f(a) _+ b)_;", "return a + b _+ 1_;",
+                        "return s.trim()_.toLowerCase()_;", "return a[i _+ 1_];"),
+                marked("int yesno(boolean p) { return p ? 1 : 0; }\n"
+                                + "int f(int x) { return x; }\n"
+                                + "int call(int a, int b) { return f(a); }\n"
+                                + "int sum(int a, int b) { return a + b; }\n"
+                                + "String chain(String s) { return s.trim(); }\n"
+                                + "int arr(int[] a, int i) { return a[i]; }",
+                        "int yesno(boolean bool) { return !bool ? 1 : 0; }\n"
+                                + "int f(int x) { return x; }\n"
+                                + "int call(int a, int b) { return f(f(a) + b); }\n"
+                                + "int sum(int a, int b) { return a + b + 1; }\n"
+                                + "String chain(String s) { return s.trim().toLowerCase(); }\n"
+                                + "int arr(int[] a, int i) { return a[i + 1]; }"));
+    }
+
+    /** A name or literal found by chance in a much bigger new expression is not kept: the whole is replaced. */
+    public void testLeafInBigExpressionIsReplaced() throws Exception {
+        assertEquals(List.of("~ int m( java.util.List<String> list ) [impl]",
+                        "      - return 1;", "      + return list.size() > 1 ? list.size() * 2 : 0;",
+                        "~ int n( int x ) [impl]", "      return __Math.max(__x__, 0)__;"),
+                body("int m(java.util.List<String> list) { return 1; }\nint n(int x) { return x; }",
+                        "int m(java.util.List<String> list) { return list.size() > 1 ? list.size() * 2 : 0; }\n"
+                                + "int n(int x) { return Math.max(x, 0); }"));
+    }
+
+    /** A statement added around old statements shows only its own lines as added, the old statements as they are. */
+    public void testWrappedStatements() throws Exception {
+        assertEquals(List.of("~ void a( boolean c ) [impl]", "      + if (c) {", "        f(2);", "      + }",
+                        "~ void b() [impl]", "      + try {", "        f(1);", "        f(2);",
+                        "      + } catch (RuntimeException e) {", "        + f(9);", "      + }",
+                        "~ void c( int n ) [impl]", "      + for (int i = 0; i < n; i++)", "        f(1);"),
+                body("void f(int x) { }\nvoid a(boolean c) { f(1); f(2); f(3); }\nvoid b() { f(1); f(2); }\n"
+                                + "void c(int n) { f(1); }",
+                        "void f(int x) { }\nvoid a(boolean c) { f(1); if (c) { f(2); } f(3); }\n"
+                                + "void b() { try { f(1); f(2); } catch (RuntimeException e) { f(9); } }\n"
+                                + "void c(int n) { for (int i = 0; i < n; i++) f(1); }"));
+    }
+
+    /** A removed statement around statements kept shows only its own lines as removed, the kept ones as they are now. */
+    public void testUnwrappedStatements() throws Exception {
+        assertEquals(List.of("~ void a( boolean c, int q ) [impl]", "      - if (c) {", "        f(q);", "        f(2);",
+                        "      - }"),
+                body("void f(int x) { }\nvoid a(boolean c, int p) { f(0); if (c) { f(p); f(2); } f(3); }",
+                        "void f(int x) { }\nvoid a(boolean c, int q) { f(0); f(q); f(2); f(3); }"));
+    }
+
+    /** Code removed around an expression is struck through alone, the rest of the line in one run. */
+    public void testUnwrappedExpressionStrikesOnlyTheRemovedCode() throws Exception {
+        assertEquals(List.of("~ boolean neg( boolean q ) [impl]", "      return ~~!~~q;",
+                        "~ int paren( int a, int b ) [impl]", "      return ~~(~~a + b~~) * 2~~;"),
+                body("boolean neg(boolean p) { return !p; }\nint paren(int a, int b) { return (a + b) * 2; }",
+                        "boolean neg(boolean q) { return q; }\nint paren(int a, int b) { return a + b; }"));
+    }
+
     public void testEditedLiteral() throws Exception {
-        assertEquals(List.of("~ int m() [impl]", "      return ~~1~~ 2;"),
+        assertEquals(List.of("~ int m() [impl]", "      return ~~1~~ __2__;"),
                 body("int m() { int a = 0; return 1; }", "int m() { int a = 0; return 2; }"));
     }
 
     public void testChangeInIfKeepsContext() throws Exception {
-        assertEquals(List.of("~ int m( int x ) [impl]", "      if (x > 0) {", "        return ~~1~~ 2;", "      }"),
+        assertEquals(List.of("~ int m( int x ) [impl]", "      if (x > 0) {", "        return ~~1~~ __2__;", "      }"),
                 body("int m(int x) {\n  foo();\n  if (x > 0) {\n    bar();\n    return 1;\n  }\n  return 0;\n}\nvoid foo() {}\nvoid bar() {}",
                         "int m(int x) {\n  foo();\n  if (x > 0) {\n    bar();\n    return 2;\n  }\n  return 0;\n}\nvoid foo() {}\nvoid bar() {}"));
     }
@@ -57,14 +134,14 @@ public class AstPrinterTest extends TestCase {
     }
 
     public void testMultiLineAndCommentsCollapse() throws Exception {
-        assertEquals(List.of("~ int m( int a, int b ) [impl]", "      return Math.max(a, ~~b~~ 3);"),
+        assertEquals(List.of("~ int m( int a, int b ) [impl]", "      return Math.max(a, ~~b~~ __3__);"),
                 body("int m(int a, int b) { return Math.max(a, b); }",
                         "int m(int a, int b) {\n  return Math.max( // the bigger\n      a,\n      3);\n}"));
     }
 
     /** A member select whose qualifier and name both changed is struck through as a whole. */
     public void testOwnChangeOfNode() throws Exception {
-        assertEquals(List.of("~ int m( String s ) [impl]", "      return ~~s.length~~ t.hashCode();"),
+        assertEquals(List.of("~ int m( String s ) [impl]", "      return ~~s.length~~ __t.hashCode__();"),
                 body("String t;\nint m(String s) { return s.length(); }", "String t;\nint m(String s) { return t.hashCode(); }"));
     }
 
@@ -76,7 +153,7 @@ public class AstPrinterTest extends TestCase {
     /** Arguments replaced by expressions of another kind are struck through in place. */
     public void testArgumentsOfOtherKind() throws Exception {
         assertEquals(List.of("~ boolean m() [impl]",
-                        "      return new java.util.ArrayList<String>(~~5~~ Integer.MAX_VALUE).add(~~\"a\"~~ String.valueOf(1));"),
+                        "      return new java.util.ArrayList<String>(~~5~~ __Integer.MAX_VALUE__).add(~~\"a\"~~ __String.valueOf(1)__);"),
                 body("boolean m() { return new java.util.ArrayList<String>(5).add(\"a\"); }",
                         "boolean m() { return new java.util.ArrayList<String>(Integer.MAX_VALUE).add(String.valueOf(1)); }"));
     }
@@ -97,9 +174,9 @@ public class AstPrinterTest extends TestCase {
     /** Context of lambda blocks, else branches and switch cases; a changed comment is not shown. */
     public void testNestedContexts() throws Exception {
         assertEquals(List.of("~ void m( java.util.List<String> l, int x ) [impl]",
-                        "      l.forEach(s -> {", "        ~~System.out~~ System.err.println(s);", "      });",
+                        "      l.forEach(s -> {", "        ~~System.out~~ __System.err__.println(s);", "      });",
                         "      if (x > 0) { … } else {", "        + f(6);", "      }",
-                        "      switch (x) {", "        default:", "          f(~~4~~ 7);", "      }"),
+                        "      switch (x) {", "        default:", "          f(~~4~~ __7__);", "      }"),
                 body(
                 "void m(java.util.List<String> l, int x) {\n  l.forEach(s -> {\n    System.out.println(s);\n  });\n  if (x > 0) {\n    f(1);\n  } else {\n    f(2);\n  }\n  switch (x) {\n    case 1: f(3); break;\n    default: f(4);\n  }\n  f(5); // five\n}\nvoid f(int i) {}",
                 "void m(java.util.List<String> l, int x) {\n  l.forEach(s -> {\n    System.err.println(s);\n  });\n  if (x > 0) {\n    f(1);\n  } else {\n    f(2);\n    f(6);\n  }\n  switch (x) {\n    case 1: f(3); break;\n    default: f(7);\n  }\n  f(5); // FIVE\n}\nvoid f(int i) {}"));
@@ -112,7 +189,7 @@ public class AstPrinterTest extends TestCase {
     }
 
     public void testConstructorSkipsImplicitSuper() throws Exception {
-        assertEquals(List.of("~ Foo() [impl]", "      x = ~~1~~ 2;"),
+        assertEquals(List.of("~ Foo() [impl]", "      x = ~~1~~ __2__;"),
                 body("int x;\nFoo() { x = 1; }", "int x;\nFoo() { x = 2; }"));
     }
 

@@ -32,7 +32,9 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Prints the changes of a body as lines of code. The printer walks the trees: the text between the children of a
@@ -91,8 +93,14 @@ final class AstPrinter {
      * @param source the version the trees are from
      * @param marked {@code true} to follow the marks of the new version, {@code false} to print the trees as they are
      * @param prefix what every line starts with after the indentation
+     * @param kept   statements of the source printed instead as the new statements they map to, as they are and
+     *               without the prefix: the statements kept inside an added or removed one (identity map)
      */
-    private record Mode(Source source, boolean marked, String prefix) {
+    private record Mode(Source source, boolean marked, String prefix, Map<Tree, Tree> kept) {
+
+        Mode(Source source, boolean marked, String prefix) {
+            this(source, marked, prefix, Map.of());
+        }
     }
 
     private final BodyChanges changes;
@@ -150,12 +158,27 @@ final class AstPrinter {
 
     /** Prints a statement on lines of its own. */
     private void statement(Tree tree, int depth, Mode mode) {
+        Tree keptAs = mode.kept().get(tree);
+        if (keptAs != null) {
+            whole(keptAs, newSource, depth, "");
+            return;
+        }
         if (!mode.source().isPresent(tree)) {
             return;
         }
         if (mode.marked()) {
             BodyChanges.Mark mark = changes.marks().get(tree);
-            if (mark == null) {
+            if (mark == null || mark instanceof BodyChanges.Kept) {
+                return;
+            }
+            if (mark instanceof BodyChanges.WrappedStatements wrapped) {
+                Map<Tree, Tree> kept = new IdentityHashMap<>();
+                wrapped.kept().forEach(t -> kept.put(t, t));
+                around(tree, new Mode(newSource, false, "+ ", kept), depth);
+                return;
+            }
+            if (mark instanceof BodyChanges.UnwrappedStatements unwrapped) {
+                around(unwrapped.oldTree(), new Mode(oldSource, false, "- ", unwrapped.kept()), depth);
                 return;
             }
             if (mark instanceof BodyChanges.Added) {
@@ -168,6 +191,16 @@ final class AstPrinter {
                 return;
             }
         }
+        begin(depth, mode.prefix());
+        emit(tree, mode, depth, null);
+        end();
+    }
+
+    /**
+     * Prints a statement added or removed around kept ones: its own lines with the prefix of the mode, never
+     * collapsed, the kept statements as they are.
+     */
+    private void around(Tree tree, Mode mode, int depth) {
         begin(depth, mode.prefix());
         emit(tree, mode, depth, null);
         end();
@@ -201,6 +234,18 @@ final class AstPrinter {
     private void emit(Tree tree, Mode mode, int depth, Tree collapseAt) {
         Source source = mode.source();
         if (mode.marked()) {
+            switch (changes.marks().get(tree)) {
+                case BodyChanges.Wrapped wrapped -> {
+                    append(wrapped(tree, wrapped.kept(), source));
+                    return;
+                }
+                case BodyChanges.Unwrapped unwrapped -> {
+                    append(unwrapped(unwrapped.oldTree(), unwrapped.oldKept(), tree, source));
+                    return;
+                }
+                case null, default -> {
+                }
+            }
             Tree old = switch (changes.marks().get(tree)) {
                 case BodyChanges.Edited edited -> edited.oldTree();
                 case BodyChanges.Replaced replaced -> replaced.oldTree();
@@ -266,6 +311,86 @@ final class AstPrinter {
             }
         }
         append(gap(source, cursor, stop));
+    }
+
+    /**
+     * The new expression on a single line, everything but the kept tree marked as added; the kept tree, the old
+     * expression, as it is.
+     */
+    private String wrapped(Tree tree, Tree kept, Source source) {
+        List<Segment> segments = new ArrayList<>();
+        split(tree, kept, source, segments);
+        return join(segments, true);
+    }
+
+    /**
+     * The old expression on a single line, everything but the kept tree struck through; in place of the kept tree,
+     * which is the new expression, the new expression.
+     */
+    private String unwrapped(Tree oldTree, Tree oldKept, Tree newTree, Source newSource) {
+        List<Segment> segments = new ArrayList<>();
+        split(oldTree, oldKept, oldSource, segments);
+        // The kept part is printed as it is now, renames included.
+        segments.replaceAll(s -> s.changed() ? s : new Segment(plain(newTree, newSource), false));
+        return join(segments, false);
+    }
+
+    /** A piece of a line, changed or kept. */
+    private record Segment(String text, boolean changed) {
+    }
+
+    /** Splits the tree into the text of the kept tree, which is a single segment, and the changed text around it. */
+    private void split(Tree tree, Tree kept, Source source, List<Segment> segments) {
+        if (tree == kept) {
+            segments.add(new Segment(plain(tree, source), false));
+            return;
+        }
+        int cursor = source.start(tree);
+        int stop = source.end(tree);
+        for (Tree child : children(tree, source)) {
+            if (!source.isPresent(child) || source.start(child) < cursor || source.end(child) > stop) {
+                continue;
+            }
+            segments.add(new Segment(gap(source, cursor, source.start(child)), true));
+            if (contains(source, child, kept)) {
+                split(child, kept, source, segments);
+            } else {
+                segments.add(new Segment(plain(child, source), true));
+            }
+            cursor = source.end(child);
+        }
+        segments.add(new Segment(gap(source, cursor, stop), true));
+    }
+
+    /** Joins the segments, each run of changed ones marked as a whole: as added, or struck through if removed. */
+    private String join(List<Segment> segments, boolean added) {
+        StringBuilder text = new StringBuilder();
+        StringBuilder run = new StringBuilder();
+        for (Segment segment : segments) {
+            if (segment.changed()) {
+                run.append(segment.text());
+            } else {
+                text.append(mark(run.toString(), added)).append(segment.text());
+                run.setLength(0);
+            }
+        }
+        return text.append(mark(run.toString(), added)).toString().strip();
+    }
+
+    /** Whether the tree is the other one or contains it. */
+    private static boolean contains(Source source, Tree tree, Tree other) {
+        return source.start(tree) <= source.start(other) && source.end(other) <= source.end(tree);
+    }
+
+    /** Changed code marked as added or struck through as removed, the spaces around it left unmarked. */
+    private String mark(String text, boolean added) {
+        String stripped = text.strip();
+        if (stripped.isEmpty()) {
+            return text;
+        }
+        int start = text.indexOf(stripped);
+        String marked = added ? theme.added(stripped) : theme.strike(stripped);
+        return text.substring(0, start) + marked + text.substring(start + stripped.length());
     }
 
     /** The tree on a single line, blocks shown as {@code { … }}. */

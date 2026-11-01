@@ -26,7 +26,7 @@ import java.util.stream.Collectors;
 /**
  * Renders the signature of an {@link ElementPair} as a single line in which every changed part
  * shows the old value struck through followed by the new value, for example
- * {@code public String method( ~~int~~ float f )}. Renamed parameters show only the new name: the rename is cosmetic.
+ * {@code public String method( ~~int~~ __float__ f )}. Renamed parameters show only the new name: the rename is cosmetic.
  * Added elements are prefixed with {@code +}, removed elements with {@code -}. The line is colored by a
  * {@link Theme}.
  */
@@ -107,7 +107,7 @@ public final class SignatureDiffPrinter {
             Piece o = oldAnnotations.stream().filter(a -> sameAnnotation(a, n)).findFirst().orElse(Piece.NONE);
             if (!o.sameAs(n)) {
                 lines.add(theme.modified() + " "
-                        + (o.text().isEmpty() ? theme.style(Theme.Role.REPLACEMENT, n.text()) : slot(o, n)));
+                        + (o.text().isEmpty() ? theme.added(n.text()) : slot(o, n)));
             }
         }
         return lines;
@@ -328,7 +328,7 @@ public final class SignatureDiffPrinter {
         }
         List<String> current = new ArrayList<>();
         for (Piece t : newTokens) {
-            current.add(oldTokens.stream().anyMatch(t::sameAs) ? t.text() : theme.style(Theme.Role.REPLACEMENT, t.text()));
+            current.add(oldTokens.stream().anyMatch(t::sameAs) ? t.text() : theme.added(t.text()));
         }
         return join(List.of(join(removed, separator), join(current, separator)), " ");
     }

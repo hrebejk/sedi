@@ -85,7 +85,7 @@ public final class Theme {
         NO_CHANGES
     }
 
-    /** A theme without colors; struck through text is shown as {@code ~~text~~}. */
+    /** A theme without colors; struck through text is shown as {@code ~~text~~}, added text as {@code __text__}. */
     public static final Theme PLAIN = new Theme(Map.of(), false);
 
     private static final String ESC = "\u001b[";
@@ -282,9 +282,17 @@ public final class Theme {
         return ansi ? style(Role.STRIKE, text) : "~~" + text + "~~";
     }
 
+    /** The added text, without colors shown as {@code __text__}. */
+    String added(String text) {
+        if (text.isEmpty()) {
+            return text;
+        }
+        return ansi ? style(Role.REPLACEMENT, text) : "__" + text + "__";
+    }
+
     /** The old text struck through, followed by the new text which replaced it. */
     String replace(String oldText, String newText) {
-        return strike(oldText) + " " + style(Role.REPLACEMENT, newText);
+        return strike(oldText) + " " + added(newText);
     }
 
     /** The {@code +} or {@code -} starting a line of added or removed code. */
