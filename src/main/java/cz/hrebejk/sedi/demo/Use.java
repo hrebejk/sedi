@@ -5,8 +5,10 @@
 package cz.hrebejk.sedi.demo;
 
 import cz.hrebejk.sedi.demo.lib.Greertr;
-import cz.hrebejk.sedi.demo.lib.Gretaings;
+import static cz.hrebejk.sedi.demo.lib.Gretaings.*;
 import cz.hrebejk.sedi.demo.lib.YeahNay;
+import static cz.hrebejk.sedi.demo.lib.YeahNay.NAY;
+import static cz.hrebejk.sedi.demo.lib.YeahNay.YEAH;
 
 /**
  *
@@ -14,29 +16,31 @@ import cz.hrebejk.sedi.demo.lib.YeahNay;
  */
 public class Use implements Greertr {
     
-    private final String EMPTY = cz.hrebejk.sedi.demo.lib.Gretaings.empty();
+    private final String EMPTY = empty();
     
     private String[] greetings = new String[] {
-       Gretaings.DOBRY_DEN,
-       cz.hrebejk.sedi.demo.lib.Gretaings.CAU,
-       cz.hrebejk.sedi.demo.lib.Gretaings.NAZDAR
+       DOBRY_DEN,
+       CAU,
+       NAZDAR
     };
-         
+
+    
     private String great(YeahNay polite, boolean b) {
         
-        if ( polite == cz.hrebejk.sedi.demo.lib.YeahNay.YEAH ) {
-            return Gretaings.DOBRY_DEN;
+        if ( polite == YEAH ) {
+            return DOBRY_DEN;
         }
         else {
-            return b ? Gretaings.CAU : Gretaings.NAZDAR;
+            return b ? CAU : NAZDAR;
         }
         
     }
 
     @Override
     public String great()  {
-        return great( YeahNay.NAY, false );
+        return great( NAY, false );
     }
+
 
     public static void main(String... ps) {
         Use m = new Use();
