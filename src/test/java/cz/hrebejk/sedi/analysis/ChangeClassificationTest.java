@@ -73,6 +73,35 @@ public class ChangeClassificationTest extends TestCase {
                                 + " int m(int a) { return Math.max(a, Foo.C); } int f = Foo.C; }"));
     }
 
+    /** An enum constant qualified by its enum or not is cosmetic: in expressions, case labels and annotations. */
+    public void testQualifiedEnumConstantIsCosmetic() throws Exception {
+        assertEquals(List.of("COSMETIC:m", "COSMETIC:f"),
+                classify("import java.lang.annotation.*; import static java.lang.annotation.RetentionPolicy.SOURCE;"
+                                + " class Foo { enum Color { RED, GREEN }"
+                                + " @Retention(SOURCE) @interface A { }"
+                                + " int m(Color c) { switch (c) { case RED: return 1; default: return c == Color.GREEN ? 2 : 0; } }"
+                                + " Color f = Color.RED; }",
+                        "import java.lang.annotation.*;"
+                                + " class Foo { enum Color { RED, GREEN }"
+                                + " @Retention(RetentionPolicy.SOURCE) @interface A { }"
+                                + " int m(Color c) { switch (c) { case Color.RED: return 1; default: return c == Foo.Color.GREEN ? 2 : 0; } }"
+                                + " Color f = Foo.Color.RED; }"));
+    }
+
+    /** Inside the enum its constants may be referred to with or without the name of the enum. */
+    public void testEnumConstantInsideEnumIsCosmetic() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", "enum Foo { A, B; Foo next() { return this == A ? B : A; } }");
+            helper.commit("init");
+            helper.writeFile("Foo.java", "enum Foo { A, B; Foo next() { return this == Foo.A ? Foo.B : A; } }");
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                ApiChanges type = analyzer.analyzeChanges().files().get(0).rootChanges().nested().get(0);
+                assertEquals(List.of("COSMETIC:next"), type.changes().stream()
+                        .map(c -> c.level() + ":" + c.pair().newElement().getName()).toList());
+            }
+        }
+    }
+
     /** In a body changed otherwise, a name changed from a qualified to a simple one is not marked. */
     public void testQualifiedNameIsNotMarkedInChangedBody() throws Exception {
         try (GitTestHelper helper = new GitTestHelper()) {
