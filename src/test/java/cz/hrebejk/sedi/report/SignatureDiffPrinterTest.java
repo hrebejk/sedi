@@ -53,6 +53,18 @@ public class SignatureDiffPrinterTest extends TestCase {
                 .toList();
     }
 
+    /** An added parameter is marked as added, a removed one struck through, also between the kept ones. */
+    public void testAddedAndRemovedParameters() throws Exception {
+        assertEquals(List.of("~ void a( String text, __long line__ )"),
+                print("void a(String line) { }", "void a(String text, long line) { }"));
+        assertEquals(List.of("~ void b( __String s__, int a, __boolean f__ )"),
+                print("void b(int a) { }", "void b(String s, int a, boolean f) { }"));
+        assertEquals(List.of("~ void c( int a, ~~String s~~ )"),
+                print("void c(int a, String s) { }", "void c(int a) { }"));
+        assertEquals(List.of("~ void d( ~~int~~ __long__ a, String s )"),
+                print("void d(int a, String s) { }", "void d(long a, String s) { }"));
+    }
+
     /**
      * Tests that the types renamed in another file are not shown as changes of the signature: only the added
      * modifier is struck through or added, the renamed types are printed once.

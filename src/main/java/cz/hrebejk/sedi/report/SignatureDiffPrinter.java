@@ -297,18 +297,72 @@ public final class SignatureDiffPrinter {
         return params.isEmpty() ? "" : "<" + params + ">";
     }
 
+    /**
+     * The parameters: the added ones marked as added, the removed ones struck through, those of a changed type with
+     * the old type struck through. If the number of parameters changed, they are aligned by their types first, so a
+     * parameter added in front of others does not show them all changed; between the aligned ones, the parameters
+     * are paired by their positions.
+     */
     private String params(Parts o, Parts n) {
+        List<Piece[]> olds = o.params();
+        List<Piece[]> news = n.params();
+        List<int[]> anchors = new ArrayList<>();
+        if (olds.size() != news.size()) {
+            anchors.addAll(lcs(olds, news));
+        }
+        anchors.add(new int[]{olds.size(), news.size()});
         List<String> out = new ArrayList<>();
-        Piece[] none = {Piece.NONE, Piece.NONE};
-        int count = Math.max(o.params().size(), n.params().size());
-        for (int i = 0; i < count; i++) {
-            Piece[] op = i < o.params().size() ? o.params().get(i) : none;
-            Piece[] np = i < n.params().size() ? n.params().get(i) : none;
-            // A renamed parameter is a cosmetic change, not one of the signature: only the new name is shown.
-            String name = np[1].text().isEmpty() ? slot(op[1], np[1]) : np[1].text();
-            out.add(join(List.of(slot(op[0], np[0]), name), " "));
+        int i = 0;
+        int j = 0;
+        for (int[] anchor : anchors) {
+            while (i < anchor[0] || j < anchor[1]) {
+                out.add(param(i < anchor[0] ? olds.get(i) : null, j < anchor[1] ? news.get(j) : null));
+                i = Math.min(i + 1, anchor[0]);
+                j = Math.min(j + 1, anchor[1]);
+            }
+            if (anchor[0] < olds.size()) {
+                out.add(param(olds.get(anchor[0]), news.get(anchor[1])));
+            }
+            i = anchor[0] + 1;
+            j = anchor[1] + 1;
         }
         return out.isEmpty() ? "" : " " + join(out, ", ") + " ";
+    }
+
+    /** A parameter, its type and name; {@code null} for the old one if it was added, for the new if removed. */
+    private String param(Piece[] op, Piece[] np) {
+        if (op == null) {
+            return theme.added(join(List.of(np[0].text(), np[1].text()), " "));
+        }
+        if (np == null) {
+            return strike(join(List.of(op[0].text(), op[1].text()), " "));
+        }
+        // A renamed parameter is a cosmetic change, not one of the signature: only the new name is shown.
+        return join(List.of(slot(op[0], np[0]), np[1].text()), " ");
+    }
+
+    /** The longest common subsequence of the parameters of the same types, as pairs of old and new index. */
+    private static List<int[]> lcs(List<Piece[]> olds, List<Piece[]> news) {
+        int[][] length = new int[olds.size() + 1][news.size() + 1];
+        for (int i = olds.size() - 1; i >= 0; i--) {
+            for (int j = news.size() - 1; j >= 0; j--) {
+                length[i][j] = olds.get(i)[0].sameAs(news.get(j)[0]) ? length[i + 1][j + 1] + 1
+                        : Math.max(length[i + 1][j], length[i][j + 1]);
+            }
+        }
+        List<int[]> result = new ArrayList<>();
+        int i = 0;
+        int j = 0;
+        while (i < olds.size() && j < news.size()) {
+            if (olds.get(i)[0].sameAs(news.get(j)[0])) {
+                result.add(new int[]{i++, j++});
+            } else if (length[i + 1][j] >= length[i][j + 1]) {
+                i++;
+            } else {
+                j++;
+            }
+        }
+        return result;
     }
 
     /** Like {@link #slot(String, String)}, the parts compared by their keys. */
