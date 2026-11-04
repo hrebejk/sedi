@@ -77,6 +77,25 @@ public class ReporterTest extends TestCase {
         }
     }
 
+    /** Imports are numbered by their lines: of the old version if removed, else of the new one. */
+    public void testImportLineNumbers() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", "import java.util.List;\nimport static java.lang.Math.max;\n"
+                    + "public class Foo {\n}\n");
+            helper.commit("init");
+            helper.writeFile("Foo.java", "\nimport static java.lang.Math.max;\n\nimport java.util.Set;\n"
+                    + "public class Foo {\n}\n");
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                ReportOptions options = new ReportOptions(ChangeLevel.IMPORTS, ReportOptions.Grouping.BY_TYPE,
+                        ReportOptions.DEFAULT_BODY_LINES, ReportOptions.NO_JAVADOC, true);
+                List<String> lines = new Reporter(Theme.PLAIN, options).reportOnly(analyzer.analyzeChanges(),
+                        ChangeLevel.IMPORTS);
+                assertTrue(lines.toString(), lines.contains("1 -   ~~import java.util.List~~"));
+                assertTrue(lines.toString(), lines.contains("4 +   import java.util.Set"));
+            }
+        }
+    }
+
     /** The numbers have the colors of the markers of their lines. */
     public void testLineNumbersHaveColorsOfMarkers() throws Exception {
         try (GitTestHelper helper = new GitTestHelper()) {

@@ -9,6 +9,8 @@
 package cz.hrebejk.sedi.report;
 
 import com.sun.source.tree.BlockTree;
+import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.ImportTree;
 import cz.hrebejk.sedi.analysis.ApiChanges;
 import cz.hrebejk.sedi.analysis.BodyChanges;
 import cz.hrebejk.sedi.analysis.ChangeLevel;
@@ -18,6 +20,7 @@ import cz.hrebejk.sedi.analysis.ElementPair;
 import cz.hrebejk.sedi.analysis.FileAnalysis;
 import cz.hrebejk.sedi.analysis.MemberChange;
 import cz.hrebejk.sedi.analysis.Visibility;
+import cz.hrebejk.sedi.compilation.CompilationUnitInfo;
 import org.eclipse.jgit.diff.DiffEntry;
 
 import java.util.ArrayList;
@@ -421,12 +424,35 @@ public final class Reporter {
 
     private void importLines(FileAnalysis file, boolean tagged, List<String> lines) {
         String tag = tagged ? tag("import") : "";
-        file.importChanges().removed().forEach(i -> lines.add("  " + importLine(false, i) + tag));
-        file.importChanges().added().forEach(i -> lines.add("  " + importLine(true, i) + tag));
+        file.importChanges().removed()
+                .forEach(i -> lines.add("  " + importLine(false, i, line(file.oldUnit(), i)) + tag));
+        file.importChanges().added()
+                .forEach(i -> lines.add("  " + importLine(true, i, line(file.newUnit(), i)) + tag));
     }
 
-    private String importLine(boolean added, String name) {
-        return theme.changed(added, added ? "+ " + theme.code("import " + name) : "- " + theme.strike("import " + name));
+    private String importLine(boolean added, String name, long line) {
+        return LineNumbers.number(line, added ? '+' : '-',
+                added ? theme.code("import " + name) : theme.strike("import " + name));
+    }
+
+    /**
+     * The line of an import in a version of the file.
+     *
+     * @param name the import as {@link cz.hrebejk.sedi.analysis.ImportChanges} has it, e.g. {@code static a.B.c}
+     * @return the line, {@code 0} if not known
+     */
+    private static long line(CompilationUnitInfo unit, String name) {
+        if (unit == null) {
+            return 0;
+        }
+        CompilationUnitTree tree = unit.compilationUnit();
+        for (ImportTree i : tree.getImports()) {
+            if (((i.isStatic() ? "static " : "") + i.getQualifiedIdentifier()).equals(name)) {
+                long start = unit.trees().getSourcePositions().getStartPosition(tree, i);
+                return start < 0 ? 0 : tree.getLineMap().getLineNumber(start);
+            }
+        }
+        return 0;
     }
 
     private String tag(String text) {
