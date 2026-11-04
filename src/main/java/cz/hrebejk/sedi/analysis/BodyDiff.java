@@ -69,7 +69,7 @@ final class BodyDiff {
         boolean blocks = oldBody.getTree() instanceof BlockTree && newBody.getTree() instanceof BlockTree;
         List<NodeInfo> oldStatements = present(oldBody.getChildren(), oldUnit);
         List<NodeInfo> newStatements = present(newBody.getChildren(), newUnit);
-        return new BodyChanges(oldUnit, newUnit, newBody.getTree(), diff.marks, diff.removedBefore, diff.removedAtEnd,
+        return new BodyChanges(oldUnit, newUnit, oldBody.getTree(), newBody.getTree(), diff.marks, diff.removedBefore, diff.removedAtEnd,
                 blocks ? oldStatements.size() : 0, blocks ? newStatements.size() : 0,
                 blocks ? lcs(oldStatements, newStatements).size() : 0, unresolved(oldElement, newElement));
     }

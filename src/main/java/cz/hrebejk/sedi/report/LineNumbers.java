@@ -52,6 +52,12 @@ final class LineNumbers {
                 + text;
     }
 
+    /** The text of a numbered line, without its number and marker. */
+    static String text(String line) {
+        Matcher m = NUMBERED.matcher(line);
+        return m.find() ? m.group(1) + line.substring(m.end()) : line;
+    }
+
     /** A line of the report shown left of the column of the numbers, like a heading. */
     static String outside(String text) {
         return UNNUMBERED + text;

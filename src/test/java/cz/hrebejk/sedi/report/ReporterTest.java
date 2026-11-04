@@ -279,11 +279,11 @@ public class ReporterTest extends TestCase {
     public void testLevelsByType() throws Exception {
         assertEquals(List.of("~ Foo.java", "    public class Foo",
                         "    ~ public ~~int~~ __long__ a", "    ~ private ~~int~~ __long__ b",
-                        "    ~ public int m() [impl]", "          return ~~1~~ __2__;", "    ~ int o() [cosmetic]",
+                        "    ~ public int m() [impl]", "          ~ return ~~1~~ __2__;", "    ~ int o() [cosmetic]",
                         "  - ~~import java.util.List~~ [import]", "  + import java.util.Set [import]"),
                 report(new ReportOptions(ChangeLevel.IMPORTS, ReportOptions.Grouping.BY_TYPE)));
         assertEquals(List.of("~ Foo.java", "    public class Foo",
-                        "    ~ public ~~int~~ __long__ a", "    ~ private ~~int~~ __long__ b", "    ~ public int m() [impl]", "          return ~~1~~ __2__;"),
+                        "    ~ public ~~int~~ __long__ a", "    ~ private ~~int~~ __long__ b", "    ~ public int m() [impl]", "          ~ return ~~1~~ __2__;"),
                 report(new ReportOptions(ChangeLevel.IMPLEMENTATION, ReportOptions.Grouping.BY_TYPE)));
     }
 
@@ -296,7 +296,7 @@ public class ReporterTest extends TestCase {
                         "~ Foo.java", "    public class Foo", "    ~ public ~~int~~ __long__ a", "    ~ private ~~int~~ __long__ b",
                         "",
                         "# Implementation changes", "",
-                        "~ Foo.java", "    public class Foo", "    ~ public int m()", "          return ~~1~~ __2__;",
+                        "~ Foo.java", "    public class Foo", "    ~ public int m()", "          ~ return ~~1~~ __2__;",
                         "",
                         "# Cosmetic changes", "",
                         "~ Foo.java", "    public class Foo", "    ~ int o()",

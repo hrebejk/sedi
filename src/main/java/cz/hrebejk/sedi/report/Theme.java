@@ -330,7 +330,7 @@ public final class Theme {
 
     /**
      * Java code with its tokens in the styles of their roles. Escape codes already in the code are kept, and text
-     * already {@link #strike struck through} or marked as an {@link #error error} is left as it is.
+     * already {@link #strike struck through}, marked as an {@link #error error} or styled as a comment is left as it is.
      */
     String code(String code) {
         if (!ansi) {
@@ -340,6 +340,7 @@ public final class Theme {
         String strikeOpen = strike.open();
         String strikeClose = strike.close();
         String errorOpen = styles.get(Role.ERROR).open();
+        String commentOpen = styles.get(Role.COMMENT).open();
         StringBuilder out = new StringBuilder();
         int length = code.length();
         int i = 0;
@@ -350,10 +351,10 @@ public final class Theme {
                 int close = code.indexOf(strikeClose, i + strikeOpen.length());
                 i = close < 0 ? length : close + strikeClose.length();
                 out.append(code, start, i);
-            } else if (!errorOpen.isEmpty() && code.startsWith(errorOpen, i)) {
+            } else if (opens(code, i, errorOpen) || opens(code, i, commentOpen)) {
                 // The error text has no escape codes of its own: it ends where the next one, closing it, starts.
                 // Its closing codes may have been changed by a style around it, so they are not looked for as such.
-                int close = code.indexOf('\u001b', i + errorOpen.length());
+                int close = code.indexOf('\u001b', i + (opens(code, i, errorOpen) ? errorOpen : commentOpen).length());
                 i = close < 0 ? length : close;
                 out.append(code, start, i);
             } else if (c == '\u001b') {
@@ -398,6 +399,11 @@ public final class Theme {
             }
         }
         return out.toString();
+    }
+
+    /** Whether a style, which sets something, starts at the index of the code. */
+    private static boolean opens(String code, int index, String open) {
+        return !open.isEmpty() && code.startsWith(open, index);
     }
 
     /** The role of a word, judged by the word and by what follows it. */

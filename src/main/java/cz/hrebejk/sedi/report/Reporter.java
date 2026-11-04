@@ -560,7 +560,7 @@ public final class Reporter {
                 List<String> body = change.body() == null ? List.of() : body(change.body());
                 // The initializer of a field continues the line of its declaration.
                 boolean inline = body.size() == 1 && !(change.body().newRoot() instanceof BlockTree);
-                addDeclaration(lines, depth, pair, changes.typeName(), inline ? body.get(0) : "",
+                addDeclaration(lines, depth, pair, changes.typeName(), inline ? "= " + LineNumbers.text(body.get(0)).strip() : "",
                         tagged ? tag(change) : "");
                 if (change.level() == ChangeLevel.API && change.pair().isAdded()
                         && change.pair().newElement().getNodeType() == ElementInfo.NodeType.TYPE) {

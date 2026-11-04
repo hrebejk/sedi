@@ -33,6 +33,7 @@ import java.util.Set;
  *
  * @param oldUnit             the compilation unit of the old version
  * @param newUnit             the compilation unit of the new version
+ * @param oldRoot             the body of the old version: a block, or the expression initializing a field
  * @param newRoot             the body of the new version: a block, or the expression initializing a field
  * @param marks               what happened to the marked nodes of the new version (identity map)
  * @param removedBefore       old nodes without a counterpart, by the new node they are shown in front of (identity map)
@@ -43,7 +44,7 @@ import java.util.Set;
  * @param unresolved          names javac could not resolve in either version, as in code which does not compile
  *                            (identity set)
  */
-public record BodyChanges(CompilationUnitInfo oldUnit, CompilationUnitInfo newUnit, Tree newRoot,
+public record BodyChanges(CompilationUnitInfo oldUnit, CompilationUnitInfo newUnit, Tree oldRoot, Tree newRoot,
                           Map<Tree, Mark> marks, Map<Tree, List<Tree>> removedBefore,
                           Map<Tree, List<Tree>> removedAtEnd,
                           int oldStatements, int newStatements, int unchangedStatements, Set<Tree> unresolved) {

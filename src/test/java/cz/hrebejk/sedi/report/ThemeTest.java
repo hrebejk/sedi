@@ -95,6 +95,13 @@ public class ThemeTest extends TestCase {
         assertEquals(added + " " + c(1, "int"), theme.code(added + " int"));
     }
 
+    /** Text already styled as a comment, like a line of a block comment, is not highlighted again. */
+    public void testCommentTextIsNotHighlighted() {
+        Theme theme = only("keyword", "#000001", "comment", "#000009");
+        String comment = theme.style(Theme.Role.COMMENT, "return if not");
+        assertEquals(c(1, "int") + " " + comment, theme.code("int " + comment));
+    }
+
     public void testPlain() {
         assertEquals("~~a~~", Theme.PLAIN.strike("a"));
         assertEquals("int a", Theme.PLAIN.code("int a"));
