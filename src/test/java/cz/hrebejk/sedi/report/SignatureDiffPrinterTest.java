@@ -22,7 +22,12 @@ public class SignatureDiffPrinterTest extends TestCase {
 
     /** The line without its line number, see {@link LineNumbers}. */
     static String unnumbered(String line) {
-        return LineNumbers.render(java.util.List.of(line), false, Theme.PLAIN).getFirst();
+        return unnumbered(line, Theme.PLAIN);
+    }
+
+    /** The line without its line number, the marker in front of it in the colors of the theme. */
+    static String unnumbered(String line, Theme theme) {
+        return LineNumbers.render(java.util.List.of(line), false, theme).getFirst();
     }
 
 
@@ -117,7 +122,7 @@ public class SignatureDiffPrinterTest extends TestCase {
     public void testAnsiAddedLineAndKeywords() throws Exception {
         Theme theme = ThemeTest.only("added", "bg:#010203", "added_mark", "underline", "keyword", "bold",
                 "declaration", "strike");
-        List<String> lines = pairs("", "int fresh;").stream().map(p -> unnumbered(new SignatureDiffPrinter(theme).format(p, "T")))
+        List<String> lines = pairs("", "int fresh;").stream().map(p -> unnumbered(new SignatureDiffPrinter(theme).format(p, "T"), theme))
                 .toList();
         assertEquals(List.of("\u001b[48;2;1;2;3m\u001b[4m+\u001b[24m \u001b[1mint\u001b[22m \u001b[9mfresh\u001b[29m"
                 + "\u001b[49m"), lines);

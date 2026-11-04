@@ -254,8 +254,8 @@ public final class Reporter {
         }
         for (TypeRef type : removed) {
             if (type.file().diff().getChangeType() != DiffEntry.ChangeType.DELETE) {
-                names.add(LineNumbers.number(type.element().getLine(), theme.sign(false) + " "
-                        + theme.style(Theme.Role.TITLE, type.element().getName()) + location(type, false)));
+                names.add(LineNumbers.number(type.element().getLine(), '-',
+                        theme.style(Theme.Role.TITLE, type.element().getName()) + location(type, false)));
             }
         }
         parts.add(names);

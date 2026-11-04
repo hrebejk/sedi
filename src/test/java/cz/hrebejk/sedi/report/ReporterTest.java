@@ -44,8 +44,9 @@ public class ReporterTest extends TestCase {
     }
 
     /**
-     * The lines of the source are shown in a column on the left, not indented with the code: of the new version,
-     * of the old one for removed members, the annotations on lines of their own.
+     * The lines of the source are shown in a column on the left, not indented with the code, followed by the
+     * markers of the lines: of the new version, of the old one for removed members, the annotations on lines of
+     * their own.
      */
     public void testLineNumbers() throws Exception {
         try (GitTestHelper helper = new GitTestHelper()) {
@@ -66,12 +67,36 @@ public class ReporterTest extends TestCase {
                                 "",
                                 "   ~ Foo.java",
                                 " 1     public class Foo",
-                                " 3     ~ ~~int~~ __long__ a",
-                                " 3     - ~~void gone()~~"),
+                                " 3 ~     ~~int~~ __long__ a",
+                                " 3 -     ~~void gone()~~"),
                         lines.subList(0, 6));
-                assertTrue(lines.toString(), lines.contains(" 5       + @Deprecated"));
-                assertTrue(lines.toString(), lines.contains(" 6       + void y()"));
-                assertTrue(lines.toString(), lines.contains("11     + void ten()"));
+                assertTrue(lines.toString(), lines.contains(" 5 +       @Deprecated"));
+                assertTrue(lines.toString(), lines.contains(" 6 +       void y()"));
+                assertTrue(lines.toString(), lines.contains("11 +     void ten()"));
+            }
+        }
+    }
+
+    /** The numbers have the colors of the markers of their lines. */
+    public void testLineNumbersHaveColorsOfMarkers() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", "public class Foo {\n  int a;\n  String gone;\n}\n");
+            helper.commit("init");
+            helper.writeFile("Foo.java", "public class Foo {\n  long a;\n  void added() { }\n}\n");
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                Theme theme = ThemeTest.only("added_mark", "#000001", "removed_mark", "#000002",
+                        "changed_mark", "#000003", "line_number", "#000004");
+                ReportOptions options = new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY,
+                        ReportOptions.DEFAULT_BODY_LINES, ReportOptions.NO_JAVADOC, true);
+                List<String> lines = new Reporter(theme, options).report(analyzer.analyzeChanges());
+                String e = "\u001b[38;2;0;0;";
+                assertTrue(lines.toString(), lines.stream().anyMatch(l -> l.startsWith(e + "4m1\u001b[39m ")));
+                assertTrue(lines.toString(), lines.stream().anyMatch(l -> l.startsWith(e + "3m2\u001b[39m "
+                        + e + "3m~\u001b[39m ")));
+                assertTrue(lines.toString(), lines.stream().anyMatch(l -> l.startsWith(e + "2m3\u001b[39m "
+                        + e + "2m-\u001b[39m ")));
+                assertTrue(lines.toString(), lines.stream().anyMatch(l -> l.startsWith(e + "1m3\u001b[39m "
+                        + e + "1m+\u001b[39m ")));
             }
         }
     }
