@@ -86,6 +86,15 @@ public class ThemeTest extends TestCase {
         assertEquals(E + "9mint" + E + "29m " + c(1, "long"), theme.code(theme.strike("int") + " long"));
     }
 
+    /** Error text is not highlighted, also inside added text, and the code after it is. */
+    public void testErrorTextIsNotHighlighted() {
+        Theme theme = only("keyword", "#000001", "error", "#ffffff bg:#e0102a", "replacement", "bg:#00ff00");
+        String error = theme.error("Missing");
+        assertEquals(error + " " + c(1, "int"), theme.code(error + " int"));
+        String added = theme.added(error + " x");
+        assertEquals(added + " " + c(1, "int"), theme.code(added + " int"));
+    }
+
     public void testPlain() {
         assertEquals("~~a~~", Theme.PLAIN.strike("a"));
         assertEquals("int a", Theme.PLAIN.code("int a"));

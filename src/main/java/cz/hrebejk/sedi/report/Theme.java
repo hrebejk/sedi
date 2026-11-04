@@ -124,7 +124,8 @@ public final class Theme {
             Map.entry(Role.TITLE, "#e4ecf7 bold"),
             Map.entry(Role.PACKAGE, "#8a93a5"),
             Map.entry(Role.TAG, "#7f8796"),
-            Map.entry(Role.ERROR, "#ff5f6d"),
+            // White on bright red: code which does not compile must not be missed.
+            Map.entry(Role.ERROR, "#ffffff bg:#e0102a bold"),
             Map.entry(Role.NOTE, "#8a93a5"),
             Map.entry(Role.NO_CHANGES, "bold #ff9e3d"));
 
@@ -335,9 +336,7 @@ public final class Theme {
         Style strike = styles.get(Role.STRIKE);
         String strikeOpen = strike.open();
         String strikeClose = strike.close();
-        Style error = styles.get(Role.ERROR);
-        String errorOpen = error.open();
-        String errorClose = error.close();
+        String errorOpen = styles.get(Role.ERROR).open();
         StringBuilder out = new StringBuilder();
         int length = code.length();
         int i = 0;
@@ -349,8 +348,10 @@ public final class Theme {
                 i = close < 0 ? length : close + strikeClose.length();
                 out.append(code, start, i);
             } else if (!errorOpen.isEmpty() && code.startsWith(errorOpen, i)) {
-                int close = code.indexOf(errorClose, i + errorOpen.length());
-                i = close < 0 ? length : close + errorClose.length();
+                // The error text has no escape codes of its own: it ends where the next one, closing it, starts.
+                // Its closing codes may have been changed by a style around it, so they are not looked for as such.
+                int close = code.indexOf('\u001b', i + errorOpen.length());
+                i = close < 0 ? length : close;
                 out.append(code, start, i);
             } else if (c == '\u001b') {
                 int m = code.indexOf('m', i);
