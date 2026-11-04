@@ -21,8 +21,7 @@ public class Use implements Greertr {
        cz.hrebejk.sedi.demo.lib.Gretaings.CAU,
        cz.hrebejk.sedi.demo.lib.Gretaings.NAZDAR
     };
-    
-
+         
     private String great(YeahNay polite, boolean b) {
         
         if ( polite == cz.hrebejk.sedi.demo.lib.YeahNay.YEAH ) {
