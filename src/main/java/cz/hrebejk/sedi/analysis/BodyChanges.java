@@ -40,11 +40,13 @@ import java.util.Set;
  * @param oldStatements       number of statements of the old body, zero if it is not a block
  * @param newStatements       number of statements of the new body, zero if it is not a block
  * @param unchangedStatements number of statements present unchanged in both bodies
+ * @param unresolved          names javac could not resolve in either version, as in code which does not compile
+ *                            (identity set)
  */
 public record BodyChanges(CompilationUnitInfo oldUnit, CompilationUnitInfo newUnit, Tree newRoot,
                           Map<Tree, Mark> marks, Map<Tree, List<Tree>> removedBefore,
                           Map<Tree, List<Tree>> removedAtEnd,
-                          int oldStatements, int newStatements, int unchangedStatements) {
+                          int oldStatements, int newStatements, int unchangedStatements, Set<Tree> unresolved) {
 
     /** What happened to a node of the new version. */
     public sealed interface Mark permits Changed, Edited, Added, Replaced, Wrapped, Unwrapped, WrappedStatements,

@@ -17,6 +17,7 @@ import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.ModifiersTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
+import com.sun.source.util.TreeScanner;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
@@ -68,15 +69,15 @@ public final class SignatureDiffPrinter {
 
     private String format(ElementPair pair, String typeName, boolean alwaysMarked) {
         if (pair.isAdded()) {
-            Parts parts = Parts.of(pair.newElement(), typeName);
+            Parts parts = Parts.of(pair.newElement(), typeName, theme);
             return theme.changed(true, "+ " + theme.code(render(parts, parts)));
         }
         if (pair.isRemoved()) {
-            Parts parts = Parts.of(pair.oldElement(), typeName);
+            Parts parts = Parts.of(pair.oldElement(), typeName, theme);
             return theme.changed(false, "- " + strike(render(parts, parts)));
         }
-        Parts o = Parts.of(pair.oldElement(), typeName);
-        Parts n = Parts.of(pair.newElement(), typeName);
+        Parts o = Parts.of(pair.oldElement(), typeName, theme);
+        Parts n = Parts.of(pair.newElement(), typeName, theme);
         String signature = render(o, n);
         boolean changed = alwaysMarked || !signature.equals(render(n, n));
         return (changed ? theme.modified() : " ") + " " + theme.code(signature);
@@ -92,11 +93,11 @@ public final class SignatureDiffPrinter {
     public List<String> annotations(ElementPair pair) {
         if (pair.isAdded() || pair.isRemoved()) {
             boolean added = pair.isAdded();
-            return Parts.of(added ? pair.newElement() : pair.oldElement(), "").annotations().stream().map(Piece::text)
+            return Parts.of(added ? pair.newElement() : pair.oldElement(), "", theme).annotations().stream().map(Piece::text)
                     .map(a -> theme.changed(added, (added ? "+ " : "- ") + (added ? theme.code(a) : strike(a)))).toList();
         }
-        List<Piece> oldAnnotations = Parts.of(pair.oldElement(), "").annotations();
-        List<Piece> newAnnotations = Parts.of(pair.newElement(), "").annotations();
+        List<Piece> oldAnnotations = Parts.of(pair.oldElement(), "", theme).annotations();
+        List<Piece> newAnnotations = Parts.of(pair.newElement(), "", theme).annotations();
         List<String> lines = new ArrayList<>();
         for (Piece o : oldAnnotations) {
             if (newAnnotations.stream().noneMatch(n -> sameAnnotation(o, n))) {
@@ -131,7 +132,7 @@ public final class SignatureDiffPrinter {
      * @return the lines of the annotations, then the line of the signature
      */
     public List<String> declaration(ElementInfo element, String typeName) {
-        Parts parts = Parts.of(element, typeName);
+        Parts parts = Parts.of(element, typeName, theme);
         List<String> lines = new ArrayList<>(parts.annotations().stream().map(Piece::text).map(theme::code).toList());
         lines.add(theme.code(render(parts, parts)));
         return lines;
@@ -150,13 +151,33 @@ public final class SignatureDiffPrinter {
             return new Piece(text, text);
         }
 
-        /** A part of the signature of the element, compared by its hash if it has one, else by its text. */
-        static Piece of(ElementInfo info, Tree tree) {
+        /**
+         * A part of the signature of the element, compared by its hash if it has one, else by its text. A part with
+         * a name javac could not resolve is shown as an error.
+         */
+        static Piece of(ElementInfo info, Tree tree, Theme theme) {
             if (tree == null) {
                 return NONE;
             }
             String sha = info.getSignatureSha(tree);
-            return new Piece(tree.toString(), sha == null ? tree.toString() : sha);
+            String text = tree.toString();
+            return new Piece(hasUnresolved(info, tree) ? theme.error(text) : text, sha == null ? text : sha);
+        }
+
+        /** Whether the tree is, or contains, a name javac could not resolve. */
+        private static boolean hasUnresolved(ElementInfo info, Tree tree) {
+            Boolean found = tree.accept(new TreeScanner<Boolean, Void>() {
+                @Override
+                public Boolean scan(Tree node, Void unused) {
+                    return node != null && (info.isUnresolved(node) || Boolean.TRUE.equals(super.scan(node, unused)));
+                }
+
+                @Override
+                public Boolean reduce(Boolean a, Boolean b) {
+                    return Boolean.TRUE.equals(a) || Boolean.TRUE.equals(b);
+                }
+            }, null);
+            return info.isUnresolved(tree) || Boolean.TRUE.equals(found);
         }
 
         boolean sameAs(Piece other) {
@@ -169,25 +190,25 @@ public final class SignatureDiffPrinter {
                          List<Piece> typeParams, Piece type, String name, List<Piece[]> params, List<Piece> throwsList,
                          List<Piece> extendsList, List<Piece> implementsList, List<Piece> permitsList) {
 
-        static Parts of(ElementInfo info, String typeName) {
+        static Parts of(ElementInfo info, String typeName, Theme theme) {
             Tree tree = info.getOriginalTree();
             if (tree instanceof MethodTree m) {
                 String name = m.getName().contentEquals("<init>") ? typeName : m.getName().toString();
                 List<Piece[]> params = new ArrayList<>();
                 for (VariableTree p : m.getParameters()) {
-                    params.add(new Piece[]{Piece.of(info, p.getType()), Piece.text(p.getName().toString())});
+                    params.add(new Piece[]{Piece.of(info, p.getType(), theme), Piece.text(p.getName().toString())});
                 }
-                return new Parts(info.getNodeType(), annotations(info, m.getModifiers()), modifiers(m.getModifiers()),
-                        pieces(info, m.getTypeParameters()), Piece.of(info, m.getReturnType()), name, params,
-                        pieces(info, m.getThrows()), List.of(), List.of(), List.of());
+                return new Parts(info.getNodeType(), annotations(info, m.getModifiers(), theme), modifiers(m.getModifiers()),
+                        pieces(info, m.getTypeParameters(), theme), Piece.of(info, m.getReturnType(), theme), name, params,
+                        pieces(info, m.getThrows(), theme), List.of(), List.of(), List.of());
             }
             if (tree instanceof VariableTree v) {
-                Piece type = Piece.of(info, v.getType());
+                Piece type = Piece.of(info, v.getType(), theme);
                 if (info.getSignatureSha(v.getType()) == null) {
                     // A type javac added, as to an enum constant: compared by the type itself, renames undone.
                     type = new Piece(type.text(), info.getFacetSha(cz.hrebejk.sedi.analysis.Facet.RETURN_TYPE));
                 }
-                return new Parts(info.getNodeType(), annotations(info, v.getModifiers()), modifiers(v.getModifiers()),
+                return new Parts(info.getNodeType(), annotations(info, v.getModifiers(), theme), modifiers(v.getModifiers()),
                         List.of(), type, v.getName().toString(), List.of(), List.of(), List.of(), List.of(), List.of());
             }
             if (tree instanceof ClassTree c) {
@@ -195,21 +216,21 @@ public final class SignatureDiffPrinter {
                 List<Piece> extended = new ArrayList<>();
                 List<Piece> implemented = new ArrayList<>();
                 if (c.getExtendsClause() != null) {
-                    extended.add(Piece.of(info, c.getExtendsClause()));
+                    extended.add(Piece.of(info, c.getExtendsClause(), theme));
                 }
                 (c.getKind() == Tree.Kind.INTERFACE ? extended : implemented)
-                        .addAll(pieces(info, c.getImplementsClause()));
-                return new Parts(info.getNodeType(), annotations(info, c.getModifiers()), modifiers(c.getModifiers()),
-                        pieces(info, c.getTypeParameters()), Piece.text(keyword(c.getKind())),
+                        .addAll(pieces(info, c.getImplementsClause(), theme));
+                return new Parts(info.getNodeType(), annotations(info, c.getModifiers(), theme), modifiers(c.getModifiers()),
+                        pieces(info, c.getTypeParameters(), theme), Piece.text(keyword(c.getKind())),
                         c.getSimpleName().toString(), List.of(), List.of(), extended, implemented,
-                        pieces(info, c.getPermitsClause()));
+                        pieces(info, c.getPermitsClause(), theme));
             }
             return new Parts(info.getNodeType(), List.of(), List.of(), List.of(), Piece.NONE, info.getName(), List.of(),
                     List.of(), List.of(), List.of(), List.of());
         }
 
-        private static List<Piece> annotations(ElementInfo info, ModifiersTree modifiers) {
-            return pieces(info, modifiers.getAnnotations());
+        private static List<Piece> annotations(ElementInfo info, ModifiersTree modifiers, Theme theme) {
+            return pieces(info, modifiers.getAnnotations(), theme);
         }
 
         private static List<Piece> modifiers(ModifiersTree modifiers) {
@@ -220,8 +241,8 @@ public final class SignatureDiffPrinter {
             return result;
         }
 
-        private static List<Piece> pieces(ElementInfo info, List<? extends Tree> trees) {
-            return trees.stream().map(t -> Piece.of(info, t)).toList();
+        private static List<Piece> pieces(ElementInfo info, List<? extends Tree> trees, Theme theme) {
+            return trees.stream().map(t -> Piece.of(info, t, theme)).toList();
         }
 
         private static String keyword(Tree.Kind kind) {

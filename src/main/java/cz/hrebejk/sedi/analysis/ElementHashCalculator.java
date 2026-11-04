@@ -122,6 +122,9 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
         if (isElement(tree)) {
             return super.scan(tree, context);
         }
+        if (isUnresolved(tree)) {
+            current.getUnresolved().add(tree);
+        }
         String reference = referenceDepth == 0 ? reference(tree) : null;
         // An initializer block is a part of the body of its type, not of the signature.
         boolean initializer = tree instanceof BlockTree && getCurrentPath() != null
@@ -240,6 +243,18 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
         String owner = member ? ElementIds.of(element.getEnclosingElement()) : null;
         return owner == null ? null
                 : renames.undoTypeNames(owner) + "#" + oldName(element, element.getSimpleName().toString());
+    }
+
+    /** Whether the tree is a name javac could not resolve, or code it could not parse. */
+    private boolean isUnresolved(Tree tree) {
+        if (tree instanceof ErroneousTree) {
+            return true;
+        }
+        if (!(tree instanceof IdentifierTree || tree instanceof MemberSelectTree) || getCurrentPath() == null) {
+            return false;
+        }
+        Element element = trees.getElement(new TreePath(getCurrentPath(), tree));
+        return element == null || element.asType().getKind() == javax.lang.model.type.TypeKind.ERROR;
     }
 
     private static boolean isTypeOrPackage(Element element) {

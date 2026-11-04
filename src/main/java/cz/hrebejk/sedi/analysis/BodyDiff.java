@@ -71,7 +71,15 @@ final class BodyDiff {
         List<NodeInfo> newStatements = present(newBody.getChildren(), newUnit);
         return new BodyChanges(oldUnit, newUnit, newBody.getTree(), diff.marks, diff.removedBefore, diff.removedAtEnd,
                 blocks ? oldStatements.size() : 0, blocks ? newStatements.size() : 0,
-                blocks ? lcs(oldStatements, newStatements).size() : 0);
+                blocks ? lcs(oldStatements, newStatements).size() : 0, unresolved(oldElement, newElement));
+    }
+
+    /** The names javac could not resolve in either version (identity set). */
+    private static Set<Tree> unresolved(ElementInfo oldElement, ElementInfo newElement) {
+        Set<Tree> unresolved = Collections.newSetFromMap(new IdentityHashMap<>());
+        unresolved.addAll(oldElement.getUnresolved());
+        unresolved.addAll(newElement.getUnresolved());
+        return unresolved;
     }
 
     /** Diffs two nodes paired with each other. */

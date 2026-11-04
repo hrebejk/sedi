@@ -79,6 +79,8 @@ public final class Theme {
         PACKAGE,
         /** The tag of the level of a change. */
         TAG,
+        /** Names javac could not resolve, as in code which does not compile. */
+        ERROR,
         /** Remarks of the report, like collapsed or left out code. */
         NOTE,
         /** The remark of a section without changes. */
@@ -122,6 +124,7 @@ public final class Theme {
             Map.entry(Role.TITLE, "#e4ecf7 bold"),
             Map.entry(Role.PACKAGE, "#8a93a5"),
             Map.entry(Role.TAG, "#7f8796"),
+            Map.entry(Role.ERROR, "#ff5f6d"),
             Map.entry(Role.NOTE, "#8a93a5"),
             Map.entry(Role.NO_CHANGES, "bold #ff9e3d"));
 
@@ -282,6 +285,11 @@ public final class Theme {
         return ansi ? style(Role.STRIKE, text) : "~~" + text + "~~";
     }
 
+    /** Code javac could not resolve; without colors it is left as it is. */
+    String error(String text) {
+        return style(Role.ERROR, text);
+    }
+
     /** The added text, without colors shown as {@code __text__}. */
     String added(String text) {
         if (text.isEmpty()) {
@@ -318,7 +326,7 @@ public final class Theme {
 
     /**
      * Java code with its tokens in the styles of their roles. Escape codes already in the code are kept, and text
-     * already {@link #strike struck through} is left as it is.
+     * already {@link #strike struck through} or marked as an {@link #error error} is left as it is.
      */
     String code(String code) {
         if (!ansi) {
@@ -327,6 +335,9 @@ public final class Theme {
         Style strike = styles.get(Role.STRIKE);
         String strikeOpen = strike.open();
         String strikeClose = strike.close();
+        Style error = styles.get(Role.ERROR);
+        String errorOpen = error.open();
+        String errorClose = error.close();
         StringBuilder out = new StringBuilder();
         int length = code.length();
         int i = 0;
@@ -336,6 +347,10 @@ public final class Theme {
             if (!strikeOpen.isEmpty() && code.startsWith(strikeOpen, i)) {
                 int close = code.indexOf(strikeClose, i + strikeOpen.length());
                 i = close < 0 ? length : close + strikeClose.length();
+                out.append(code, start, i);
+            } else if (!errorOpen.isEmpty() && code.startsWith(errorOpen, i)) {
+                int close = code.indexOf(errorClose, i + errorOpen.length());
+                i = close < 0 ? length : close + errorClose.length();
                 out.append(code, start, i);
             } else if (c == '\u001b') {
                 int m = code.indexOf('m', i);

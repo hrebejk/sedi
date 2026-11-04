@@ -59,6 +59,46 @@ public class AstPrinterTest extends TestCase {
         }
     }
 
+    /** The whole report with only the unresolved names styled, shown as {@code !name!}. */
+    private static List<String> errors(String oldMembers, String newMembers) throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", "import java.util.*;\nclass Foo {\n" + oldMembers + "\n}\n");
+            helper.commit("init");
+            helper.writeFile("Foo.java", "import java.util.*;\nclass Foo {\n" + newMembers + "\n}\n");
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                java.util.Map<String, String> specs = new java.util.HashMap<>();
+                for (Theme.Role role : Theme.Role.values()) {
+                    specs.put(role.name().toLowerCase(), "none");
+                }
+                specs.put("error", "bold");
+                ReportOptions options = new ReportOptions(ChangeLevel.IMPLEMENTATION, ReportOptions.Grouping.BY_TYPE);
+                return new Reporter(Theme.of(specs), options).report(analyzer.analyzeChanges()).stream()
+                        .map(l -> l.replace("\u001b[1m", "!").replace("\u001b[22m", "!").strip()).toList();
+            }
+        }
+    }
+
+    /** Names javac could not resolve are marked as errors as a whole, in bodies and in signatures. */
+    public void testUnresolvedNamesAreErrors() throws Exception {
+        List<String> lines = errors("int m(int p) { return p; }\nint f = 1;",
+                "int m(Missing p) { return Other.X + 2; }\nint f = undefined(1);");
+        assertTrue(lines.toString(), lines.stream().anyMatch(l -> l.contains("m( !Missing! p )")));
+        assertTrue(lines.toString(), lines.stream().anyMatch(l -> l.contains("!Other.X! + 2")));
+        assertTrue(lines.toString(), lines.stream().anyMatch(l -> l.contains("!undefined!(1)")));
+    }
+
+    /** Code which compiles has no errors, whatever kinds of names it uses. */
+    public void testResolvedNamesAreNotErrors() throws Exception {
+        List<String> lines = errors("int m(int[] a, Thread.State s) { return 0; }",
+                "@SuppressWarnings(value = \"x\") int m(int[] a, Thread.State s) {\n"
+                        + "  Class<?> c = Foo.class; int n = a.length + this.hashCode() + super.hashCode();\n"
+                        + "  java.util.function.IntUnaryOperator op = x -> x + n;\n"
+                        + "  outer: for (int i : a) { if (i > 0) break outer; }\n"
+                        + "  switch (s) { case NEW: return List.of(1).size(); default: return Math.max(op.applyAsInt(1), 0); }\n"
+                        + "}");
+        assertTrue(lines.toString(), lines.stream().noneMatch(l -> l.contains("!")));
+    }
+
     /** Code added around an expression is marked alone, the expression kept as it is, renamed locals too. */
     public void testWrappedExpressionMarksOnlyTheAddedCode() throws Exception {
         assertEquals(List.of("return _!_bool ? 1 : 0;", "return _f(_f(a) _+ b)_;", "return a + b _+ 1_;",

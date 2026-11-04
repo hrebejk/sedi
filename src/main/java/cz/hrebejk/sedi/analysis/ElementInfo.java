@@ -16,11 +16,13 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.EnumMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * A reduced AST node representing a compilation unit, type, or member, containing
@@ -42,6 +44,8 @@ public class ElementInfo {
     private NodeInfo body;
     /** The nodes of the signature, by their trees (identity map). */
     private final Map<Tree, NodeInfo> signatureNodes = new IdentityHashMap<>();
+    /** The names javac could not resolve, in the signature and the body (identity set). */
+    private final Set<Tree> unresolved = Collections.newSetFromMap(new IdentityHashMap<>());
 
     /**
      * Enum defining the type of reduced AST node.
@@ -245,6 +249,21 @@ public class ElementInfo {
     public String getSignatureSha(Tree tree) {
         NodeInfo node = signatureNodes.get(tree);
         return node == null ? null : node.getSha();
+    }
+
+    /**
+     * Returns whether a tree of the element is a name javac could not resolve, as in code which does not compile.
+     *
+     * @param tree a tree of the signature or of the body of the element
+     * @return {@code true} for an unresolved name
+     */
+    public boolean isUnresolved(Tree tree) {
+        return unresolved.contains(tree);
+    }
+
+    /** The names javac could not resolve (identity set). */
+    Set<Tree> getUnresolved() {
+        return unresolved;
     }
 
     /**

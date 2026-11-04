@@ -256,6 +256,10 @@ final class AstPrinter {
                 return;
             }
         }
+        if (changes.unresolved().contains(tree)) {
+            append(plain(tree, source));
+            return;
+        }
         if (tree instanceof ClassTree) {
             // The body of an anonymous class is not diffed, just shown in short.
             append(plain(tree, source));
@@ -393,11 +397,17 @@ final class AstPrinter {
         return text.substring(0, start) + marked + text.substring(start + stripped.length());
     }
 
-    /** The tree on a single line, blocks shown as {@code { … }}. */
+    /** The tree on a single line, blocks shown as {@code { … }}, names javac could not resolve as errors. */
     private String plain(Tree tree, Source source) {
+        return changes.unresolved().contains(tree) ? theme.error(text(tree, source)) : text(tree, source);
+    }
+
+    /** Like {@link #plain}, without marking the unresolved names inside the tree. */
+    private String text(Tree tree, Source source) {
         if (tree instanceof BlockTree) {
             return "{ … }";
         }
+        boolean unresolved = changes.unresolved().contains(tree);
         StringBuilder text = new StringBuilder();
         int cursor = source.start(tree);
         int stop = source.end(tree);
@@ -405,7 +415,8 @@ final class AstPrinter {
             if (!source.isPresent(child) || source.start(child) < cursor || source.end(child) > stop) {
                 continue;
             }
-            text.append(gap(source, cursor, source.start(child))).append(plain(child, source));
+            text.append(gap(source, cursor, source.start(child)))
+                    .append(unresolved ? text(child, source) : plain(child, source));
             cursor = source.end(child);
         }
         return text.append(gap(source, cursor, stop)).toString().strip();
