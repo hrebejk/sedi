@@ -538,6 +538,13 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
             start = end < 0 ? start : skipSpaceAndComments((int) end);
         }
         info.setLines(lines, start < 0 ? 0 : unit.getLineMap().getLineNumber(start));
+        // The first line of the javadoc is found by its text after the /** preceding the declaration: javac leaves
+        // out the line break after the /**.
+        long declaration = positions.getStartPosition(unit, tree);
+        int comment = info.getJavadoc().isEmpty() || declaration < 0 ? -1
+                : source.lastIndexOf("/**", (int) declaration);
+        int first = comment < 0 ? -1 : source.indexOf(info.getJavadoc().getFirst().strip(), comment + 3);
+        info.setJavadocLine(first < 0 || first > declaration ? 0 : unit.getLineMap().getLineNumber(first));
     }
 
     /** The position of the first character from the position on which is neither a space nor in a comment. */

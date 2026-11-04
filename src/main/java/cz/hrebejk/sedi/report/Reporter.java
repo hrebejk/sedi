@@ -233,7 +233,7 @@ public final class Reporter {
                 list.add(title(file));
                 for (TypeRef type : added) {
                     if (type.file() == file) {
-                        javadoc.plain(type.element().getJavadoc()).forEach(l -> list.add("  " + l));
+                        javadoc.plain(type.element()).forEach(l -> list.add("  " + l));
                         printer.declaration(type.element(), "").forEach(l -> list.add("  " + l));
                         addedMembers(type.element(), 2, list);
                     }
@@ -334,7 +334,7 @@ public final class Reporter {
         boolean inInterface = Visibility.isInterface(type);
         for (ElementInfo member : type.getChildren()) {
             if (Visibility.isExposed(member, true, inInterface)) {
-                javadoc.plain(member.getJavadoc()).forEach(l -> lines.add("  ".repeat(depth) + l));
+                javadoc.plain(member).forEach(l -> lines.add("  ".repeat(depth) + l));
                 printer.declaration(member, type.getName()).forEach(l -> lines.add("  ".repeat(depth) + l));
                 if (member.getNodeType() == ElementInfo.NodeType.TYPE) {
                     addedMembers(member, depth + 1, lines);

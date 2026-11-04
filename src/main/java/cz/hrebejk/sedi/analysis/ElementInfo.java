@@ -40,6 +40,8 @@ public class ElementInfo {
     private int paramCount;
     private String elementId;
     private List<String> javadoc = List.of();
+    /** The line of the first line of the javadoc, {@code 0} if not known. */
+    private long javadocLine;
     /** The nodes of the body or of the signature being scanned, innermost last. */
     private final Deque<NodeInfo> openNodes = new ArrayDeque<>();
     private NodeInfo body;
@@ -152,6 +154,21 @@ public class ElementInfo {
      */
     void setJavadoc(String comment) {
         this.javadoc = javadocLines(comment);
+    }
+
+    /**
+     * Returns the line in the source of the first line of the {@link #getJavadoc() javadoc}; the other lines follow
+     * it one by one.
+     *
+     * @return the line, starting at 1; {@code 0} if there is no javadoc or its line is not known
+     */
+    public long getJavadocLine() {
+        return javadoc.isEmpty() ? 0 : javadocLine;
+    }
+
+    /** Sets the line in the source of the first line of the javadoc. */
+    void setJavadocLine(long javadocLine) {
+        this.javadocLine = javadocLine;
     }
 
     /** Splits the comment into lines, drops the blank lines at its ends and the common indentation. */

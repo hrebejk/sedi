@@ -8,6 +8,7 @@
  */
 package cz.hrebejk.sedi.report;
 
+import cz.hrebejk.sedi.analysis.ElementInfo;
 import cz.hrebejk.sedi.analysis.ElementPair;
 
 import java.util.ArrayList;
@@ -42,7 +43,8 @@ final class JavadocPrinter {
     }
 
     /**
-     * The javadoc lines of the pair, to be shown above its declaration.
+     * The javadoc lines of the pair, to be shown above its declaration, numbered by the lines of the source, see
+     * {@link LineNumbers}.
      *
      * @param pair the old and new version of the element
      * @return the lines, each starting with its mark; empty if there is nothing to show
@@ -52,88 +54,137 @@ final class JavadocPrinter {
             return List.of();
         }
         if (pair.isAdded()) {
-            return pair.newElement().getJavadoc().stream().map(this::added).toList();
+            List<String> lines = pair.newElement().getJavadoc();
+            long first = pair.newElement().getJavadocLine();
+            List<String> out = new ArrayList<>();
+            for (int i = 0; i < lines.size(); i++) {
+                out.add(added(lines.get(i), line(first, i)));
+            }
+            return out;
         }
         List<String> oldLines = pair.oldElement().getJavadoc();
         List<String> newLines = pair.newElement().getJavadoc();
         if (oldLines.equals(newLines)) {
             return List.of();
         }
-        return withContext(diff(oldLines, newLines));
+        return withContext(new Diff(oldLines, newLines, pair.oldElement().getJavadocLine(),
+                pair.newElement().getJavadocLine()).lines());
     }
 
     /**
      * The javadoc of an element shown as it is, without marks, e.g. a member of an added type.
      *
-     * @param javadoc the lines of the javadoc
+     * @param element the element
      * @return the lines, empty if javadoc is not shown
      */
-    List<String> plain(List<String> javadoc) {
-        return context == ReportOptions.NO_JAVADOC ? List.of()
-                : javadoc.stream().map(this::comment).toList();
+    List<String> plain(ElementInfo element) {
+        if (context == ReportOptions.NO_JAVADOC) {
+            return List.of();
+        }
+        List<String> lines = element.getJavadoc();
+        List<String> out = new ArrayList<>();
+        for (int i = 0; i < lines.size(); i++) {
+            out.add(LineNumbers.number(line(element.getJavadocLine(), i), comment(lines.get(i))));
+        }
+        return out;
+    }
+
+    /** The line of the source of a line of a javadoc, {@code 0} if not known. */
+    private static long line(long first, int index) {
+        return first <= 0 ? 0 : first + index;
     }
 
     /** A rendered line; {@code changed} is false for the unchanged lines which may be left out. */
     private record Line(String text, boolean changed) { }
 
-    private List<Line> diff(List<String> oldLines, List<String> newLines) {
-        List<Line> out = new ArrayList<>();
-        List<String> removed = new ArrayList<>();
-        List<String> inserted = new ArrayList<>();
-        int o = 0;
-        int n = 0;
-        for (int[] match : lcs(oldLines.stream().map(String::strip).toList(),
-                newLines.stream().map(String::strip).toList())) {
-            removed.addAll(oldLines.subList(o, match[0]));
-            inserted.addAll(newLines.subList(n, match[1]));
-            hunk(removed, inserted, out);
-            out.add(new Line("  " + comment(newLines.get(match[1])), false));
-            o = match[0] + 1;
-            n = match[1] + 1;
-        }
-        removed.addAll(oldLines.subList(o, oldLines.size()));
-        inserted.addAll(newLines.subList(n, newLines.size()));
-        hunk(removed, inserted, out);
-        return out;
-    }
-
     /**
-     * Renders the removed lines and the lines inserted in their place, then clears both. A removed line similar to an
-     * inserted one is shown with the changed words. The lines which are not, up to the next similar pair, are shown
-     * as a block: first all the removed lines, then all the inserted ones.
+     * The diff of two versions of a javadoc. The lines are referred to by their indexes.
+     *
+     * @param oldFirst the line of the source of the first old line, {@code 0} if not known
+     * @param newFirst the line of the source of the first new line, {@code 0} if not known
      */
-    private void hunk(List<String> removed, List<String> inserted, List<Line> out) {
-        List<String> blockRemoved = new ArrayList<>();
-        List<String> blockInserted = new ArrayList<>();
-        int next = 0;
-        for (String old : removed) {
-            int similar = -1;
-            for (int i = next; i < inserted.size() && similar < 0; i++) {
-                if (similarity(old, inserted.get(i)) >= SIMILAR) {
-                    similar = i;
+    private final class Diff {
+
+        private final List<String> oldLines;
+        private final List<String> newLines;
+        private final long oldFirst;
+        private final long newFirst;
+        private final List<Line> out = new ArrayList<>();
+
+        Diff(List<String> oldLines, List<String> newLines, long oldFirst, long newFirst) {
+            this.oldLines = oldLines;
+            this.newLines = newLines;
+            this.oldFirst = oldFirst;
+            this.newFirst = newFirst;
+        }
+
+        List<Line> lines() {
+            List<Integer> removed = new ArrayList<>();
+            List<Integer> inserted = new ArrayList<>();
+            int o = 0;
+            int n = 0;
+            for (int[] match : lcs(oldLines.stream().map(String::strip).toList(),
+                    newLines.stream().map(String::strip).toList())) {
+                range(removed, o, match[0]);
+                range(inserted, n, match[1]);
+                hunk(removed, inserted);
+                out.add(new Line(LineNumbers.number(line(newFirst, match[1]), ' ',
+                        comment(newLines.get(match[1]))), false));
+                o = match[0] + 1;
+                n = match[1] + 1;
+            }
+            range(removed, o, oldLines.size());
+            range(inserted, n, newLines.size());
+            hunk(removed, inserted);
+            return out;
+        }
+
+        private static void range(List<Integer> indexes, int from, int to) {
+            for (int i = from; i < to; i++) {
+                indexes.add(i);
+            }
+        }
+
+        /**
+         * Renders the removed lines and the lines inserted in their place, then clears both. A removed line similar
+         * to an inserted one is shown with the changed words. The lines which are not, up to the next similar pair,
+         * are shown as a block: first all the removed lines, then all the inserted ones.
+         */
+        private void hunk(List<Integer> removed, List<Integer> inserted) {
+            List<Integer> blockRemoved = new ArrayList<>();
+            List<Integer> blockInserted = new ArrayList<>();
+            int next = 0;
+            for (int old : removed) {
+                int similar = -1;
+                for (int i = next; i < inserted.size() && similar < 0; i++) {
+                    if (similarity(oldLines.get(old), newLines.get(inserted.get(i))) >= SIMILAR) {
+                        similar = i;
+                    }
+                }
+                if (similar >= 0) {
+                    blockInserted.addAll(inserted.subList(next, similar));
+                    block(blockRemoved, blockInserted);
+                    int index = inserted.get(similar);
+                    out.add(new Line(LineNumbers.number(line(newFirst, index), '~',
+                            comment(words(oldLines.get(old), newLines.get(index)))), true));
+                    next = similar + 1;
+                } else {
+                    blockRemoved.add(old);
                 }
             }
-            if (similar >= 0) {
-                blockInserted.addAll(inserted.subList(next, similar));
-                block(blockRemoved, blockInserted, out);
-                out.add(new Line(theme.modified() + " " + comment(words(old, inserted.get(similar))), true));
-                next = similar + 1;
-            } else {
-                blockRemoved.add(old);
-            }
+            blockInserted.addAll(inserted.subList(next, inserted.size()));
+            block(blockRemoved, blockInserted);
+            removed.clear();
+            inserted.clear();
         }
-        blockInserted.addAll(inserted.subList(next, inserted.size()));
-        block(blockRemoved, blockInserted, out);
-        removed.clear();
-        inserted.clear();
-    }
 
-    /** Renders the removed lines, then the inserted ones, and clears both. */
-    private void block(List<String> removed, List<String> inserted, List<Line> out) {
-        removed.forEach(l -> out.add(new Line(removed(l), true)));
-        inserted.forEach(l -> out.add(new Line(added(l), true)));
-        removed.clear();
-        inserted.clear();
+        /** Renders the removed lines, then the inserted ones, and clears both. */
+        private void block(List<Integer> removed, List<Integer> inserted) {
+            removed.forEach(i -> out.add(new Line(removed(oldLines.get(i), line(oldFirst, i)), true)));
+            inserted.forEach(i -> out.add(new Line(added(newLines.get(i), line(newFirst, i)), true)));
+            removed.clear();
+            inserted.clear();
+        }
     }
 
     /** Leaves out the unchanged lines farther than {@link #context} from a change, a run of them shown as {@code …}. */
@@ -169,12 +220,13 @@ final class JavadocPrinter {
         return false;
     }
 
-    private String added(String line) {
-        return theme.changed(true, "+ " + comment(line));
+    private String added(String text, long line) {
+        return LineNumbers.number(line, '+', comment(text));
     }
 
-    private String removed(String line) {
-        return theme.changed(false, "- " + theme.style(Theme.Role.COMMENT, line.isEmpty() ? "*" : "* " + theme.strike(line)));
+    private String removed(String text, long line) {
+        return LineNumbers.number(line, '-',
+                theme.style(Theme.Role.COMMENT, text.isEmpty() ? "*" : "* " + theme.strike(text)));
     }
 
     /** A line of the javadoc, starting with its {@code *}. */

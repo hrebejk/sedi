@@ -96,6 +96,32 @@ public class ReporterTest extends TestCase {
         }
     }
 
+    /** Javadoc lines are numbered by their lines: of the old version if removed, else of the new one. */
+    public void testJavadocLineNumbers() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", "public class Foo {\n  /**\n   * Hello world.\n   * Second line.\n   */\n"
+                    + "  public void m() { }\n}\n");
+            helper.commit("init");
+            helper.writeFile("Foo.java", "public class Foo {\n\n  /**\n   * Hello big world.\n   *\n   * Third.\n   */\n"
+                    + "  public void m() { }\n  /** Added. */\n  public void n() { }\n}\n");
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                ReportOptions options = new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_TYPE,
+                        ReportOptions.DEFAULT_BODY_LINES, ReportOptions.WHOLE_JAVADOC, true);
+                List<String> lines = new Reporter(Theme.PLAIN, options).report(analyzer.analyzeChanges());
+                assertEquals(lines.toString(), List.of(
+                                " 1     public class Foo",
+                                " 9 +     * Added.",
+                                "10 +     public void n()",
+                                " 4 ~     * Hello __big__ world.",
+                                " 4 -     * ~~Second line.~~",
+                                " 5 +     *",
+                                " 6 +     * Third.",
+                                " 8 ~     public void m()"),
+                        lines.subList(1, lines.size()));
+            }
+        }
+    }
+
     /** The numbers have the colors of the markers of their lines. */
     public void testLineNumbersHaveColorsOfMarkers() throws Exception {
         try (GitTestHelper helper = new GitTestHelper()) {
