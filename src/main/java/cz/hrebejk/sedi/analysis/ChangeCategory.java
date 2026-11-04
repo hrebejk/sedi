@@ -26,8 +26,10 @@ public enum ChangeCategory implements HashCalculation {
     /**
      * Like {@link #IGNORE_LOCAL_NAMES}, and additionally the names of elements which were renamed are replaced
      * by their old names, so a version of the code differing only by IDE-style renames hashes like the old one.
-     * Differs from {@link #IGNORE_LOCAL_NAMES} only when the scan is given the renames, see
-     * {@link ElementHashCalculator#ElementHashCalculator(com.sun.source.util.Trees, java.util.Map)}.
+     * Types, packages and static members are hashed by the element referred to, not by how the name is written,
+     * so {@code java.util.List} and {@code List}, or {@code Math.max} and {@code max} imported statically, hash
+     * the same. Renames are undone only when the scan is given them, see
+     * {@link ElementHashCalculator#ElementHashCalculator(com.sun.source.util.Trees, Renames)}.
      */
     WITHOUT_RENAMES(new HashIgnoreLocalNames()),
 

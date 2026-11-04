@@ -16,6 +16,7 @@ import com.sun.source.util.Trees;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.Modifier;
 import javax.lang.model.element.Name;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.TypeParameterElement;
@@ -38,6 +39,11 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
      * the class of its {@code new} and the superclass of its body. They are not hashed.
      */
     private final Set<Tree> synthesized = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+    /**
+     * Greater than zero while scanning inside a {@link #reference reference}: the categories which undo renamed
+     * references already have the element it refers to and get nothing more.
+     */
+    private int referenceDepth;
 
     /**
      * Creates a new MemberShaCalculator with required Trees utility for attributed FQN resolution.
@@ -116,6 +122,7 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
         if (isElement(tree)) {
             return super.scan(tree, context);
         }
+        String reference = referenceDepth == 0 ? reference(tree) : null;
         // An initializer block is a part of the body of its type, not of the signature.
         boolean initializer = tree instanceof BlockTree && getCurrentPath() != null
                 && getCurrentPath().getLeaf() instanceof ClassTree;
@@ -126,12 +133,21 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
         // nodes of the signatures of methods, fields and types, to diff the signatures.
         boolean member = current.getNodeType() == ElementInfo.NodeType.METHOD
                 || current.getNodeType() == ElementInfo.NodeType.FIELD;
-        boolean node = bodyDepth > 0 ? member : member || current.getNodeType() == ElementInfo.NodeType.TYPE;
+        boolean node = referenceDepth == 0
+                && (bodyDepth > 0 ? member : member || current.getNodeType() == ElementInfo.NodeType.TYPE);
         if (node) {
             current.openNode(new TreePath(getCurrentPath(), tree),
                     bodyDepth > 0 ? ChangeCategory.BODY : ChangeCategory.SIGNATURE);
         }
         try {
+            if (reference != null) {
+                for (ChangeCategory category : ChangeCategory.values()) {
+                    if (category.undoesRenamedReferences()) {
+                        category.onAttribute(category, current, "REFERENCE:" + reference, region());
+                    }
+                }
+                referenceDepth++;
+            }
             updateAttribute(current, "KIND:" + tree.getKind());
             String identity = identity(tree);
             if (identity != null) {
@@ -141,6 +157,9 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
             updateAttribute(current, "END:" + tree.getKind());
             return result;
         } finally {
+            if (reference != null) {
+                referenceDepth--;
+            }
             if (node) {
                 current.closeNode();
             }
@@ -185,6 +204,46 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
             return parent != null && parent.getLeaf() instanceof ClassTree;
         }
         return false;
+    }
+
+    /**
+     * The element a name refers to, if it does not matter how the name is written: a type, a package or a static
+     * member, referred to by its simple name ({@code List}, {@code max} imported statically) or qualified by the
+     * name of a type or package ({@code java.util.List}, {@code Math.max}). The categories which undo renamed
+     * references hash only this element, so changing such a name from a qualified to a simple one or back is
+     * cosmetic.
+     *
+     * @return the qualified name of the element with renames undone, {@code null} if the tree is not such a name
+     */
+    private String reference(Tree tree) {
+        if (!(tree instanceof IdentifierTree || tree instanceof MemberSelectTree) || getCurrentPath() == null) {
+            return null;
+        }
+        TreePath path = new TreePath(getCurrentPath(), tree);
+        Element element = trees.getElement(path);
+        if (element == null || element.asType().getKind() == javax.lang.model.type.TypeKind.ERROR) {
+            return null;
+        }
+        if (tree instanceof MemberSelectTree select
+                && !isTypeOrPackage(trees.getElement(new TreePath(path, select.getExpression())))) {
+            return null;
+        }
+        if (isTypeOrPackage(element)) {
+            return element instanceof TypeElement type
+                    ? renames.undoTypeNames(type.getQualifiedName().toString())
+                    : element.toString();
+        }
+        boolean member = switch (element.getKind()) {
+            case FIELD, ENUM_CONSTANT, METHOD -> element.getModifiers().contains(Modifier.STATIC);
+            default -> false;
+        };
+        String owner = member ? ElementIds.of(element.getEnclosingElement()) : null;
+        return owner == null ? null
+                : renames.undoTypeNames(owner) + "#" + oldName(element, element.getSimpleName().toString());
+    }
+
+    private static boolean isTypeOrPackage(Element element) {
+        return element instanceof TypeElement || element != null && element.getKind() == ElementKind.PACKAGE;
     }
 
     /**
@@ -386,6 +445,9 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
                 }
             }
             for (ChangeCategory category : ChangeCategory.values()) {
+                if (!hashes(category)) {
+                    continue;
+                }
                 if (category.undoesRenamedReferences() && !isLocalOrParam && name != null) {
                     category.onAttribute(category, current, "KIND:" + node.getKind(), region());
                     category.onAttribute(category, current,
@@ -417,8 +479,10 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
             updateAttribute(current, "KIND:" + kind);
             String oldName = oldName(trees.getElement(getCurrentPath()), name.toString());
             for (ChangeCategory category : ChangeCategory.values()) {
-                category.onAttribute(category, current,
-                        "IDENTIFIER:" + (category.undoesRenamedReferences() ? oldName : name), region());
+                if (hashes(category)) {
+                    category.onAttribute(category, current,
+                            "IDENTIFIER:" + (category.undoesRenamedReferences() ? oldName : name), region());
+                }
             }
         }
     }
@@ -468,6 +532,9 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
      */
     private void updateAttribute(ElementInfo node, String attribute, String withoutRenames) {
         for (ChangeCategory category : ChangeCategory.values()) {
+            if (!hashes(category)) {
+                continue;
+            }
             String text = attribute;
             if (category.undoesRenames() && withoutRenames != null) {
                 text = withoutRenames;
@@ -476,6 +543,11 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
             }
             category.onAttribute(category, node, text, region());
         }
+    }
+
+    /** Whether the category gets the attributes of the tree being scanned, see {@link #referenceDepth}. */
+    private boolean hashes(ChangeCategory category) {
+        return referenceDepth == 0 || !category.undoesRenamedReferences();
     }
 
     private HashCalculation.Region region() {

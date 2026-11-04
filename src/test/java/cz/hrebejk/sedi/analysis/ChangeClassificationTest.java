@@ -53,6 +53,58 @@ public class ChangeClassificationTest extends TestCase {
                         "public class Foo { public int yesno(boolean bool) { return bool ? 1 : 0; } }"));
     }
 
+    /** A type referred to by its qualified name instead of the simple one, or the other way around, is cosmetic. */
+    public void testQualifiedTypeNameIsCosmetic() throws Exception {
+        assertEquals(List.of("COSMETIC:m"),
+                classify("import java.util.List; class Foo { int m() { List<String> l = List.of(); return l.size(); } }",
+                        "import java.util.List; class Foo { int m() { java.util.List<String> l = java.util.List.of();"
+                                + " return l.size(); } }"));
+        assertEquals(List.of("COSMETIC:m"),
+                classify("class Foo { int m(java.util.List<String> l) { return l.size(); } }",
+                        "import java.util.List; class Foo { int m(List<String> l) { return l.size(); } }"));
+    }
+
+    /** A static member qualified by its type instead of imported statically, or the other way around, is cosmetic. */
+    public void testQualifiedStaticMemberIsCosmetic() throws Exception {
+        assertEquals(List.of("COSMETIC:m", "COSMETIC:f"),
+                classify("import static java.lang.Math.max; class Foo { static final int C = 1;"
+                                + " int m(int a) { return max(a, C); } int f = C; }",
+                        "class Foo { static final int C = 1;"
+                                + " int m(int a) { return Math.max(a, Foo.C); } int f = Foo.C; }"));
+    }
+
+    /** In a body changed otherwise, a name changed from a qualified to a simple one is not marked. */
+    public void testQualifiedNameIsNotMarkedInChangedBody() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", "class Foo { int m(int a) { return Math.max(a, 1); } }");
+            helper.commit("init");
+            helper.writeFile("Foo.java", "import static java.lang.Math.max; class Foo { int m(int a) { return max(a, 2); } }");
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                MemberChange change = analyzer.analyzeChanges().files().get(0).rootChanges().nested().get(0)
+                        .changes().get(0);
+                assertEquals(ChangeLevel.IMPLEMENTATION, change.level());
+                List<String> edited = change.body().marks().entrySet().stream()
+                        .filter(e -> !(e.getValue() instanceof BodyChanges.Changed))
+                        .map(e -> e.getKey().toString()).toList();
+                assertEquals(List.of("2"), edited);
+            }
+        }
+    }
+
+    /** A static member of another type with the same name is a different element. */
+    public void testOtherStaticMemberIsImplementation() throws Exception {
+        assertEquals(List.of("IMPLEMENTATION:m"),
+                classify("class Foo { int m(int a) { return Math.max(a, 1); } }",
+                        "class Foo { int m(int a) { return StrictMath.max(a, 1); } }"));
+    }
+
+    /** A field qualified by an expression rather than a type is not just another name of the element. */
+    public void testFieldQualifiedByThisIsNotIgnored() throws Exception {
+        assertEquals(List.of("IMPLEMENTATION:m"),
+                classify("class Foo { int x; Foo o; int m() { return x; } }",
+                        "class Foo { int x; Foo o; int m() { return o.x; } }"));
+    }
+
     public void testWhitespaceIsCosmetic() throws Exception {
         assertEquals(List.of("COSMETIC:m"),
                 classify("class Foo { int m() { return 1; } }", "class Foo { int m() {\n    return 1;  // one\n  } }"));
