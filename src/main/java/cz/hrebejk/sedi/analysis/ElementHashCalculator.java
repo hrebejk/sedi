@@ -9,6 +9,7 @@
 package cz.hrebejk.sedi.analysis;
 
 import com.sun.source.tree.*;
+import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
@@ -44,6 +45,9 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
      * references already have the element it refers to and get nothing more.
      */
     private int referenceDepth;
+    /** The unit being scanned, its source and the positions of its trees, to find the lines of the elements. */
+    private CompilationUnitTree unit;
+    private String source = "";
 
     /**
      * Creates a new MemberShaCalculator with required Trees utility for attributed FQN resolution.
@@ -94,6 +98,12 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
                 ElementInfo.NodeType.COMPILATION_UNIT
         );
 
+        unit = compilationUnit;
+        try {
+            source = compilationUnit.getSourceFile().getCharContent(true).toString();
+        } catch (java.io.IOException e) {
+            source = "";
+        }
         HashContext context = new HashContext(rootNode);
         scan(compilationUnit, context);
         return rootNode;
@@ -308,6 +318,7 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
         Element el = trees.getElement(getCurrentPath());
         typeNode.setElementId(ElementIds.of(el));
         typeNode.setJavadoc(trees.getDocComment(getCurrentPath()));
+        setLines(typeNode, node, node.getModifiers());
         updateAllCategories(context, "KIND:" + node.getKind());
         if (node.getSimpleName() != null) {
             updateAttribute(typeNode, "NAME:" + node.getSimpleName(), "NAME:" + oldName(el, className));
@@ -344,6 +355,7 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
             Element el = trees.getElement(getCurrentPath());
             methodNode.setElementId(ElementIds.of(el));
             methodNode.setJavadoc(trees.getDocComment(getCurrentPath()));
+            setLines(methodNode, node, node.getModifiers());
             updateAllCategories(context, "KIND:" + node.getKind());
             if (node.getName() != null) {
                 updateAttribute(methodNode, "NAME:" + node.getName(), "NAME:" + oldName(el, methodName));
@@ -393,6 +405,7 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
             Element el = trees.getElement(getCurrentPath());
             varNode.setElementId(ElementIds.of(el));
             varNode.setJavadoc(trees.getDocComment(getCurrentPath()));
+            setLines(varNode, node, node.getModifiers());
             updateAttribute(varNode, "KIND:" + node.getKind());
             if (node.getName() != null) {
                 updateAttribute(varNode, "NAME:" + node.getName(), "NAME:" + oldName(el, varName));
@@ -507,6 +520,46 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
         updateAllCategories(context, "KIND:" + node.getKind());
         updateAllCategories(context, "MODIFIERS:" + node.getFlags());
         return super.visitModifiers(node, context);
+    }
+
+    /**
+     * Gives the element the lines of its trees and of its declaration: the first line of code after the
+     * annotations, as the annotations are shown on lines of their own.
+     */
+    private void setLines(ElementInfo info, Tree tree, ModifiersTree modifiers) {
+        SourcePositions positions = trees.getSourcePositions();
+        java.util.function.ToLongFunction<Tree> lines = t -> {
+            long start = t == null ? -1 : positions.getStartPosition(unit, t);
+            return start < 0 ? 0 : unit.getLineMap().getLineNumber(start);
+        };
+        long start = positions.getStartPosition(unit, tree);
+        if (!modifiers.getAnnotations().isEmpty()) {
+            long end = positions.getEndPosition(unit, modifiers.getAnnotations().getLast());
+            start = end < 0 ? start : skipSpaceAndComments((int) end);
+        }
+        info.setLines(lines, start < 0 ? 0 : unit.getLineMap().getLineNumber(start));
+    }
+
+    /** The position of the first character from the position on which is neither a space nor in a comment. */
+    private int skipSpaceAndComments(int from) {
+        int i = from;
+        while (i < source.length()) {
+            char c = source.charAt(i);
+            char next = i + 1 < source.length() ? source.charAt(i + 1) : 0;
+            if (Character.isWhitespace(c)) {
+                i++;
+            } else if (c == '/' && next == '/') {
+                while (i < source.length() && source.charAt(i) != '\n') {
+                    i++;
+                }
+            } else if (c == '/' && next == '*') {
+                int end = source.indexOf("*/", i + 2);
+                i = end < 0 ? source.length() : end + 2;
+            } else {
+                break;
+            }
+        }
+        return i;
     }
 
     private static void updateCommonFacets(ElementInfo info, String name, ModifiersTree modifiers) {

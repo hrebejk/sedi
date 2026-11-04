@@ -18,8 +18,10 @@ import cz.hrebejk.sedi.analysis.ChangeLevel;
  * @param bodyLines      the most lines shown of the changes of one body, {@code 0} to show none
  * @param javadocContext the unchanged javadoc lines shown around a change of a javadoc, {@link #NO_JAVADOC} to show
  *                       no javadoc, {@link #WHOLE_JAVADOC} to show the whole javadoc
+ * @param lineNumbers    whether to show the numbers of the lines of the source on the left
  */
-public record ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyLines, int javadocContext) {
+public record ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyLines, int javadocContext,
+                            boolean lineNumbers) {
 
     /** The default of {@link #bodyLines()}. */
     public static final int DEFAULT_BODY_LINES = 12;
@@ -32,6 +34,48 @@ public record ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyLin
 
     /** The default of {@link #javadocContext()}: no javadoc. */
     public static final int DEFAULT_JAVADOC_CONTEXT = NO_JAVADOC;
+
+    /**
+     * Creates options showing no line numbers.
+     *
+     * @param maxLevel       the least important level of changes to show
+     * @param grouping       how the changes are grouped
+     * @param bodyLines      the most lines shown of the changes of one body
+     * @param javadocContext the unchanged javadoc lines shown around a change of a javadoc
+     */
+    public ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyLines, int javadocContext) {
+        this(maxLevel, grouping, bodyLines, javadocContext, false);
+    }
+
+    /**
+     * Returns these options with the levels up to the given one shown.
+     *
+     * @param level the least important level to show
+     * @return the new options
+     */
+    public ReportOptions withMaxLevel(ChangeLevel level) {
+        return new ReportOptions(level, grouping, bodyLines, javadocContext, lineNumbers);
+    }
+
+    /**
+     * Returns these options grouping the changes as given.
+     *
+     * @param grouping how the changes are grouped
+     * @return the new options
+     */
+    public ReportOptions withGrouping(Grouping grouping) {
+        return new ReportOptions(maxLevel, grouping, bodyLines, javadocContext, lineNumbers);
+    }
+
+    /**
+     * Returns these options showing the javadoc as given.
+     *
+     * @param javadocContext the unchanged javadoc lines shown around a change of a javadoc
+     * @return the new options
+     */
+    public ReportOptions withJavadocContext(int javadocContext) {
+        return new ReportOptions(maxLevel, grouping, bodyLines, javadocContext, lineNumbers);
+    }
 
     /**
      * Creates options showing no javadoc.

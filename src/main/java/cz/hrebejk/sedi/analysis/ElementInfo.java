@@ -23,6 +23,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.ToLongFunction;
 
 /**
  * A reduced AST node representing a compilation unit, type, or member, containing
@@ -46,6 +47,9 @@ public class ElementInfo {
     private final Map<Tree, NodeInfo> signatureNodes = new IdentityHashMap<>();
     /** The names javac could not resolve, in the signature and the body (identity set). */
     private final Set<Tree> unresolved = Collections.newSetFromMap(new IdentityHashMap<>());
+    /** The line of a tree of the source of the element, {@code 0} if it is not known. */
+    private ToLongFunction<Tree> lines = tree -> 0;
+    private long line;
 
     /**
      * Enum defining the type of reduced AST node.
@@ -259,6 +263,32 @@ public class ElementInfo {
      */
     public boolean isUnresolved(Tree tree) {
         return unresolved.contains(tree);
+    }
+
+    /**
+     * Returns the line of the declaration of the element in its source, where its signature starts after the
+     * annotations.
+     *
+     * @return the line, starting at 1; {@code 0} if it is not known
+     */
+    public long getLine() {
+        return line;
+    }
+
+    /**
+     * Returns the line in the source where a tree of the element, such as an annotation, starts.
+     *
+     * @param tree a tree of the element
+     * @return the line, starting at 1; {@code 0} if it is not known
+     */
+    public long getLine(Tree tree) {
+        return lines.applyAsLong(tree);
+    }
+
+    /** Sets how the lines of the trees are found, and the line of the declaration. */
+    void setLines(ToLongFunction<Tree> lines, long line) {
+        this.lines = lines;
+        this.line = line;
     }
 
     /** The names javac could not resolve (identity set). */

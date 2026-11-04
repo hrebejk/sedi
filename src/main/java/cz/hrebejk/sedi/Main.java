@@ -85,10 +85,13 @@ public class Main implements Callable<Integer> {
     /** When to color the output. */
     private enum ColorMode { AUTO, ALWAYS, NEVER }
 
+    @Option(names = "--no-line-numbers", description = "Do not show the numbers of the lines of the source on the left.")
+    private boolean noLineNumbers;
+
     @Option(names = "--theme", paramLabel = "<file>",
             description = "Properties file with the colors, keyed by role (keyword, type, method, string, number, "
                     + "constant, annotation, comment, strike, replacement, added, removed, added_mark, removed_mark, declaration, heading, heading_mark, changed_mark, "
-                    + "title, package, tag, note, no_changes), "
+                    + "title, package, tag, error, line_number, note, no_changes), "
                     + "e.g. keyword=#82aaff bold, added=bg:#1e3a2a. Attributes: #rrggbb, bg:#rrggbb, bold, "
                     + "underline, strike, none (default: ~/.config/sedi/theme.properties if it exists).")
     private Path themeFile;
@@ -175,7 +178,7 @@ public class Main implements Callable<Integer> {
             System.err.println("Cannot read the theme: " + e.getMessage());
             return 1;
         }
-        Reporter reporter = new Reporter(theme, new ReportOptions(level, grouping, bodyLines, javadocContext));
+        Reporter reporter = new Reporter(theme, new ReportOptions(level, grouping, bodyLines, javadocContext, !noLineNumbers));
         boolean keepRunning = commit == null || interactive;
         if (!keepRunning || !terminal && commit != null) {
             return reportCommit(reporter);

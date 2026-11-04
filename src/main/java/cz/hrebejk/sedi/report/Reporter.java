@@ -68,8 +68,7 @@ public final class Reporter {
      * @return the new reporter
      */
     public Reporter withJavadocContext(int javadocContext) {
-        return new Reporter(theme, new ReportOptions(options.maxLevel(), options.grouping(), options.bodyLines(),
-                javadocContext));
+        return new Reporter(theme, options.withJavadocContext(javadocContext));
     }
 
     /**
@@ -79,8 +78,7 @@ public final class Reporter {
      * @return the new reporter
      */
     public Reporter withGrouping(ReportOptions.Grouping grouping) {
-        return new Reporter(theme, new ReportOptions(options.maxLevel(), grouping, options.bodyLines(),
-                options.javadocContext()));
+        return new Reporter(theme, options.withGrouping(grouping));
     }
 
     /**
@@ -106,11 +104,10 @@ public final class Reporter {
         if (options.grouping() == ReportOptions.Grouping.BY_TYPE) {
             // Changed imports alone are no reason to leave the other levels out: show every level then.
             ReportOptions withoutImports = options.maxLevel() == ChangeLevel.IMPORTS
-                    ? new ReportOptions(ChangeLevel.COSMETIC, options.grouping(), options.bodyLines(),
-                    options.javadocContext())
+                    ? options.withMaxLevel(ChangeLevel.COSMETIC)
                     : options;
             if (!new Reporter(theme, withoutImports).byType(files).isEmpty()) {
-                return byType(files);
+                return numbered(byType(files));
             }
             // Nothing to show by type: say so for every shown level, as the grouping by category does.
         }
@@ -123,7 +120,12 @@ public final class Reporter {
             }
             result.addAll(section(files, level));
         }
-        return result;
+        return numbered(result);
+    }
+
+    /** The lines with the line numbers in the column on the left, or without them, see {@link LineNumbers}. */
+    private List<String> numbered(List<String> lines) {
+        return LineNumbers.render(lines, options.lineNumbers(), theme);
     }
 
     /** The changes of every file, the files separated by an empty line as in the sections of the levels. */
@@ -131,7 +133,7 @@ public final class Reporter {
         List<String> result = new ArrayList<>();
         for (FileAnalysis file : files) {
             List<String> part = new ArrayList<>();
-            addFile(part, file, report(file), file.isStructural());
+            addFile(part, file, fileLines(file), file.isStructural());
             if (!part.isEmpty()) {
                 if (!result.isEmpty()) {
                     result.add("");
@@ -150,7 +152,7 @@ public final class Reporter {
      * @return the heading of the level and the changes under it, or {@code NO CHANGES} if there are none
      */
     public List<String> reportOnly(DiffAnalysis analysis, ChangeLevel level) {
-        return section(sorted(analysis), level);
+        return numbered(section(sorted(analysis), level));
     }
 
     private static List<FileAnalysis> sorted(DiffAnalysis analysis) {
@@ -163,8 +165,8 @@ public final class Reporter {
     private List<String> section(List<FileAnalysis> files, ChangeLevel level) {
         List<String> lines = level == ChangeLevel.API ? apiLines(files) : levelLines(files, level);
         List<String> section = new ArrayList<>();
-        section.add(theme.style(Theme.Role.HEADING_MARK, "#") + " "
-                + theme.style(Theme.Role.HEADING, SECTIONS.get(level)));
+        section.add(LineNumbers.outside(theme.style(Theme.Role.HEADING_MARK, "#") + " "
+                + theme.style(Theme.Role.HEADING, SECTIONS.get(level))));
         section.add("");
         if (lines.isEmpty()) {
             section.add("  " + theme.style(Theme.Role.NO_CHANGES, "NO CHANGES"));
@@ -252,8 +254,8 @@ public final class Reporter {
         }
         for (TypeRef type : removed) {
             if (type.file().diff().getChangeType() != DiffEntry.ChangeType.DELETE) {
-                names.add(theme.sign(false) + " " + theme.style(Theme.Role.TITLE, type.element().getName())
-                        + location(type, false));
+                names.add(LineNumbers.number(type.element().getLine(), theme.sign(false) + " "
+                        + theme.style(Theme.Role.TITLE, type.element().getName()) + location(type, false)));
             }
         }
         parts.add(names);
@@ -371,6 +373,10 @@ public final class Reporter {
      * @return indented lines, empty if there is nothing to show
      */
     public List<String> report(FileAnalysis file) {
+        return numbered(fileLines(file));
+    }
+
+    private List<String> fileLines(FileAnalysis file) {
         List<String> lines = lines(file, (container, c) -> c.level().compareTo(options.maxLevel()) <= 0, true, true, true);
         if (options.maxLevel() == ChangeLevel.IMPORTS) {
             importLines(file, true, lines);

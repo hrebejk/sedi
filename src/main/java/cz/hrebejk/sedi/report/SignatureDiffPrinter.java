@@ -29,7 +29,8 @@ import java.util.stream.Collectors;
  * shows the old value struck through followed by the new value, for example
  * {@code public String method( ~~int~~ __float__ f )}. Renamed parameters show only the new name: the rename is cosmetic.
  * Added elements are prefixed with {@code +}, removed elements with {@code -}. The line is colored by a
- * {@link Theme}.
+ * {@link Theme}. The lines are numbered by the lines of the source, for the report to show the numbers, see
+ * {@link LineNumbers}.
  */
 public final class SignatureDiffPrinter {
 
@@ -68,6 +69,11 @@ public final class SignatureDiffPrinter {
     }
 
     private String format(ElementPair pair, String typeName, boolean alwaysMarked) {
+        ElementInfo shown = pair.isRemoved() ? pair.oldElement() : pair.newElement();
+        return LineNumbers.number(shown.getLine(), unnumbered(pair, typeName, alwaysMarked));
+    }
+
+    private String unnumbered(ElementPair pair, String typeName, boolean alwaysMarked) {
         if (pair.isAdded()) {
             Parts parts = Parts.of(pair.newElement(), typeName, theme);
             return theme.changed(true, "+ " + theme.code(render(parts, parts)));
@@ -93,22 +99,23 @@ public final class SignatureDiffPrinter {
     public List<String> annotations(ElementPair pair) {
         if (pair.isAdded() || pair.isRemoved()) {
             boolean added = pair.isAdded();
-            return Parts.of(added ? pair.newElement() : pair.oldElement(), "", theme).annotations().stream().map(Piece::text)
-                    .map(a -> theme.changed(added, (added ? "+ " : "- ") + (added ? theme.code(a) : strike(a)))).toList();
+            return Parts.of(added ? pair.newElement() : pair.oldElement(), "", theme).annotations().stream()
+                    .map(a -> LineNumbers.number(a.line(), theme.changed(added, (added ? "+ " : "- ")
+                            + (added ? theme.code(a.text()) : strike(a.text()))))).toList();
         }
         List<Piece> oldAnnotations = Parts.of(pair.oldElement(), "", theme).annotations();
         List<Piece> newAnnotations = Parts.of(pair.newElement(), "", theme).annotations();
         List<String> lines = new ArrayList<>();
         for (Piece o : oldAnnotations) {
             if (newAnnotations.stream().noneMatch(n -> sameAnnotation(o, n))) {
-                lines.add(theme.modified() + " " + strike(o.text()));
+                lines.add(LineNumbers.number(o.line(), theme.modified() + " " + strike(o.text())));
             }
         }
         for (Piece n : newAnnotations) {
             Piece o = oldAnnotations.stream().filter(a -> sameAnnotation(a, n)).findFirst().orElse(Piece.NONE);
             if (!o.sameAs(n)) {
-                lines.add(theme.modified() + " "
-                        + (o.text().isEmpty() ? theme.added(n.text()) : slot(o, n)));
+                lines.add(LineNumbers.number(n.line(), theme.modified() + " "
+                        + (o.text().isEmpty() ? theme.added(n.text()) : slot(o, n))));
             }
         }
         return lines;
@@ -133,8 +140,9 @@ public final class SignatureDiffPrinter {
      */
     public List<String> declaration(ElementInfo element, String typeName) {
         Parts parts = Parts.of(element, typeName, theme);
-        List<String> lines = new ArrayList<>(parts.annotations().stream().map(Piece::text).map(theme::code).toList());
-        lines.add(theme.code(render(parts, parts)));
+        List<String> lines = new ArrayList<>(parts.annotations().stream()
+                .map(a -> LineNumbers.number(a.line(), theme.code(a.text()))).toList());
+        lines.add(LineNumbers.number(element.getLine(), theme.code(render(parts, parts))));
         return lines;
     }
 
@@ -142,13 +150,13 @@ public final class SignatureDiffPrinter {
      * A part of a signature: the text shown and the key it is compared by. The key of a tree is its hash, in which
      * references to renamed elements are undone, so a part which only refers to a renamed type is unchanged.
      */
-    private record Piece(String text, String key) {
+    private record Piece(String text, String key, long line) {
 
-        static final Piece NONE = new Piece("", "");
+        static final Piece NONE = new Piece("", "", 0);
 
         /** A part compared by its text, like a modifier or a name. */
         static Piece text(String text) {
-            return new Piece(text, text);
+            return new Piece(text, text, 0);
         }
 
         /**
@@ -161,7 +169,8 @@ public final class SignatureDiffPrinter {
             }
             String sha = info.getSignatureSha(tree);
             String text = tree.toString();
-            return new Piece(hasUnresolved(info, tree) ? theme.error(text) : text, sha == null ? text : sha);
+            return new Piece(hasUnresolved(info, tree) ? theme.error(text) : text, sha == null ? text : sha,
+                    info.getLine(tree));
         }
 
         /** Whether the tree is, or contains, a name javac could not resolve. */
@@ -206,7 +215,8 @@ public final class SignatureDiffPrinter {
                 Piece type = Piece.of(info, v.getType(), theme);
                 if (info.getSignatureSha(v.getType()) == null) {
                     // A type javac added, as to an enum constant: compared by the type itself, renames undone.
-                    type = new Piece(type.text(), info.getFacetSha(cz.hrebejk.sedi.analysis.Facet.RETURN_TYPE));
+                    type = new Piece(type.text(), info.getFacetSha(cz.hrebejk.sedi.analysis.Facet.RETURN_TYPE),
+                            type.line());
                 }
                 return new Parts(info.getNodeType(), annotations(info, v.getModifiers(), theme), modifiers(v.getModifiers()),
                         List.of(), type, v.getName().toString(), List.of(), List.of(), List.of(), List.of(), List.of());

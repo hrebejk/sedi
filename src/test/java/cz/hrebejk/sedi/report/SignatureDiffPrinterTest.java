@@ -20,6 +20,12 @@ import java.util.List;
  */
 public class SignatureDiffPrinterTest extends TestCase {
 
+    /** The line without its line number, see {@link LineNumbers}. */
+    static String unnumbered(String line) {
+        return LineNumbers.render(java.util.List.of(line), false, Theme.PLAIN).getFirst();
+    }
+
+
     private List<ElementPair> pairs(String oldMembers, String newMembers) throws Exception {
         try (GitTestHelper helper = new GitTestHelper()) {
             helper.writeFile("T.java", source(oldMembers));
@@ -38,7 +44,7 @@ public class SignatureDiffPrinterTest extends TestCase {
     private List<String> print(String oldMembers, String newMembers) throws Exception {
         SignatureDiffPrinter printer = new SignatureDiffPrinter(Theme.PLAIN);
         return pairs(oldMembers, newMembers).stream()
-                .flatMap(p -> java.util.stream.Stream.concat(printer.annotations(p).stream(), java.util.stream.Stream.of(printer.format(p, "T"))))
+                .flatMap(p -> java.util.stream.Stream.concat(printer.annotations(p).stream(), java.util.stream.Stream.of(printer.format(p, "T"))).map(SignatureDiffPrinterTest::unnumbered))
                 .toList();
     }
 
@@ -66,9 +72,9 @@ public class SignatureDiffPrinterTest extends TestCase {
                         .filter(f -> f.diff().getNewPath().equals("T.java")).findFirst().orElseThrow()
                         .rootChanges().nested().get(0);
                 SignatureDiffPrinter printer = new SignatureDiffPrinter(Theme.PLAIN);
-                assertEquals("  public class T implements I2", printer.formatType(t.type(), ""));
+                assertEquals("  public class T implements I2", unnumbered(printer.formatType(t.type(), "")));
                 assertEquals(List.of("~ __private__ E2 yesno( boolean p, java.util.List<E2> all ) throws Exception"),
-                        t.pairs().stream().map(p -> printer.format(p, "T")).toList());
+                        t.pairs().stream().map(p -> unnumbered(printer.format(p, "T"))).toList());
             }
         }
     }
@@ -104,14 +110,14 @@ public class SignatureDiffPrinterTest extends TestCase {
 
     public void testAnsiStrike() throws Exception {
         ElementPair pair = pairs("int f;", "long f;").get(0);
-        assertEquals("~ \u001b[9mint\u001b[29m long f", new SignatureDiffPrinter(ThemeTest.only("strike", "strike"))
-                .format(pair, "T"));
+        assertEquals("~ \u001b[9mint\u001b[29m long f", unnumbered(new SignatureDiffPrinter(ThemeTest.only("strike", "strike"))
+                .format(pair, "T")));
     }
 
     public void testAnsiAddedLineAndKeywords() throws Exception {
         Theme theme = ThemeTest.only("added", "bg:#010203", "added_mark", "underline", "keyword", "bold",
                 "declaration", "strike");
-        List<String> lines = pairs("", "int fresh;").stream().map(p -> new SignatureDiffPrinter(theme).format(p, "T"))
+        List<String> lines = pairs("", "int fresh;").stream().map(p -> unnumbered(new SignatureDiffPrinter(theme).format(p, "T")))
                 .toList();
         assertEquals(List.of("\u001b[48;2;1;2;3m\u001b[4m+\u001b[24m \u001b[1mint\u001b[22m \u001b[9mfresh\u001b[29m"
                 + "\u001b[49m"), lines);

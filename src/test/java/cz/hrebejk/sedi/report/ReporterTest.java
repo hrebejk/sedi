@@ -44,6 +44,39 @@ public class ReporterTest extends TestCase {
     }
 
     /**
+     * The lines of the source are shown in a column on the left, not indented with the code: of the new version,
+     * of the old one for removed members, the annotations on lines of their own.
+     */
+    public void testLineNumbers() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", "public class Foo {\n  int a;\n  void gone() { }\n"
+                    + "  static class In { void x() {} }\n}\n");
+            helper.commit("init");
+            helper.writeFile("Foo.java", "public class Foo {\n\n  long a;\n  static class In { void x() {}\n"
+                    + "  @Deprecated /* new */\n  void y() {} }\n"
+                    + "  void n1() { } void n2() { } void n3() { } void n4() { } void n5() { } void n6() { }\n"
+                    + "  void n7() { } void n8() { } void n9() { }\n\n\n void ten() { }\n}\n");
+
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                ReportOptions options = new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY,
+                        ReportOptions.DEFAULT_BODY_LINES, ReportOptions.NO_JAVADOC, true);
+                List<String> lines = new Reporter(Theme.PLAIN, options).report(analyzer.analyzeChanges());
+                assertEquals(List.of(
+                                "# API changes",
+                                "",
+                                "   ~ Foo.java",
+                                " 1     public class Foo",
+                                " 3     ~ ~~int~~ __long__ a",
+                                " 3     - ~~void gone()~~"),
+                        lines.subList(0, 6));
+                assertTrue(lines.toString(), lines.contains(" 5       + @Deprecated"));
+                assertTrue(lines.toString(), lines.contains(" 6       + void y()"));
+                assertTrue(lines.toString(), lines.contains("11     + void ten()"));
+            }
+        }
+    }
+
+    /**
      * Tests that a body-only change reports nothing.
      */
     public void testBodyOnlyChangeIsEmpty() throws Exception {

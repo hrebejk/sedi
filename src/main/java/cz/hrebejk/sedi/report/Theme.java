@@ -81,6 +81,8 @@ public final class Theme {
         TAG,
         /** Names javac could not resolve, as in code which does not compile. */
         ERROR,
+        /** The numbers of the lines of the source, on the left of the report. */
+        LINE_NUMBER,
         /** Remarks of the report, like collapsed or left out code. */
         NOTE,
         /** The remark of a section without changes. */
@@ -126,6 +128,7 @@ public final class Theme {
             Map.entry(Role.TAG, "#7f8796"),
             // White on bright red: code which does not compile must not be missed.
             Map.entry(Role.ERROR, "#ffffff bg:#e0102a bold"),
+            Map.entry(Role.LINE_NUMBER, "#5c6370"),
             Map.entry(Role.NOTE, "#8a93a5"),
             Map.entry(Role.NO_CHANGES, "bold #ff9e3d"));
 
