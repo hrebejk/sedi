@@ -155,15 +155,34 @@ public final class SignatureDiffPrinter {
         }
 
         /**
-         * A part of the signature of the element, compared by its hash if it has one, else by its text. A part with
-         * a name javac could not resolve is shown as an error.
+         * A part of the signature of the element, compared by its hash if it has one, else by its text. The text is
+         * that of the source, on one line; javac prints the trees without a place in the source. A part with a name
+         * javac could not resolve is shown as an error.
          */
         static Piece of(ElementInfo info, Tree tree, Theme theme) {
             if (tree == null) {
                 return NONE;
             }
+            String source = info.getSource(tree);
+            return of(info, tree, source == null ? tree.toString() : source, theme);
+        }
+
+        /**
+         * The type of a parameter with its modifiers and annotations, as in the source. The type of a C style array
+         * parameter, like {@code int x[]}, has the name inside it in the source: javac prints it then.
+         */
+        static Piece type(ElementInfo info, VariableTree parameter, Theme theme) {
+            String source = info.getSource(parameter);
+            String name = parameter.getName().toString();
+            boolean plain = source != null && source.endsWith(name)
+                    && (source.length() == name.length() || !Character.isJavaIdentifierPart(
+                    source.charAt(source.length() - name.length() - 1)));
+            return of(info, parameter.getType(), plain ? source.substring(0, source.length() - name.length()).strip()
+                    : parameter.getType().toString(), theme);
+        }
+
+        private static Piece of(ElementInfo info, Tree tree, String text, Theme theme) {
             String sha = info.getSignatureSha(tree);
-            String text = tree.toString();
             return new Piece(hasUnresolved(info, tree) ? theme.error(text) : text, sha == null ? text : sha,
                     info.getLine(tree));
         }
@@ -200,9 +219,9 @@ public final class SignatureDiffPrinter {
                 String name = m.getName().contentEquals("<init>") ? typeName : m.getName().toString();
                 List<Piece[]> params = new ArrayList<>();
                 for (VariableTree p : m.getParameters()) {
-                    params.add(new Piece[]{Piece.of(info, p.getType(), theme), Piece.text(p.getName().toString())});
+                    params.add(new Piece[]{Piece.type(info, p, theme), Piece.text(p.getName().toString())});
                 }
-                return new Parts(info.getNodeType(), annotations(info, m.getModifiers(), theme), modifiers(m.getModifiers()),
+                return new Parts(info.getNodeType(), annotations(info, m.getModifiers(), theme), modifiers(info, m.getModifiers()),
                         pieces(info, m.getTypeParameters(), theme), Piece.of(info, m.getReturnType(), theme), name, params,
                         pieces(info, m.getThrows(), theme), List.of(), List.of(), List.of());
             }
@@ -213,7 +232,7 @@ public final class SignatureDiffPrinter {
                     type = new Piece(type.text(), info.getFacetSha(cz.hrebejk.sedi.analysis.Facet.RETURN_TYPE),
                             type.line());
                 }
-                return new Parts(info.getNodeType(), annotations(info, v.getModifiers(), theme), modifiers(v.getModifiers()),
+                return new Parts(info.getNodeType(), annotations(info, v.getModifiers(), theme), modifiers(info, v.getModifiers()),
                         List.of(), type, v.getName().toString(), List.of(), List.of(), List.of(), List.of(), List.of());
             }
             if (tree instanceof ClassTree c) {
@@ -225,7 +244,7 @@ public final class SignatureDiffPrinter {
                 }
                 (c.getKind() == Tree.Kind.INTERFACE ? extended : implemented)
                         .addAll(pieces(info, c.getImplementsClause(), theme));
-                return new Parts(info.getNodeType(), annotations(info, c.getModifiers(), theme), modifiers(c.getModifiers()),
+                return new Parts(info.getNodeType(), annotations(info, c.getModifiers(), theme), modifiers(info, c.getModifiers()),
                         pieces(info, c.getTypeParameters(), theme), Piece.text(keyword(c.getKind())),
                         c.getSimpleName().toString(), List.of(), List.of(), extended, implemented,
                         pieces(info, c.getPermitsClause(), theme));
@@ -238,12 +257,13 @@ public final class SignatureDiffPrinter {
             return pieces(info, modifiers.getAnnotations(), theme);
         }
 
-        private static List<Piece> modifiers(ModifiersTree modifiers) {
-            List<Piece> result = new ArrayList<>();
-            for (Modifier m : modifiers.getFlags()) {
-                result.add(Piece.text(m.toString()));
-            }
-            return result;
+        /** The modifiers in the order of the source, if it is known. */
+        private static List<Piece> modifiers(ElementInfo info, ModifiersTree modifiers) {
+            String source = info.getSource(modifiers);
+            List<String> words = source == null ? List.of() : List.of(source.split("[^\\w-]+"));
+            return modifiers.getFlags().stream().map(Modifier::toString)
+                    .sorted(java.util.Comparator.comparingInt(m -> words.contains(m) ? words.indexOf(m) : words.size()))
+                    .map(Piece::text).toList();
         }
 
         private static List<Piece> pieces(ElementInfo info, List<? extends Tree> trees, Theme theme) {

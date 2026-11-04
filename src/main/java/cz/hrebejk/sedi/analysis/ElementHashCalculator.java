@@ -48,6 +48,7 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
     /** The unit being scanned, its source and the positions of its trees, to find the lines of the elements. */
     private CompilationUnitTree unit;
     private String source = "";
+    private SourceText sourceText;
 
     /**
      * Creates a new MemberShaCalculator with required Trees utility for attributed FQN resolution.
@@ -104,6 +105,7 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
         } catch (java.io.IOException e) {
             source = "";
         }
+        sourceText = new SourceText(compilationUnit, trees.getSourcePositions(), source);
         HashContext context = new HashContext(rootNode);
         scan(compilationUnit, context);
         return rootNode;
@@ -528,16 +530,12 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
      */
     private void setLines(ElementInfo info, Tree tree, ModifiersTree modifiers) {
         SourcePositions positions = trees.getSourcePositions();
-        java.util.function.ToLongFunction<Tree> lines = t -> {
-            long start = t == null ? -1 : positions.getStartPosition(unit, t);
-            return start < 0 ? 0 : unit.getLineMap().getLineNumber(start);
-        };
         long start = positions.getStartPosition(unit, tree);
         if (!modifiers.getAnnotations().isEmpty()) {
             long end = positions.getEndPosition(unit, modifiers.getAnnotations().getLast());
             start = end < 0 ? start : skipSpaceAndComments((int) end);
         }
-        info.setLines(lines, start < 0 ? 0 : unit.getLineMap().getLineNumber(start));
+        info.setSource(sourceText, start < 0 ? 0 : unit.getLineMap().getLineNumber(start));
         // The first line of the javadoc is found by its text after the /** preceding the declaration: javac leaves
         // out the line break after the /**.
         long declaration = positions.getStartPosition(unit, tree);

@@ -379,12 +379,12 @@ public class ReporterTest extends TestCase {
                     + "  int b;\n  @SuppressWarnings(\"y\") int c;\n  @Deprecated int d;\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
                 assertEquals(List.of(
-                                "  ~ __@SuppressWarnings(value = \"all\")__",
+                                "  ~ __@SuppressWarnings(\"all\")__",
                                 "    public class Foo",
                                 "    ~ ~~int~~ __long__ a",
                                 "    ~ ~~@Deprecated~~",
                                 "    ~ int b",
-                                "    ~ ~~@SuppressWarnings(value = \"x\")~~ __@SuppressWarnings(value = \"y\")__",
+                                "    ~ ~~@SuppressWarnings(\"x\")~~ __@SuppressWarnings(\"y\")__",
                                 "    ~ int c",
                                 "    + @Deprecated",
                                 "    + int d"),

@@ -53,6 +53,18 @@ public class SignatureDiffPrinterTest extends TestCase {
                 .toList();
     }
 
+    /** The signature is printed as it is in the source: varargs, comments and spaces left out, modifiers in order. */
+    public void testSignatureAsInSource() throws Exception {
+        assertEquals(List.of("~ final static void main( String... args, __int x__ )"),
+                print("final static void main(String... args) { }", "final static void main(String...  args, int x) { }"));
+        // The comment is left out, the type of a C style array printed by javac.
+        assertEquals(List.of("~ void p( java.util.List< String> l, __int[] x__ )"),
+                print("void p(java.util.List< /* c */ String> l) { }",
+                        "void p(java.util.List< /* c */ String> l, int x[]) { }"));
+        assertEquals(List.of("~ void q( final @Deprecated String s, __int i__ )"),
+                print("void q(final @Deprecated String s) { }", "void q(final @Deprecated String s, int i) { }"));
+    }
+
     /** An added parameter is marked as added, a removed one struck through, also between the kept ones. */
     public void testAddedAndRemovedParameters() throws Exception {
         assertEquals(List.of("~ void a( String text, __long line__ )"),
