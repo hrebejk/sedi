@@ -1,14 +1,18 @@
 ## API
 
+* [ ] Removed inner types are not in type and are not printed striked through and do not have signature  
 * [x] Ignore type renames
 * [ ] Incorrect printing of diffs in API changes
 * [x] Javadoc - word diff
 
 ## IMPL
 
+* [x] Generic rendering of diffs usng text or tokens
+* [x] Cosmetic change qualified name to simple name
 * [ ] Ignore all renames, but not signature changes
-* [ ] When something is added e.g. parameter it should be underscored (maybe works)
+* [x] When something is added e.g. parameter it should be underscored (maybe works)
 * [ ] Expansion/collapse of context using -> <-
+* [ ] Refactoring detection (At least extract method)
 * [x] ~ List<String> l
   new LinkedList ArrayList<>() should be ~ List<String> l = new LinkedList ArrayList<>()
 
@@ -20,9 +24,13 @@
 ## OTHER
 
 * [ ] Fix local and anonymous classes 
-* [ ] Add line numbers (also means fixing new lines)
-* [ ] Create demo repo.
+* [x] Add line numbers (also means fixing new lines)
+* [x] Create demo repo - in orphan branch
 * [ ] Other files 
+* [ ] Webapp?
 * [x] If section is empty say so.
 * 
-* [ ]
+
+## QUESTIONS
+
+* [ ] What about methods which implement a method in interface should the renames be hidden too e.g. Greetr.great -> Greeter.greet

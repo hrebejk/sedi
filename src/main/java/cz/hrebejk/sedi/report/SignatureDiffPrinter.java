@@ -46,14 +46,28 @@ public final class SignatureDiffPrinter {
     }
 
     /**
-     * Formats the signature difference of the pair, without the annotations, see {@link #annotations}.
+     * Formats the signature difference of the pair, without the annotations, see {@link #annotations}. It starts with
+     * {@code ~} only if the signature itself changed.
      *
      * @param pair     the pair to print
      * @param typeName simple name of the enclosing type, used to display constructors
      * @return a one line description
      */
     public String format(ElementPair pair, String typeName) {
-        return format(pair, typeName, true);
+        return formatSignature(pair, typeName, false);
+    }
+
+    /**
+     * Formats the signature difference of the pair, without the annotations, see {@link #annotations}. It starts with
+     * {@code ~} only if the signature itself changed, or if the line shows another change, see {@code changedLine}.
+     *
+     * @param pair        the pair to print
+     * @param typeName    simple name of the enclosing type, used to display constructors
+     * @param changedLine whether something else on the line of the signature changed, like the initializer of a field
+     * @return a one line description
+     */
+    public String format(ElementPair pair, String typeName, boolean changedLine) {
+        return formatSignature(pair, typeName, changedLine);
     }
 
     /**
@@ -65,10 +79,10 @@ public final class SignatureDiffPrinter {
      * @return a one line description
      */
     public String formatType(ElementPair pair, String typeName) {
-        return format(pair, typeName, false);
+        return formatSignature(pair, typeName, false);
     }
 
-    private String format(ElementPair pair, String typeName, boolean alwaysMarked) {
+    private String formatSignature(ElementPair pair, String typeName, boolean changedLine) {
         if (pair.isAdded()) {
             Parts parts = Parts.of(pair.newElement(), typeName, theme);
             return LineNumbers.number(pair.newElement().getLine(), '+', theme.code(render(parts, parts)));
@@ -80,7 +94,7 @@ public final class SignatureDiffPrinter {
         Parts o = Parts.of(pair.oldElement(), typeName, theme);
         Parts n = Parts.of(pair.newElement(), typeName, theme);
         String signature = render(o, n);
-        boolean changed = alwaysMarked || !signature.equals(render(n, n));
+        boolean changed = changedLine || !signature.equals(render(n, n));
         return LineNumbers.number(pair.newElement().getLine(), changed ? '~' : ' ', theme.code(signature));
     }
 

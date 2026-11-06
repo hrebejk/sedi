@@ -38,16 +38,12 @@ import java.util.Set;
  * @param marks               what happened to the marked nodes of the new version (identity map)
  * @param removedBefore       old nodes without a counterpart, by the new node they are shown in front of (identity map)
  * @param removedAtEnd        old nodes without a counterpart, by the new node they are shown at the end of (identity map)
- * @param oldStatements       number of statements of the old body, zero if it is not a block
- * @param newStatements       number of statements of the new body, zero if it is not a block
- * @param unchangedStatements number of statements present unchanged in both bodies
  * @param unresolved          names javac could not resolve in either version, as in code which does not compile
  *                            (identity set)
  */
 public record BodyChanges(CompilationUnitInfo oldUnit, CompilationUnitInfo newUnit, Tree oldRoot, Tree newRoot,
                           Map<Tree, Mark> marks, Map<Tree, List<Tree>> removedBefore,
-                          Map<Tree, List<Tree>> removedAtEnd,
-                          int oldStatements, int newStatements, int unchangedStatements, Set<Tree> unresolved) {
+                          Map<Tree, List<Tree>> removedAtEnd, Set<Tree> unresolved) {
 
     /** What happened to a node of the new version. */
     public sealed interface Mark permits Changed, Edited, Added, Replaced, Wrapped, Unwrapped, WrappedStatements,

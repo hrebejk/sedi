@@ -15,16 +15,20 @@ import cz.hrebejk.sedi.analysis.ChangeLevel;
  *
  * @param maxLevel       the least important level of changes to show; all more important ones are shown too
  * @param grouping       how the changes are grouped
- * @param bodyLines      the most lines shown of the changes of one body, {@code 0} to show none
+ * @param bodyContext    the most unchanged lines of a body shown in a row between its changes, a longer run of them
+ *                       is collapsed to a note with its number of lines; {@link #WHOLE_BODY} to show them all
  * @param javadocContext the unchanged javadoc lines shown around a change of a javadoc, {@link #NO_JAVADOC} to show
  *                       no javadoc, {@link #WHOLE_JAVADOC} to show the whole javadoc
  * @param lineNumbers    whether to show the numbers of the lines of the source on the left
  */
-public record ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyLines, int javadocContext,
+public record ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyContext, int javadocContext,
                             boolean lineNumbers) {
 
-    /** The default of {@link #bodyLines()}. */
-    public static final int DEFAULT_BODY_LINES = 12;
+    /** The {@link #bodyContext()} showing all the unchanged lines of a changed body. */
+    public static final int WHOLE_BODY = -1;
+
+    /** The default of {@link #bodyContext()}. */
+    public static final int DEFAULT_BODY_CONTEXT = 3;
 
     /** The {@link #javadocContext()} showing no javadoc at all. */
     public static final int NO_JAVADOC = -2;
@@ -40,11 +44,11 @@ public record ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyLin
      *
      * @param maxLevel       the least important level of changes to show
      * @param grouping       how the changes are grouped
-     * @param bodyLines      the most lines shown of the changes of one body
+     * @param bodyContext    the most unchanged lines of a body shown in a row
      * @param javadocContext the unchanged javadoc lines shown around a change of a javadoc
      */
-    public ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyLines, int javadocContext) {
-        this(maxLevel, grouping, bodyLines, javadocContext, false);
+    public ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyContext, int javadocContext) {
+        this(maxLevel, grouping, bodyContext, javadocContext, false);
     }
 
     /**
@@ -54,7 +58,7 @@ public record ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyLin
      * @return the new options
      */
     public ReportOptions withMaxLevel(ChangeLevel level) {
-        return new ReportOptions(level, grouping, bodyLines, javadocContext, lineNumbers);
+        return new ReportOptions(level, grouping, bodyContext, javadocContext, lineNumbers);
     }
 
     /**
@@ -64,7 +68,7 @@ public record ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyLin
      * @return the new options
      */
     public ReportOptions withGrouping(Grouping grouping) {
-        return new ReportOptions(maxLevel, grouping, bodyLines, javadocContext, lineNumbers);
+        return new ReportOptions(maxLevel, grouping, bodyContext, javadocContext, lineNumbers);
     }
 
     /**
@@ -74,7 +78,7 @@ public record ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyLin
      * @return the new options
      */
     public ReportOptions withJavadocContext(int javadocContext) {
-        return new ReportOptions(maxLevel, grouping, bodyLines, javadocContext, lineNumbers);
+        return new ReportOptions(maxLevel, grouping, bodyContext, javadocContext, lineNumbers);
     }
 
     /**
@@ -82,20 +86,20 @@ public record ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyLin
      *
      * @param maxLevel  the least important level of changes to show
      * @param grouping  how the changes are grouped
-     * @param bodyLines the most lines shown of the changes of one body
+     * @param bodyContext the most unchanged lines of a body shown in a row
      */
-    public ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyLines) {
-        this(maxLevel, grouping, bodyLines, DEFAULT_JAVADOC_CONTEXT);
+    public ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyContext) {
+        this(maxLevel, grouping, bodyContext, DEFAULT_JAVADOC_CONTEXT);
     }
 
     /**
-     * Creates options showing at most {@value #DEFAULT_BODY_LINES} lines of the changes of a body.
+     * Creates options showing at most {@value #DEFAULT_BODY_CONTEXT} lines of the changes of a body.
      *
      * @param maxLevel the least important level of changes to show
      * @param grouping how the changes are grouped
      */
     public ReportOptions(ChangeLevel maxLevel, Grouping grouping) {
-        this(maxLevel, grouping, DEFAULT_BODY_LINES);
+        this(maxLevel, grouping, DEFAULT_BODY_CONTEXT);
     }
 
     /** How the changes are grouped. */

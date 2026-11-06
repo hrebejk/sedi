@@ -27,7 +27,6 @@ import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.Comparator;
 import java.util.IdentityHashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -47,8 +46,6 @@ import java.util.TreeSet;
  */
 final class AstPrinter {
 
-    /** Added or removed compound statements longer than this are printed with their body collapsed. */
-    private static final int COLLAPSE_LINES = 3;
     private static final int TAB_WIDTH = 4;
 
     /** The source of a version: its text, the positions of its trees and the region of the body in it. */
@@ -222,6 +219,8 @@ final class AstPrinter {
     private final Source oldSource;
     private final Source newSource;
     private final Theme theme;
+    /** The most unchanged lines shown in a row, a negative number for any number of them. */
+    private final int context;
     /** The statement, or the outermost expression in the header of a compound statement, each new tree is part of. */
     private final Map<Tree, Tree> units = new IdentityHashMap<>();
     /** The new lines to print. */
@@ -233,17 +232,18 @@ final class AstPrinter {
      * the order of their old lines.
      */
     private final Map<Long, List<List<Entry>>> blocks = new TreeMap<>();
-    /** The first and the last line of a collapsed added statement, by the last line of its header. */
-    private final Map<Long, long[]> collapsed = new LinkedHashMap<>();
 
     /**
      * Creates a printer of one body.
      *
      * @param changes the changes of the body
      * @param theme   the colors of the code and of the struck through old text
+     * @param context the most unchanged lines shown in a row, a longer run of them is shown as a note with its number
+     *                of lines; a negative number to show them all
      */
-    AstPrinter(BodyChanges changes, Theme theme) {
+    AstPrinter(BodyChanges changes, Theme theme, int context) {
         this.changes = changes;
+        this.context = context;
         this.oldSource = new Source(changes.oldUnit(), changes.oldRoot());
         this.newSource = new Source(changes.newUnit(), changes.newRoot());
         this.theme = theme;
@@ -366,20 +366,10 @@ final class AstPrinter {
         showUnit(tree);
     }
 
-    /** An added tree; a long compound statement is collapsed to its header. */
+    /** An added tree, shown with all of its lines. */
     private void added(Tree tree) {
         newSource.added.set(newSource.start(tree), newSource.end(tree));
         showUnit(tree);
-        long first = newSource.firstLine(tree);
-        long last = newSource.lastLine(tree);
-        Tree body = firstBody(tree);
-        if (BodyChanges.isCompound(tree) && last - first + 1 > COLLAPSE_LINES && body != null) {
-            long header = newSource.firstLine(body);
-            for (long l = header + 1; l <= last; l++) {
-                shown.remove(l);
-            }
-            collapsed.put(header, new long[]{first, last});
-        }
     }
 
     /** Shows the lines with the text of the tree itself, not of the trees in it, like {@code if (}, {@code ) {}. */
@@ -486,21 +476,11 @@ final class AstPrinter {
         return entries;
     }
 
-    /** The lines of an old tree, as removed; a long compound statement is collapsed to its header. */
+    /** The lines of an old tree, as removed. */
     private List<Entry> oldLines(Tree tree) {
         List<Entry> entries = new ArrayList<>();
-        long first = oldSource.firstLine(tree);
-        long last = oldSource.lastLine(tree);
-        Tree body = firstBody(tree);
-        if (BodyChanges.isCompound(tree) && last - first + 1 > COLLAPSE_LINES && body != null) {
-            for (long l = first; l <= oldSource.firstLine(body); l++) {
-                entries.add(Entry.line(oldSource, l, '-'));
-            }
-            entries.add(Entry.note('-', "… " + (last - first + 1) + " lines"));
-        } else {
-            for (long l = first; l <= last; l++) {
-                entries.add(Entry.line(oldSource, l, '-'));
-            }
+        for (long l = oldSource.firstLine(tree); l <= oldSource.lastLine(tree); l++) {
+            entries.add(Entry.line(oldSource, l, '-'));
         }
         return entries;
     }
@@ -521,19 +501,17 @@ final class AstPrinter {
                 .flatMap(List::stream).toList();
     }
 
-    /** The lines to print, in order, with {@code …} where new lines are skipped. */
+    /** The lines to print, in order, with the unchanged lines between them, see {@link #context}. */
     private List<Entry> entries() {
         List<Entry> entries = new ArrayList<>();
         long first = newSource.line(newSource.from);
         long last = newSource.line(Math.max(newSource.from, newSource.to));
-        long previous = -1;
+        long previous = first - 1;
         for (long l = first; l <= last + 1; l++) {
             List<Entry> block = block(l);
             boolean line = l <= last && shown.contains(l) && !moved.contains(l) && hasCode(l);
             if (block != null || line) {
-                if (previous >= 0 && hasCode(previous + 1, l)) {
-                    entries.add(Entry.note(' ', "…"));
-                }
+                unchanged(entries, previous + 1, l, first, last);
             }
             if (block != null) {
                 entries.addAll(block);
@@ -547,27 +525,52 @@ final class AstPrinter {
             if (line) {
                 entries.add(Entry.line(newSource, l, marker(l)));
                 previous = l;
-                long[] statement = collapsed.get(l);
-                if (statement != null) {
-                    entries.add(Entry.note('+', "… " + (statement[1] - statement[0] + 1) + " lines"));
-                    previous = statement[1];
-                    l = statement[1];
-                }
             }
         }
+        unchanged(entries, previous + 1, last + 1, first, last);
         // Blocks after the body, as of statements removed at its end.
         blocks.keySet().stream().filter(l -> l > last + 1).forEach(l -> entries.addAll(block(l)));
         return entries;
     }
 
-    /** Whether there is code on the new lines from one to another, not including the other. */
-    private boolean hasCode(long from, long to) {
+    /**
+     * Adds the unchanged new lines from one to another, not including the other: all of them if they are at most
+     * {@link #context}, else a note with their number. Blank lines at the start and at the end of the body are left out,
+     * and so is a run of blank lines too long to show.
+     */
+    private void unchanged(List<Entry> entries, long from, long to, long first, long last) {
+        List<Long> lines = new ArrayList<>();
         for (long l = from; l < to; l++) {
-            if (hasCode(l)) {
-                return true;
+            if (!moved.contains(l)) {
+                lines.add(l);
             }
         }
-        return false;
+        if (from == first) {
+            while (!lines.isEmpty() && isBlank(lines.getFirst())) {
+                lines.removeFirst();
+            }
+        }
+        if (to > last) {
+            while (!lines.isEmpty() && isBlank(lines.getLast())) {
+                lines.removeLast();
+            }
+        }
+        if (lines.isEmpty()) {
+            return;
+        }
+        if (context < 0 || lines.size() <= context) {
+            for (long l : lines) {
+                entries.add(Entry.line(newSource, l, ' '));
+            }
+        } else if (!lines.stream().allMatch(this::isBlank)) {
+            entries.add(Entry.note(' ', "… (" + lines.size() + (lines.size() == 1 ? " line)" : " lines)")));
+        }
+    }
+
+    /** Whether the part of the new line in the body has no text, not even a comment. */
+    private boolean isBlank(long line) {
+        return newSource.text.substring(newSource.lineStart(line), Math.max(newSource.lineStart(line),
+                newSource.lineEnd(line))).isBlank() && inserts(newSource, line).findAny().isEmpty();
     }
 
     private boolean hasCode(long line) {
@@ -727,20 +730,5 @@ final class AstPrinter {
         }, null);
         children.sort(Comparator.comparingInt(source::start));
         return children;
-    }
-
-    /** The first block (or case, or catch) of a compound statement, where its header ends. */
-    private static Tree firstBody(Tree tree) {
-        List<Tree> children = new ArrayList<>();
-        tree.accept(new TreeScanner<Void, Void>() {
-            @Override
-            public Void scan(Tree child, Void unused) {
-                if (child instanceof BlockTree || child instanceof CaseTree || child instanceof CatchTree) {
-                    children.add(child);
-                }
-                return null;
-            }
-        }, null);
-        return children.isEmpty() ? null : children.getFirst();
     }
 }

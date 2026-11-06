@@ -357,16 +357,22 @@ public final class Reporter {
      * @param suffix the text added to the line of the signature
      */
     private void addDeclaration(List<String> lines, int depth, ElementPair pair, String typeName, String suffix) {
-        addDeclaration(lines, depth, pair, typeName, "", suffix);
+        addDeclaration(lines, depth, pair, typeName, null, suffix);
     }
 
-    /** @param initializer text following the signature on its line, such as {@code = value}, may be empty */
+    /**
+     * @param initializer the numbered line of the initializer shown after the signature on its line, such as
+     *                    {@code = value}, {@code null} for none
+     */
     private void addDeclaration(List<String> lines, int depth, ElementPair pair, String typeName, String initializer,
                                 String suffix) {
         String indent = "  ".repeat(depth);
         javadoc.print(pair).forEach(l -> lines.add(indent + l));
         printer.annotations(pair).forEach(l -> lines.add(indent + l));
-        lines.add(indent + printer.format(pair, typeName) + (initializer.isEmpty() ? "" : " " + initializer) + suffix);
+        boolean changedLine = initializer != null && LineNumbers.marker(initializer) != ' '
+                && LineNumbers.marker(initializer) != LineNumbers.NONE;
+        String rest = initializer == null ? "" : " = " + LineNumbers.text(initializer).strip();
+        lines.add(indent + printer.format(pair, typeName, changedLine) + rest + suffix);
     }
 
     /**
@@ -523,26 +529,11 @@ public final class Reporter {
     }
 
     /**
-     * The lines showing what changed in a body: the changed statements, at most {@link ReportOptions#bodyLines()}
-     * of them, or a single line if almost all the statements changed.
+     * The lines showing what changed in a body: the changed statements with the unchanged lines between them, see
+     * {@link ReportOptions#bodyContext()}.
      */
     private List<String> body(BodyChanges body) {
-        if (options.bodyLines() <= 0) {
-            return List.of();
-        }
-        int size = Math.max(body.oldStatements(), body.newStatements());
-        int unchanged = body.unchangedStatements();
-        if (unchanged * 3 < size && size - unchanged > 3) {
-            return List.of(theme.style(Theme.Role.NOTE, "body rewritten (-" + (body.oldStatements() - unchanged) + " +"
-                    + (body.newStatements() - unchanged) + " statements)"));
-        }
-        List<String> lines = new AstPrinter(body, theme).print();
-        if (lines.size() <= options.bodyLines()) {
-            return lines;
-        }
-        List<String> shown = new ArrayList<>(lines.subList(0, options.bodyLines()));
-        shown.add(theme.style(Theme.Role.NOTE, "… " + (lines.size() - options.bodyLines()) + " more lines"));
-        return shown;
+        return new AstPrinter(body, theme, options.bodyContext()).print();
     }
 
     /**
@@ -560,7 +551,7 @@ public final class Reporter {
                 List<String> body = change.body() == null ? List.of() : body(change.body());
                 // The initializer of a field continues the line of its declaration.
                 boolean inline = body.size() == 1 && !(change.body().newRoot() instanceof BlockTree);
-                addDeclaration(lines, depth, pair, changes.typeName(), inline ? "= " + LineNumbers.text(body.get(0)).strip() : "",
+                addDeclaration(lines, depth, pair, changes.typeName(), inline ? body.get(0) : null,
                         tagged ? tag(change) : "");
                 if (change.level() == ChangeLevel.API && change.pair().isAdded()
                         && change.pair().newElement().getNodeType() == ElementInfo.NodeType.TYPE) {

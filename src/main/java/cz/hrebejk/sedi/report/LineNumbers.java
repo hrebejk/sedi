@@ -58,6 +58,12 @@ final class LineNumbers {
         return m.find() ? m.group(1) + line.substring(m.end()) : line;
     }
 
+    /** The marker of a numbered line, {@link #NONE} if it has none. */
+    static char marker(String line) {
+        Matcher m = NUMBERED.matcher(line);
+        return m.find() && !m.group(3).isEmpty() ? m.group(3).charAt(0) : NONE;
+    }
+
     /** A line of the report shown left of the column of the numbers, like a heading. */
     static String outside(String text) {
         return UNNUMBERED + text;

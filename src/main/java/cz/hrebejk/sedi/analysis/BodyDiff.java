@@ -8,13 +8,14 @@
  */
 package cz.hrebejk.sedi.analysis;
 
-import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.StatementTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.util.SourcePositions;
 import cz.hrebejk.sedi.compilation.CompilationUnitInfo;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -30,8 +31,9 @@ import java.util.Set;
  * <p>
  * A simple statement (or an expression in the header of a compound statement) is a unit: it is shown with its
  * changes inline only if they are at most {@value #MAX_INLINE_EDITS} edited leaves (or small expressions replaced by
- * ones of another kind), else it is replaced as a whole. Between aligned children, as many expressions as before are
- * paired by their position.
+ * ones of another kind) and they are at most half of its text, else it is replaced as a whole. So unrelated statements
+ * are shown as removed and added rather than as one statement mostly struck through. Between aligned children, as
+ * many expressions as before are paired by their position.
  * Synthetic trees without a place in the source, such as an implicit {@code super()}, take no part.
  */
 final class BodyDiff {
@@ -46,10 +48,13 @@ final class BodyDiff {
     private final Map<Tree, List<Tree>> removedAtEnd = new IdentityHashMap<>();
     private final CompilationUnitInfo oldUnit;
     private final CompilationUnitInfo newUnit;
+    /** The source texts of the units, read when first needed and shared with the inner diffs (identity map). */
+    private final Map<CompilationUnitInfo, String> texts;
 
-    private BodyDiff(CompilationUnitInfo oldUnit, CompilationUnitInfo newUnit) {
+    private BodyDiff(CompilationUnitInfo oldUnit, CompilationUnitInfo newUnit, Map<CompilationUnitInfo, String> texts) {
         this.oldUnit = oldUnit;
         this.newUnit = newUnit;
+        this.texts = texts;
     }
 
     /**
@@ -64,14 +69,10 @@ final class BodyDiff {
         if (oldBody == null || newBody == null || oldBody.getSha().equals(newBody.getSha())) {
             return null;
         }
-        BodyDiff diff = new BodyDiff(oldUnit, newUnit);
+        BodyDiff diff = new BodyDiff(oldUnit, newUnit, new IdentityHashMap<>());
         diff.pair(oldBody, newBody, !BodyChanges.isCompound(newBody.getTree()));
-        boolean blocks = oldBody.getTree() instanceof BlockTree && newBody.getTree() instanceof BlockTree;
-        List<NodeInfo> oldStatements = present(oldBody.getChildren(), oldUnit);
-        List<NodeInfo> newStatements = present(newBody.getChildren(), newUnit);
-        return new BodyChanges(oldUnit, newUnit, oldBody.getTree(), newBody.getTree(), diff.marks, diff.removedBefore, diff.removedAtEnd,
-                blocks ? oldStatements.size() : 0, blocks ? newStatements.size() : 0,
-                blocks ? lcs(oldStatements, newStatements).size() : 0, unresolved(oldElement, newElement));
+        return new BodyChanges(oldUnit, newUnit, oldBody.getTree(), newBody.getTree(), diff.marks, diff.removedBefore,
+                diff.removedAtEnd, unresolved(oldElement, newElement));
     }
 
     /** The names javac could not resolve in either version (identity set). */
@@ -107,9 +108,9 @@ final class BodyDiff {
             marks.put(newNode.getTree(), small || isLeaf(oldNode) && isLeaf(newNode)
                     ? new BodyChanges.Edited(oldNode.getTree()) : new BodyChanges.Replaced(oldNode.getTree()));
         } else if (unit) {
-            BodyDiff inner = new BodyDiff(oldUnit, newUnit);
+            BodyDiff inner = new BodyDiff(oldUnit, newUnit, texts);
             inner.node(oldNode, newNode);
-            if (inner.isInline()) {
+            if (inner.isInline() && !inner.isMostlyChanged(oldNode.getTree(), newNode.getTree())) {
                 marks.putAll(inner.marks);
             } else {
                 marks.put(newNode.getTree(), new BodyChanges.Replaced(oldNode.getTree()));
@@ -184,7 +185,7 @@ final class BodyDiff {
             NodeInfo newChild = news.get(n);
             int match = -1;
             for (int i = o; i < olds.size() && match < 0; i++) {
-                if (isPairable(olds.get(i), newChild)) {
+                if (isPairable(olds.get(i), newChild) && paired(olds.get(i), newChild, parent)) {
                     match = i;
                 }
             }
@@ -193,10 +194,10 @@ final class BodyDiff {
                 added.add(newChild);
                 continue;
             }
+            // Removed in front of the children added since the last pair, as in a diff.
             for (int i = o; i < match; i++) {
-                removals.add(new Removal(olds.get(i), newChild.getTree()));
+                removals.add(new Removal(olds.get(i), news.get(lastPaired + 1).getTree()));
             }
-            pair(olds.get(match), newChild, isUnit(parent, newChild.getTree()));
             o = match + 1;
             lastPaired = n;
         }
@@ -209,6 +210,21 @@ final class BodyDiff {
         for (Removal removal : removals) {
             remove(removal.old(), removal.before(), parent);
         }
+    }
+
+    /**
+     * Diffs two children, unless the new one would just replace the old one as a whole: such children are not paired,
+     * so the old one is shown as removed and the new one as added, in the order of a diff.
+     *
+     * @return whether the children were paired
+     */
+    private boolean paired(NodeInfo oldChild, NodeInfo newChild, Tree parent) {
+        pair(oldChild, newChild, isUnit(parent, newChild.getTree()));
+        if (marks.get(newChild.getTree()) instanceof BodyChanges.Replaced) {
+            marks.remove(newChild.getTree());
+            return false;
+        }
+        return true;
     }
 
     /** An old child without a counterpart, shown in front of a new child, or at the end if {@code before} is null. */
@@ -344,6 +360,50 @@ final class BodyDiff {
     /** Nodes of the same kind, or two leaves, such as an identifier replaced by a literal. */
     private static boolean isPairable(NodeInfo oldNode, NodeInfo newNode) {
         return oldNode.getTree().getKind() == newNode.getTree().getKind() || isLeaf(oldNode) && isLeaf(newNode);
+    }
+
+    /**
+     * Whether the changes inline would mark more than half of the old and the new version together, counting the
+     * characters other than whitespace: what is struck through in the old version and what is underlined in the new.
+     */
+    private boolean isMostlyChanged(Tree oldTree, Tree newTree) {
+        int changed = 0;
+        for (Map.Entry<Tree, BodyChanges.Mark> entry : marks.entrySet()) {
+            changed += switch (entry.getValue()) {
+                case BodyChanges.Edited edited -> chars(oldUnit, edited.oldTree()) + chars(newUnit, entry.getKey());
+                case BodyChanges.Wrapped wrapped -> chars(newUnit, entry.getKey()) - chars(newUnit, wrapped.kept());
+                case BodyChanges.Unwrapped unwrapped ->
+                        chars(oldUnit, unwrapped.oldTree()) - chars(oldUnit, unwrapped.oldKept());
+                default -> 0;
+            };
+        }
+        return 2 * changed > chars(oldUnit, oldTree) + chars(newUnit, newTree);
+    }
+
+    /** The number of characters of the tree other than whitespace, {@code 0} if it has no place in the source. */
+    private int chars(CompilationUnitInfo unit, Tree tree) {
+        SourcePositions positions = unit.trees().getSourcePositions();
+        long start = positions.getStartPosition(unit.compilationUnit(), tree);
+        long end = positions.getEndPosition(unit.compilationUnit(), tree);
+        String text = texts.computeIfAbsent(unit, BodyDiff::text);
+        if (start < 0 || end <= start || end > text.length()) {
+            return 0;
+        }
+        int count = 0;
+        for (int i = (int) start; i < end; i++) {
+            if (!Character.isWhitespace(text.charAt(i))) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static String text(CompilationUnitInfo unit) {
+        try {
+            return unit.compilationUnit().getSourceFile().getCharContent(true).toString();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     /** The number of nodes of the subtree. */

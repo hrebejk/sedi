@@ -63,10 +63,10 @@ public class Main implements Callable<Integer> {
             description = "Group the changes by category or by type (default: category).")
     private ReportOptions.Grouping grouping = ReportOptions.Grouping.BY_CATEGORY;
 
-    @Option(names = {"-b", "--body-lines"}, paramLabel = "<n>",
-            description = "Most lines shown of the changes of one method body, 0 for none (default: "
-                    + ReportOptions.DEFAULT_BODY_LINES + ").")
-    private int bodyLines = ReportOptions.DEFAULT_BODY_LINES;
+    @Option(names = {"-b", "--body-context"}, paramLabel = "<n>",
+            description = "Most unchanged lines of a method body shown in a row between its changes; a longer run is "
+                    + "shown as … (N lines). -1 shows the whole body (default: " + ReportOptions.DEFAULT_BODY_CONTEXT + ").")
+    private int bodyContext = ReportOptions.DEFAULT_BODY_CONTEXT;
 
     @Option(names = "--javadoc-context", paramLabel = "<n>",
             description = "Unchanged javadoc lines shown around a javadoc change, -1 for the whole javadoc, "
@@ -178,7 +178,7 @@ public class Main implements Callable<Integer> {
             System.err.println("Cannot read the theme: " + e.getMessage());
             return 1;
         }
-        Reporter reporter = new Reporter(theme, new ReportOptions(level, grouping, bodyLines, javadocContext, !noLineNumbers));
+        Reporter reporter = new Reporter(theme, new ReportOptions(level, grouping, bodyContext, javadocContext, !noLineNumbers));
         boolean keepRunning = commit == null || interactive;
         if (!keepRunning || !terminal && commit != null) {
             return reportCommit(reporter);
