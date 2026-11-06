@@ -210,8 +210,8 @@ public final class Reporter {
         return lines;
     }
 
-    /** A type added or removed, with the file it is in and the names of the types it is nested in. */
-    private record TypeRef(FileAnalysis file, String outer, ElementInfo element) { }
+    /** A top level type added or removed, with the file it is in. */
+    private record TypeRef(FileAnalysis file, ElementInfo element) { }
 
     /**
      * The API changes: the public API of the added types, the names of the removed types, then the changes of the
@@ -221,10 +221,7 @@ public final class Reporter {
         List<TypeRef> added = new ArrayList<>();
         List<TypeRef> removed = new ArrayList<>();
         for (FileAnalysis file : files) {
-            if (file.primaryChanges() != null) {
-                collectTypes(file.primaryChanges(), file, file.primaryChanges().typeName() + ".", added, removed);
-            }
-            collectTypes(file.rootChanges(), file, "", added, removed);
+            collectTypes(file, added, removed);
         }
         List<List<String>> parts = new ArrayList<>();
         for (FileAnalysis file : files) {
@@ -290,9 +287,12 @@ public final class Reporter {
         return result;
     }
 
-    /** Whether the change is listed in a part of the API changes of its own: a new top level or a removed type. */
+    /**
+     * Whether the change is listed in a part of the API changes of its own: an added or removed top level type.
+     * Nested types are shown in the types they are nested in, like the other members.
+     */
     private static boolean isListedApart(ApiChanges container, MemberChange change) {
-        return isTypeAddedOrRemoved(change) && (change.pair().isRemoved() || container.typeName().isEmpty());
+        return isTypeAddedOrRemoved(change) && container.typeName().isEmpty();
     }
 
     private static boolean isTypeAddedOrRemoved(MemberChange change) {
@@ -301,30 +301,25 @@ public final class Reporter {
                 && (pair.isAdded() ? pair.newElement() : pair.oldElement()).getNodeType() == ElementInfo.NodeType.TYPE;
     }
 
-    private static void collectTypes(ApiChanges changes, FileAnalysis file, String outer, List<TypeRef> added,
-                                     List<TypeRef> removed) {
-        for (MemberChange change : changes.changes()) {
+    /** Collects the added and removed top level types of the file. */
+    private static void collectTypes(FileAnalysis file, List<TypeRef> added, List<TypeRef> removed) {
+        for (MemberChange change : file.rootChanges().changes()) {
             if (change.level() == ChangeLevel.API && isTypeAddedOrRemoved(change)) {
                 if (change.pair().isRemoved()) {
-                    removed.add(new TypeRef(file, outer, change.pair().oldElement()));
-                } else if (outer.isEmpty()) {
-                    added.add(new TypeRef(file, outer, change.pair().newElement()));
+                    removed.add(new TypeRef(file, change.pair().oldElement()));
+                } else {
+                    added.add(new TypeRef(file, change.pair().newElement()));
                 }
             }
         }
-        for (ApiChanges nested : changes.nested()) {
-            collectTypes(nested, file, outer + nested.typeName() + ".", added, removed);
-        }
     }
 
-    /** Where the type is: its package and the types it is nested in, preceded by a space; empty if nowhere. */
+    /** Where the type is: its package and source root, preceded by a space; empty if nowhere. */
     private String location(TypeRef type, boolean added) {
         String path = added ? type.file().diff().getNewPath() : type.file().diff().getOldPath();
         String pkg = added ? type.file().newPackage() : type.file().oldPackage();
-        String outer = type.outer().isEmpty() ? "" : type.outer().substring(0, type.outer().length() - 1);
         String root = sourceRoot(path, pkg);
-        String where = pkg.isEmpty() ? outer : outer.isEmpty() ? pkg : pkg + "." + outer;
-        where = root.isEmpty() || where.isEmpty() ? where : where + " " + root;
+        String where = root.isEmpty() || pkg.isEmpty() ? pkg : pkg + " " + root;
         return where.isEmpty() ? "" : " " + theme.style(Theme.Role.PACKAGE, where);
     }
 

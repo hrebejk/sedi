@@ -328,7 +328,7 @@ public class ReporterTest extends TestCase {
 
     /**
      * Tests that the API changes list the public API of the new types, the names of the deleted ones and then
-     * the changes of the other types.
+     * the changes of the other types, a removed nested type among the members of its outer type.
      */
     public void testApiStructure() throws Exception {
         try (GitTestHelper helper = new GitTestHelper()) {
@@ -349,11 +349,11 @@ public class ReporterTest extends TestCase {
                                 "    public void m()",
                                 "",
                                 "- ~~Old.java~~ ~~a~~",
-                                "- Gone a.Foo",
                                 "",
                                 "~ Foo.java a",
                                 "    public class Foo",
                                 "    ~ ~~int~~ __long__ a",
+                                "    - ~~class Gone~~",
                                 "    + public static class Fresh",
                                 "        public Fresh()",
                                 "        public int x",
