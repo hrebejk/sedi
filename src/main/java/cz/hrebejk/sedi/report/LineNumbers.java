@@ -25,13 +25,14 @@ final class LineNumbers {
     private static final char UNNUMBERED = '\u0001';
     /** No marker: the line has no column for it, like the members of an added type. */
     static final char NONE = 0;
-    private static final Pattern NUMBERED = Pattern.compile("^(\\s*)" + MARK + "(\\d+)" + MARK + "([-+~ ]?)" + MARK);
+    private static final Pattern NUMBERED = Pattern.compile("^([^" + MARK + UNNUMBERED + "]*)" + MARK + "(\\d+)" + MARK + "([-+~ ]?)" + MARK);
 
     private LineNumbers() {
     }
 
     /**
-     * The line of the report numbered by a line of the source, without a marker. Spaces may be put in front of it.
+     * The line of the report numbered by a line of the source, without a marker. An indentation, spaces or the
+     * lines of a tree, may be put in front of it.
      *
      * @param line the line of the source, {@code 0} if not known
      */
@@ -40,7 +41,8 @@ final class LineNumbers {
     }
 
     /**
-     * The line of the report numbered by a line of the source, with its marker. Spaces may be put in front of it.
+     * The line of the report numbered by a line of the source, with its marker. An indentation, spaces or the
+     * lines of a tree, may be put in front of it.
      *
      * @param line   the line of the source, {@code 0} if not known
      * @param marker {@code +} for added code, {@code -} for removed, {@code ~} for changed, a space for unchanged
@@ -92,29 +94,20 @@ final class LineNumbers {
                 String indent = m.group(1);
                 String marker = m.group(3);
                 String text = line.substring(m.end());
+                // The marker is in a column of its own, left of the indentation, blank for a line without one.
+                String code = sign(marker, theme) + " " + indent + styled(marker, text, theme);
                 if (!show) {
-                    result.add(indent + marked(marker, text, theme));
+                    result.add(code);
                     continue;
                 }
                 String number = m.group(2).equals("0") ? "" : m.group(2);
                 String column = theme.style(role(marker), " ".repeat(width - number.length()) + number) + " ";
-                result.add(marker.isEmpty() ? column + indent + text
-                        : column + sign(marker, theme) + " " + indent + styled(marker, text, theme));
+                result.add(column + code);
             } else {
                 result.add(show && !line.isEmpty() ? " ".repeat(width + 1) + line : line);
             }
         }
         return result;
-    }
-
-    /** The line with its marker in front, as it is shown without the numbers. */
-    private static String marked(String marker, String text, Theme theme) {
-        return switch (marker) {
-            case "+" -> theme.changed(true, "+ " + text);
-            case "-" -> theme.changed(false, "- " + text);
-            case "" -> text;
-            default -> sign(marker, theme) + " " + text;
-        };
     }
 
     private static String sign(String marker, Theme theme) {

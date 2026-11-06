@@ -21,6 +21,9 @@ import java.util.List;
  */
 public class ReporterTest extends TestCase {
 
+    /** The line between the files. */
+    private static final String SEPARATOR = "\u2500".repeat(Reporter.DEFAULT_WIDTH);
+
     /**
      * Tests that member and nested type changes are reported and that body changes are not.
      */
@@ -35,9 +38,9 @@ public class ReporterTest extends TestCase {
                 assertEquals(1, analyses.size());
                 assertEquals(List.of(
                                 "    public class Foo",
-                                "    ~ ~~int~~ __long__ a",
-                                "      static class In",
-                                "      + void y()"),
+                                "~   ├── ~~int~~ __long__ a",
+                                "    └── static class In",
+                                "+       └── void y()"),
                         new Reporter(Theme.PLAIN).report(analyses.get(0)));
             }
         }
@@ -65,14 +68,14 @@ public class ReporterTest extends TestCase {
                 assertEquals(List.of(
                                 "# API changes",
                                 "",
-                                "   ~ Foo.java",
+                                "~ Foo.java",
                                 " 1     public class Foo",
-                                " 3 ~     ~~int~~ __long__ a",
-                                " 3 -     ~~void gone()~~"),
+                                " 3 ~   ├── ~~int~~ __long__ a",
+                                " 3 -   ├── ~~void gone()~~"),
                         lines.subList(0, 6));
-                assertTrue(lines.toString(), lines.contains(" 5 +       @Deprecated"));
-                assertTrue(lines.toString(), lines.contains(" 6 +       void y()"));
-                assertTrue(lines.toString(), lines.contains("11 +     void ten()"));
+                assertTrue(lines.toString(), lines.contains(" 5 +   │   │   @Deprecated"));
+                assertTrue(lines.toString(), lines.contains(" 6 +   │   └── void y()"));
+                assertTrue(lines.toString(), lines.contains("11 +   └── void ten()"));
             }
         }
     }
@@ -110,13 +113,13 @@ public class ReporterTest extends TestCase {
                 List<String> lines = new Reporter(Theme.PLAIN, options).report(analyzer.analyzeChanges());
                 assertEquals(lines.toString(), List.of(
                                 " 1     public class Foo",
-                                " 4 ~     * Hello __big__ world.",
-                                " 4 -     * ~~Second line.~~",
-                                " 5 +     *",
-                                " 6 +     * Third.",
-                                " 8       public void m()",
-                                " 9 +     * Added.",
-                                "10 +     public void n()"),
+                                " 4 ~   │   * Hello __big__ world.",
+                                " 4 -   │   * ~~Second line.~~",
+                                " 5 +   │   *",
+                                " 6 +   │   * Third.",
+                                " 8     ├── public void m()",
+                                " 9 +   │   * Added.",
+                                "10 +   └── public void n()"),
                         lines.subList(1, lines.size()));
             }
         }
@@ -179,8 +182,8 @@ public class ReporterTest extends TestCase {
                 assertEquals(1, analyses.size());
                 assertEquals(org.eclipse.jgit.diff.DiffEntry.ChangeType.RENAME, analyses.get(0).diff().getChangeType());
                 assertEquals(List.of(
-                                "  ~ public class ~~Foo~~ __Bar__",
-                                "    ~ ~~int~~ __long__ a"),
+                                "~   public class ~~Foo~~ __Bar__",
+                                "~   └── ~~int~~ __long__ a"),
                         new Reporter(Theme.PLAIN).report(analyses.get(0)));
             }
         }
@@ -196,7 +199,8 @@ public class ReporterTest extends TestCase {
             helper.writeFile("Foo.java", "public class Foo {\n}\nclass New { }\n");
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                assertEquals(List.of("  - ~~class Gone~~", "  + class New"),
+                assertEquals(List.of("-   ~~class Gone~~",
+                                          "+   class New"),
                         new Reporter(Theme.PLAIN).report(analyzer.analyzeChanges().files().get(0)));
             }
         }
@@ -240,8 +244,13 @@ public class ReporterTest extends TestCase {
             helper.writeFile("B.java", "public class B { public long b; }\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
                 Reporter byType = new Reporter(Theme.PLAIN, ReportOptions.DEFAULT);
-                assertEquals(List.of("~ A.java", "    public class A", "    ~ public ~~int~~ __long__ a", "",
-                                "~ B.java", "    public class B", "    ~ public ~~int~~ __long__ b"),
+                assertEquals(List.of("~ A.java",
+                                          "    public class A",
+                                          "~   └── public ~~int~~ __long__ a",
+                                          SEPARATOR,
+                                          "~ B.java",
+                                          "    public class B",
+                                          "~   └── public ~~int~~ __long__ b"),
                         byType.report(analyzer.analyzeChanges()));
                 Reporter byCategory = byType.withGrouping(ReportOptions.Grouping.BY_CATEGORY);
                 assertEquals(ReportOptions.Grouping.BY_CATEGORY, byCategory.grouping());
@@ -270,20 +279,34 @@ public class ReporterTest extends TestCase {
      * Tests that the default options show the API changes only.
      */
     public void testDefaultShowsOnlyApi() throws Exception {
-        assertEquals(List.of("~ Foo.java", "    public class Foo", "    ~ public ~~int~~ __long__ a", "    ~ private ~~int~~ __long__ b"), report(ReportOptions.DEFAULT));
+        assertEquals(List.of("~ Foo.java",
+                                  "    public class Foo",
+                                  "~   ├── public ~~int~~ __long__ a",
+                                  "~   └── private ~~int~~ __long__ b"), report(ReportOptions.DEFAULT));
     }
 
     /**
      * Tests that a deeper level adds the less important changes, tagged, and the imports last.
      */
     public void testLevelsByType() throws Exception {
-        assertEquals(List.of("~ Foo.java", "    public class Foo",
-                        "    ~ public ~~int~~ __long__ a", "    ~ private ~~int~~ __long__ b",
-                        "      public int m() { [impl]", "          ~ return ~~1~~ __2__;", "      }", "      int o() [cosmetic]",
-                        "  - ~~import java.util.List~~ [import]", "  + import java.util.Set [import]"),
+        assertEquals(List.of("~ Foo.java",
+                                  "    public class Foo",
+                                  "~   ├── public ~~int~~ __long__ a",
+                                  "~   ├── private ~~int~~ __long__ b",
+                                  "    ├── public int m() { [impl]",
+                                  "~   │         return ~~1~~ __2__;",
+                                  "    │   }",
+                                  "    └── int o() [cosmetic]",
+                                  "-   ~~import java.util.List~~ [import]",
+                                  "+   import java.util.Set [import]"),
                 report(new ReportOptions(ChangeLevel.IMPORTS, ReportOptions.Grouping.BY_TYPE)));
-        assertEquals(List.of("~ Foo.java", "    public class Foo",
-                        "    ~ public ~~int~~ __long__ a", "    ~ private ~~int~~ __long__ b", "      public int m() { [impl]", "          ~ return ~~1~~ __2__;", "      }"),
+        assertEquals(List.of("~ Foo.java",
+                                  "    public class Foo",
+                                  "~   ├── public ~~int~~ __long__ a",
+                                  "~   ├── private ~~int~~ __long__ b",
+                                  "    └── public int m() { [impl]",
+                                  "~             return ~~1~~ __2__;",
+                                  "        }"),
                 report(new ReportOptions(ChangeLevel.IMPLEMENTATION, ReportOptions.Grouping.BY_TYPE)));
     }
 
@@ -292,17 +315,32 @@ public class ReporterTest extends TestCase {
      */
     public void testGroupByCategory() throws Exception {
         assertEquals(List.of(
-                        "# API changes", "",
-                        "~ Foo.java", "    public class Foo", "    ~ public ~~int~~ __long__ a", "    ~ private ~~int~~ __long__ b",
+                        "# API changes",
                         "",
-                        "# Implementation changes", "",
-                        "~ Foo.java", "    public class Foo", "      public int m() {", "          ~ return ~~1~~ __2__;", "      }",
+                        "~ Foo.java",
+                        "    public class Foo",
+                        "~   ├── public ~~int~~ __long__ a",
+                        "~   └── private ~~int~~ __long__ b",
                         "",
-                        "# Cosmetic changes", "",
-                        "~ Foo.java", "    public class Foo", "      int o()",
+                        "# Implementation changes",
                         "",
-                        "# Imports", "",
-                        "~ Foo.java", "  - ~~import java.util.List~~", "  + import java.util.Set"),
+                        "~ Foo.java",
+                        "    public class Foo",
+                        "    └── public int m() {",
+                        "~             return ~~1~~ __2__;",
+                        "        }",
+                        "",
+                        "# Cosmetic changes",
+                        "",
+                        "~ Foo.java",
+                        "    public class Foo",
+                        "    └── int o()",
+                        "",
+                        "# Imports",
+                        "",
+                        "~ Foo.java",
+                        "-   ~~import java.util.List~~",
+                        "+   import java.util.Set"),
                 report(new ReportOptions(ChangeLevel.IMPORTS, ReportOptions.Grouping.BY_CATEGORY)));
     }
 
@@ -321,7 +359,10 @@ public class ReporterTest extends TestCase {
                         ReportOptions.Grouping.BY_CATEGORY)).report(analyzer.analyzeChanges());
                 List<String> impl = lines.subList(lines.indexOf("# Implementation changes"), lines.size()).stream()
                         .filter(l -> l.contains("(") && !l.contains("return")).map(String::strip).toList();
-                assertEquals(List.of("int a() {", "int f() {", "int m() {", "int z( long x ) {"), impl);
+                assertEquals(List.of("├── int a() {",
+                                          "│   └── int f() {",
+                                          "├── int m() {",
+                                          "└── int z( long x ) {"), impl);
             }
         }
     }
@@ -346,14 +387,14 @@ public class ReporterTest extends TestCase {
                                 "",
                                 "~ Bar.java",
                                 "    public class Bar",
-                                "    + public Bar()",
-                                "",
+                                "+   └── public Bar()",
+                                SEPARATOR,
                                 "~ Foo.java",
                                 "    public class Foo",
-                                "    ~ public ~~int~~ __long__ a",
-                                "",
+                                "~   └── public ~~int~~ __long__ a",
+                                SEPARATOR,
                                 "~ R.java",
-                                "  ~ public record R( int a, __long c__, String b )"),
+                                "~   public record R( int a, __long c__, String b )"),
                         new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY))
                                 .report(analyzer.analyzeChanges()).stream().map(String::stripTrailing).toList());
             }
@@ -376,21 +417,22 @@ public class ReporterTest extends TestCase {
                     + "  private int hidden;\n  public void m() { }\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
                 assertEquals(List.of(
-                                "# API changes", "",
+                                "# API changes",
+                                "",
                                 "+ New.java b",
-                                "  public class New",
-                                "    public New( int i )",
-                                "    public void m()",
-                                "",
+                                "    public class New",
+                                "    ├── public New( int i )",
+                                "    └── public void m()",
+                                SEPARATOR,
                                 "- ~~Old.java~~ ~~a~~",
-                                "",
+                                SEPARATOR,
                                 "~ Foo.java a",
                                 "    public class Foo",
-                                "    ~ ~~int~~ __long__ a",
-                                "    - ~~class Gone~~",
-                                "    + public static class Fresh",
-                                "        public int x",
-                                "        protected void m()"),
+                                "~   ├── ~~int~~ __long__ a",
+                                "-   ├── ~~class Gone~~",
+                                "+   └── public static class Fresh",
+                                "        ├── public int x",
+                                "        └── protected void m()"),
                         new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY))
                                 .report(analyzer.analyzeChanges()));
             }
@@ -411,9 +453,9 @@ public class ReporterTest extends TestCase {
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
                 assertEquals(List.of(
                                 "~ Foo.java p",
-                                "  ~ public __abstract__ class Foo<T, __U__> extends ~~Object~~ __Number__ implements Runnable, __Cloneable__",
-                                "    ~ static __final__ class In implements __Runnable__",
-                                "      + public void run()"),
+                                "~   public __abstract__ class Foo<T, __U__> extends ~~Object~~ __Number__ implements Runnable, __Cloneable__",
+                                "~   └── static __final__ class In implements __Runnable__",
+                                "+       └── public void run()"),
                         new Reporter(Theme.PLAIN).report(analyzer.analyzeChanges()));
             }
         }
@@ -432,15 +474,15 @@ public class ReporterTest extends TestCase {
                     + "  int b;\n  @SuppressWarnings(\"y\") int c;\n  @Deprecated int d;\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
                 assertEquals(List.of(
-                                "  ~ __@SuppressWarnings(\"all\")__",
+                                "~   __@SuppressWarnings(\"all\")__",
                                 "    public class Foo",
-                                "    ~ ~~int~~ __long__ a",
-                                "    ~ ~~@Deprecated~~",
-                                "      int b",
-                                "    ~ ~~@SuppressWarnings(\"x\")~~ __@SuppressWarnings(\"y\")__",
-                                "      int c",
-                                "    + @Deprecated",
-                                "    + int d"),
+                                "~   ├── ~~int~~ __long__ a",
+                                "~   │   ~~@Deprecated~~",
+                                "    ├── int b",
+                                "~   │   ~~@SuppressWarnings(\"x\")~~ __@SuppressWarnings(\"y\")__",
+                                "    ├── int c",
+                                "+   │   @Deprecated",
+                                "+   └── int d"),
                         new Reporter(Theme.PLAIN).report(analyzer.analyzeChanges().files().get(0)));
             }
         }
@@ -455,10 +497,15 @@ public class ReporterTest extends TestCase {
             helper.writeFile("A.java", "class A {\n  long a;\n}\n");
             helper.writeFile("B.java", "class B {\n  long b;\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                assertEquals(List.of("# API changes", "",
-                                "~ A.java", "    class A", "    ~ ~~int~~ __long__ a",
-                                "",
-                                "~ B.java", "    class B", "    ~ ~~int~~ __long__ b"),
+                assertEquals(List.of("# API changes",
+                                          "",
+                                          "~ A.java",
+                                          "    class A",
+                                          "~   └── ~~int~~ __long__ a",
+                                          SEPARATOR,
+                                          "~ B.java",
+                                          "    class B",
+                                          "~   └── ~~int~~ __long__ b"),
                         new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY))
                                 .report(analyzer.analyzeChanges()));
             }
@@ -481,16 +528,17 @@ public class ReporterTest extends TestCase {
                     + "  public int y = 8;\n  public void run() { }\n}\n");
             helper.writeFile("Fresh.java", "interface Fresh { void m(); void n(); }\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                assertEquals(List.of("# API changes", "",
-                                "+ Fresh.java",
-                                "  interface Fresh",
-                                "    void m()",
-                                "    void n()",
-                                "",
-                                "- ~~Gone.java~~",
-                                "",
-                                "\u2192 ~~Foo.java~~ __Bar.java__ ~~a~~ __b__",
-                                "  ~ public class ~~Foo~~ __Bar__"),
+                assertEquals(List.of("# API changes",
+                                          "",
+                                          "+ Fresh.java",
+                                          "    interface Fresh",
+                                          "    ├── void m()",
+                                          "    └── void n()",
+                                          SEPARATOR,
+                                          "- ~~Gone.java~~",
+                                          SEPARATOR,
+                                          "→ ~~Foo.java~~ __Bar.java__ ~~a~~ __b__",
+                                          "~   public class ~~Foo~~ __Bar__"),
                         new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY))
                                 .report(analyzer.analyzeChanges()));
             }
@@ -630,13 +678,13 @@ public class ReporterTest extends TestCase {
         String changed = DOC_OLD.replace("first", "last").replace("@throws IOException never", "@since 2.0");
         assertEquals(List.of(
                         "    public class Foo",
-                        "    ~ * Returns the ~~first~~ __last__ element.",
-                        "      *",
-                        "      …",
-                        "      * @return the element",
-                        "    - * ~~@throws IOException never~~",
-                        "    + * @since 2.0",
-                        "      public String get( int i )"),
+                        "~   │   * Returns the ~~first~~ __last__ element.",
+                        "    │   *",
+                        "    │   …",
+                        "    │   * @return the element",
+                        "-   │   * ~~@throws IOException never~~",
+                        "+   │   * @since 2.0",
+                        "    └── public String get( int i )"),
                 javadocReport(DOC_OLD, changed, 1));
     }
 
@@ -655,13 +703,13 @@ public class ReporterTest extends TestCase {
                 .replace("@throws IOException never", "@since 2.0");
         assertEquals(List.of(
                         "    public class Foo",
-                        "      …",
-                        "      * @param i the index",
-                        "    - * ~~@return the element~~",
-                        "    - * ~~@throws IOException never~~",
-                        "    + * Nothing here matches",
-                        "    + * @since 2.0",
-                        "      public String get( int i )"),
+                        "    │   …",
+                        "    │   * @param i the index",
+                        "-   │   * ~~@return the element~~",
+                        "-   │   * ~~@throws IOException never~~",
+                        "+   │   * Nothing here matches",
+                        "+   │   * @since 2.0",
+                        "    └── public String get( int i )"),
                 javadocReport(DOC_OLD, changed, 1));
     }
 
@@ -670,19 +718,19 @@ public class ReporterTest extends TestCase {
         String changed = DOC_OLD.replace("   * @return the element\n", "");
         assertEquals(List.of(
                         "    public class Foo",
-                        "      …",
-                        "    - * ~~@return the element~~",
-                        "      …",
-                        "      public String get( int i )"),
+                        "    │   …",
+                        "-   │   * ~~@return the element~~",
+                        "    │   …",
+                        "    └── public String get( int i )"),
                 javadocReport(DOC_OLD, changed, 0));
         assertEquals(List.of(
                         "    public class Foo",
-                        "      * Returns the first element.",
-                        "      *",
-                        "      * @param i the index",
-                        "    - * ~~@return the element~~",
-                        "      * @throws IOException never",
-                        "      public String get( int i )"),
+                        "    │   * Returns the first element.",
+                        "    │   *",
+                        "    │   * @param i the index",
+                        "-   │   * ~~@return the element~~",
+                        "    │   * @throws IOException never",
+                        "    └── public String get( int i )"),
                 javadocReport(DOC_OLD, changed, ReportOptions.WHOLE_JAVADOC));
         assertEquals(List.of(), javadocReport(DOC_OLD, changed, ReportOptions.NO_JAVADOC));
     }
@@ -693,10 +741,10 @@ public class ReporterTest extends TestCase {
         String added = "public class Foo {\n  /**\n   * Fresh.\n   * Really.\n   */\n  public void fresh() { }\n}\n";
         assertEquals(List.of(
                         "    public class Foo",
-                        "    - ~~public int gone( String s )~~",
-                        "    + * Fresh.",
-                        "    + * Really.",
-                        "    + public void fresh()"),
+                        "-   ├── ~~public int gone( String s )~~",
+                        "+   │   * Fresh.",
+                        "+   │   * Really.",
+                        "+   └── public void fresh()"),
                 javadocReport(old, added, 1));
     }
 
@@ -706,10 +754,10 @@ public class ReporterTest extends TestCase {
         String added = "public class Foo {\n  /**\n   * Fresh.\n   * Really.\n   */\n  public void fresh() { }\n}\n";
         assertEquals(List.of(
                         "    public class Foo",
-                        "    - * ~~Gone.~~",
-                        "    + * Fresh.",
-                        "    + * Really.",
-                        "    ~ public void ~~gone~~ __fresh__()"),
+                        "-   │   * ~~Gone.~~",
+                        "+   │   * Fresh.",
+                        "+   │   * Really.",
+                        "~   └── public void ~~gone~~ __fresh__()"),
                 javadocReport(old, added, 1));
     }
 
@@ -718,8 +766,8 @@ public class ReporterTest extends TestCase {
         String old = "public class Foo {\n  /** Inner one. */\n  public static class In { }\n}\n";
         assertEquals(List.of(
                         "    public class Foo",
-                        "    ~ * Inner ~~one.~~ __two.__",
-                        "      public static class In"),
+                        "~   │   * Inner ~~one.~~ __two.__",
+                        "    └── public static class In"),
                 javadocReport(old, old.replace("one.", "two."), 1));
     }
 
@@ -745,7 +793,7 @@ public class ReporterTest extends TestCase {
         List<String> some = implReport(DOC_OLD, changed, 1);
         assertTrue(some.toString(), some.stream().anyMatch(l -> l.contains("* Returns the first element.")));
         assertFalse(some.toString(), some.stream().anyMatch(l -> l.contains("@param")));
-        assertTrue(some.toString(), some.stream().anyMatch(l -> l.strip().equals("…")));
+        assertTrue(some.toString(), some.stream().anyMatch(l -> l.replace("│", "").strip().equals("…")));
         List<String> whole = implReport(DOC_OLD, changed, ReportOptions.WHOLE_JAVADOC);
         assertTrue(whole.toString(), whole.stream().anyMatch(l -> l.contains("* @throws IOException never")));
     }

@@ -1,20 +1,20 @@
 ## API
 
-* [ ] Removed inner types are not in type and are not printed striked through and do not have signature  
+* [ ] Some smart algorithm for detecting renames om innertypes
+* [x] Removed inner types are not in type and are not printed striked through and do not have signature  
 * [x] Ignore type renames
-* [ ] Incorrect printing of diffs in API changes
+* [x] Incorrect printing of diffs in API changes
 * [x] Javadoc - word diff
 
 ## IMPL
 
+* [ ] Refactoring detection (At least extract method)
+* [ ] Ignore all renames, but not signature changes
+* [ ] Expansion/collapse of context using -> <-
 * [x] Generic rendering of diffs usng text or tokens
 * [x] Cosmetic change qualified name to simple name
-* [ ] Ignore all renames, but not signature changes
 * [x] When something is added e.g. parameter it should be underscored (maybe works)
-* [ ] Expansion/collapse of context using -> <-
-* [ ] Refactoring detection (At least extract method)
-* [x] ~ List<String> l
-  new LinkedList ArrayList<>() should be ~ List<String> l = new LinkedList ArrayList<>()
+* [x] ~ List<String> new LinkedList ArrayList<>() should be ~ List<String> l = new LinkedList ArrayList<>()
 
 ## IMPORTS
 

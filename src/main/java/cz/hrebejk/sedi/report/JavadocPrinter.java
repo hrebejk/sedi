@@ -102,7 +102,7 @@ final class JavadocPrinter {
             return lines;
         }
         List<String> out = new ArrayList<>(lines.subList(0, context));
-        out.add("  " + theme.style(Theme.Role.NOTE, "…"));
+        out.add(LineNumbers.number(0, ' ', theme.style(Theme.Role.NOTE, "…")));
         return out;
     }
 
@@ -214,7 +214,7 @@ final class JavadocPrinter {
         for (int i = 0; i < lines.size(); i++) {
             if (lines.get(i).changed() || nearChange(lines, i)) {
                 if (skipped) {
-                    out.add("  " + theme.style(Theme.Role.NOTE, "…"));
+                    out.add(LineNumbers.number(0, ' ', theme.style(Theme.Role.NOTE, "…")));
                     skipped = false;
                 }
                 out.add(lines.get(i).text());
@@ -223,7 +223,7 @@ final class JavadocPrinter {
             }
         }
         if (skipped) {
-            out.add("  " + theme.style(Theme.Role.NOTE, "…"));
+            out.add(LineNumbers.number(0, ' ', theme.style(Theme.Role.NOTE, "…")));
         }
         return out;
     }

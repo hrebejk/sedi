@@ -30,7 +30,8 @@ public class AstPrinterTest extends TestCase {
                 ReportOptions options = new ReportOptions(ChangeLevel.IMPLEMENTATION,
                         ReportOptions.Grouping.BY_TYPE, bodyContext);
                 List<String> lines = new Reporter(Theme.PLAIN, options).report(analyzer.analyzeChanges());
-                return lines.subList(2, lines.size()).stream().map(l -> l.substring(4)).toList();
+                // Keeps the column of the markers, leaves out the indentation of the top level type.
+                return lines.subList(2, lines.size()).stream().map(l -> l.substring(0, 2) + l.substring(4)).toList();
             }
         }
     }
@@ -53,7 +54,9 @@ public class AstPrinterTest extends TestCase {
                 return new Reporter(Theme.defaults(), options).report(analyzer.analyzeChanges()).stream()
                         .map(l -> l.replace("\u001b[4m", "_").replace("\u001b[24m", "_")
                                 .replace("\u001b[9m", "~").replace("\u001b[29m", "~")
-                                .replaceAll("\u001b\\[[0-9;]*m", "").strip())
+                                .replaceAll("\u001b\\[[0-9;]*m", "")
+                                // The marker of the line, then its code without the lines of the tree.
+                                .replaceAll("[\u2502\u251c\u2514\u2500]", "").replaceAll("^([-+~])\\s+", "$1 ").strip())
                         .filter(l -> l.startsWith("~ return")).toList();
             }
         }
@@ -126,13 +129,13 @@ public class AstPrinterTest extends TestCase {
     /** A name or literal found by chance in a much bigger new expression is not kept: the whole is replaced. */
     public void testLeafInBigExpressionIsReplaced() throws Exception {
         assertEquals(List.of(
-                        "  int m( java.util.List<String> list ) { [impl]",
-                        "      - return 1;",
-                        "      + return list.size() > 1 ? list.size() * 2 : 0;",
-                        "  }",
-                        "  int n( int x ) { [impl]",
-                        "      ~ return __Math.max(__x__, 0)__;",
-                        "  }"),
+                        "  ├── int m( java.util.List<String> list ) { [impl]",
+                        "- │         return 1;",
+                        "+ │         return list.size() > 1 ? list.size() * 2 : 0;",
+                        "  │   }",
+                        "  └── int n( int x ) { [impl]",
+                        "~           return __Math.max(__x__, 0)__;",
+                        "      }"),
                 body(method("int m(java.util.List<String> list)", "return 1;") + "\n" + method("int n(int x)", "return x;"),
                         method("int m(java.util.List<String> list)", "return list.size() > 1 ? list.size() * 2 : 0;")
                                 + "\n" + method("int n(int x)", "return Math.max(x, 0);")));
@@ -141,21 +144,21 @@ public class AstPrinterTest extends TestCase {
     /** A statement added around old statements shows only its own lines as added, the old statements as they are. */
     public void testWrappedStatements() throws Exception {
         assertEquals(List.of(
-                        "  void a( boolean c ) { [impl]",
-                        "        f(1);",
-                        "      + if (c) {",
-                        "          f(2);",
-                        "      + }",
-                        "        f(3);",
-                        "  }",
-                        "  void b() { [impl]",
-                        "      + try {",
-                        "          f(1);",
-                        "          f(2);",
-                        "      + } catch (RuntimeException e) {",
-                        "      +   f(9);",
-                        "      + }",
-                        "  }"),
+                        "  ├── void a( boolean c ) { [impl]",
+                        "  │         f(1);",
+                        "+ │         if (c) {",
+                        "  │           f(2);",
+                        "+ │         }",
+                        "  │         f(3);",
+                        "  │   }",
+                        "  └── void b() { [impl]",
+                        "+           try {",
+                        "              f(1);",
+                        "              f(2);",
+                        "+           } catch (RuntimeException e) {",
+                        "+             f(9);",
+                        "+           }",
+                        "      }"),
                 body("void f(int x) { }\n" + method("void a(boolean c)", "f(1);", "f(2);", "f(3);") + "\n"
                                 + method("void b()", "f(1);", "f(2);"),
                         "void f(int x) { }\n" + method("void a(boolean c)", "f(1);", "if (c) {", "  f(2);", "}", "f(3);")
@@ -166,9 +169,9 @@ public class AstPrinterTest extends TestCase {
     /** Statements on one line are shown as that line, the added ones marked in it. */
     public void testWrappedStatementsOnOneLine() throws Exception {
         assertEquals(List.of(
-                        "  void c( int n ) { [impl]",
-                        "      ~ __for (int i = 0; i < n; i++)__ f(1);",
-                        "  }"),
+                        "  └── void c( int n ) { [impl]",
+                        "~           __for (int i = 0; i < n; i++)__ f(1);",
+                        "      }"),
                 body("void f(int x) { }\nvoid c(int n) { f(1); }",
                         "void f(int x) { }\nvoid c(int n) { for (int i = 0; i < n; i++) f(1); }"));
     }
@@ -176,14 +179,14 @@ public class AstPrinterTest extends TestCase {
     /** A removed statement around statements kept shows only its own lines as removed, the kept ones as they are now. */
     public void testUnwrappedStatements() throws Exception {
         assertEquals(List.of(
-                        "  void a( boolean c, int q ) { [impl]",
-                        "        f(0);",
-                        "      - if (c) {",
-                        "        f(q);",
-                        "        f(2);",
-                        "      - }",
-                        "        f(3);",
-                        "  }"),
+                        "  └── void a( boolean c, int q ) { [impl]",
+                        "            f(0);",
+                        "-           if (c) {",
+                        "            f(q);",
+                        "            f(2);",
+                        "-           }",
+                        "            f(3);",
+                        "      }"),
                 body("void f(int x) { }\n" + method("void a(boolean c, int p)", "f(0);", "if (c) {", "  f(p);", "  f(2);", "}", "f(3);"),
                         "void f(int x) { }\n" + method("void a(boolean c, int q)", "f(0);", "f(q);", "f(2);", "f(3);")));
     }
@@ -191,36 +194,36 @@ public class AstPrinterTest extends TestCase {
     /** Code removed around an expression is struck through alone, the rest of the line in one run. */
     public void testUnwrappedExpressionStrikesOnlyTheRemovedCode() throws Exception {
         assertEquals(List.of(
-                        "  boolean neg( boolean q ) { [impl]",
-                        "      ~ return ~~!~~q;",
-                        "  }",
-                        "  int paren( int a, int b ) { [impl]",
-                        "      ~ return ~~(~~a + b~~) * 2~~;",
-                        "  }"),
+                        "  ├── boolean neg( boolean q ) { [impl]",
+                        "~ │         return ~~!~~q;",
+                        "  │   }",
+                        "  └── int paren( int a, int b ) { [impl]",
+                        "~           return ~~(~~a + b~~) * 2~~;",
+                        "      }"),
                 body("boolean neg(boolean p) { return !p; }\nint paren(int a, int b) { return (a + b) * 2; }",
                         "boolean neg(boolean q) { return q; }\nint paren(int a, int b) { return a + b; }"));
     }
 
     public void testEditedLiteral() throws Exception {
         assertEquals(List.of(
-                        "  int m() { [impl]",
-                        "        int a = 0;",
-                        "      ~ return ~~1~~ __2__;",
-                        "  }"),
+                        "  └── int m() { [impl]",
+                        "            int a = 0;",
+                        "~           return ~~1~~ __2__;",
+                        "      }"),
                 body(method("int m()", "int a = 0;", "return 1;"), method("int m()", "int a = 0;", "return 2;")));
     }
 
     /** The lines of the statements holding a change are shown, the skipped lines as a remark with their number. */
     public void testChangeInIfKeepsContext() throws Exception {
         assertEquals(List.of(
-                        "  int m( int x ) { [impl]",
-                        "        … (1 line)",
-                        "        if (x > 0) {",
-                        "        … (1 line)",
-                        "      ~   return ~~1~~ __2__;",
-                        "        }",
-                        "        … (1 line)",
-                        "  }"),
+                        "  └── int m( int x ) { [impl]",
+                        "            … (1 line)",
+                        "            if (x > 0) {",
+                        "            … (1 line)",
+                        "~             return ~~1~~ __2__;",
+                        "            }",
+                        "            … (1 line)",
+                        "      }"),
                 body(method("int m(int x)", "foo();", "if (x > 0) {", "  bar();", "  return 1;", "}", "return 0;")
                                 + "\nvoid foo() {}\nvoid bar() {}",
                         method("int m(int x)", "foo();", "if (x > 0) {", "  bar();", "  return 2;", "}", "return 0;")
@@ -229,11 +232,11 @@ public class AstPrinterTest extends TestCase {
 
     public void testAddedAndRemovedStatements() throws Exception {
         assertEquals(List.of(
-                        "  void m() { [impl]",
-                        "        c();",
-                        "      - a();",
-                        "      + b(\"done\");",
-                        "  }"),
+                        "  └── void m() { [impl]",
+                        "            c();",
+                        "-           a();",
+                        "+           b(\"done\");",
+                        "      }"),
                 body(method("void m()", "c();", "a();") + "\nvoid a() {}\nvoid b(String s) {}\nvoid c() {}",
                         method("void m()", "c();", "b(\"done\");") + "\nvoid a() {}\nvoid b(String s) {}\nvoid c() {}"));
     }
@@ -241,9 +244,9 @@ public class AstPrinterTest extends TestCase {
     /** Statements on one line are shown as that line, the removed ones struck through, the added marked. */
     public void testAddedAndRemovedStatementsOnOneLine() throws Exception {
         assertEquals(List.of(
-                        "  void m() { [impl]",
-                        "      ~ c(); ~~a();~~ __b(\"done\");__",
-                        "  }"),
+                        "  └── void m() { [impl]",
+                        "~           c(); ~~a();~~ __b(\"done\");__",
+                        "      }"),
                 body("void m() { c(); a(); }\nvoid a() {}\nvoid b(String s) {}\nvoid c() {}",
                         "void m() { c(); b(\"done\"); }\nvoid a() {}\nvoid b(String s) {}\nvoid c() {}"));
     }
@@ -251,11 +254,11 @@ public class AstPrinterTest extends TestCase {
     /** A statement on several lines is shown on its lines, with the comments, the tabs expanded. */
     public void testMultiLineStatement() throws Exception {
         assertEquals(List.of(
-                        "  int m( int a, int b ) { [impl]",
-                        "        return Math.max( // the bigger",
-                        "                a,",
-                        "      ~         ~~b~~ __3__);",
-                        "  }"),
+                        "  └── int m( int a, int b ) { [impl]",
+                        "            return Math.max( // the bigger",
+                        "                    a,",
+                        "~                   ~~b~~ __3__);",
+                        "      }"),
                 body("int m(int a, int b) { return Math.max(a, b); }",
                         "int m(int a, int b) {\n\treturn Math.max( // the bigger\n\t\t\ta,\n\t\t\t3);\n}"));
     }
@@ -263,19 +266,19 @@ public class AstPrinterTest extends TestCase {
     /** A member select whose qualifier and name both changed is struck through as a whole. */
     public void testOwnChangeOfNode() throws Exception {
         assertEquals(List.of(
-                        "  int m( String s ) { [impl]",
-                        "      ~ return ~~s.length~~ __t.hashCode__();",
-                        "  }"),
+                        "  └── int m( String s ) { [impl]",
+                        "~           return ~~s.length~~ __t.hashCode__();",
+                        "      }"),
                 body("String t;\nint m(String s) { return s.length(); }", "String t;\nint m(String s) { return t.hashCode(); }"));
     }
 
     /** An added argument is marked inline with its comma, the other lines of the call shown unchanged. */
     public void testAddedArgument() throws Exception {
         assertEquals(List.of(
-                        "  void m() { [impl]",
-                        "      ~ f(1__, 2__, 3,",
-                        "                4, 5);",
-                        "  }"),
+                        "  └── void m() { [impl]",
+                        "~           f(1__, 2__, 3,",
+                        "                    4, 5);",
+                        "      }"),
                 body(method("void m()", "f(1, 3,", "        4, 5);") + "\nvoid f(int... a) {}",
                         method("void m()", "f(1, 2, 3,", "        4, 5);") + "\nvoid f(int... a) {}"));
     }
@@ -283,9 +286,9 @@ public class AstPrinterTest extends TestCase {
     /** An argument added in front of one which differs only in the name of a local is the one marked. */
     public void testAddedArgumentLikeAnother() throws Exception {
         assertEquals(List.of(
-                        "  void m( String a, String b ) { [impl]",
-                        "      ~ f(1__, a.length()__, b.length());",
-                        "  }"),
+                        "  └── void m( String a, String b ) { [impl]",
+                        "~           f(1__, a.length()__, b.length());",
+                        "      }"),
                 body(method("void m(String a, String b)", "f(1, b.length());") + "\nvoid f(int... x) {}",
                         method("void m(String a, String b)", "f(1, a.length(), b.length());") + "\nvoid f(int... x) {}"));
     }
@@ -293,10 +296,10 @@ public class AstPrinterTest extends TestCase {
     /** A removed argument is struck through with its comma. */
     public void testRemovedArguments() throws Exception {
         assertEquals(List.of(
-                        "  void m() { [impl]",
-                        "      ~ f(1, ~~2,~~ 3);",
-                        "      ~ f(1, 2~~, 3~~);",
-                        "  }"),
+                        "  └── void m() { [impl]",
+                        "~           f(1, ~~2,~~ 3);",
+                        "~           f(1, 2~~, 3~~);",
+                        "      }"),
                 body(method("void m()", "f(1, 2, 3);", "f(1, 2, 3);") + "\nvoid f(int... a) {}",
                         method("void m()", "f(1, 3);", "f(1, 2);") + "\nvoid f(int... a) {}"));
     }
@@ -304,9 +307,9 @@ public class AstPrinterTest extends TestCase {
     /** Arguments replaced by expressions of another kind are struck through in place. */
     public void testArgumentsOfOtherKind() throws Exception {
         assertEquals(List.of(
-                        "  boolean m() { [impl]",
-                        "      ~ return new java.util.ArrayList<String>(~~5~~ __Integer.MAX_VALUE__).add(~~\"a\"~~ __String.valueOf(1)__);",
-                        "  }"),
+                        "  └── boolean m() { [impl]",
+                        "~           return new java.util.ArrayList<String>(~~5~~ __Integer.MAX_VALUE__).add(~~\"a\"~~ __String.valueOf(1)__);",
+                        "      }"),
                 body("boolean m() { return new java.util.ArrayList<String>(5).add(\"a\"); }",
                         "boolean m() { return new java.util.ArrayList<String>(Integer.MAX_VALUE).add(String.valueOf(1)); }"));
     }
@@ -314,10 +317,10 @@ public class AstPrinterTest extends TestCase {
     /** A big expression replaced by one of another kind replaces the statement. */
     public void testBigExpressionOfOtherKind() throws Exception {
         assertEquals(List.of(
-                        "  int m( boolean b, int x ) { [impl]",
-                        "      - return b ? x + 1 : x - 1;",
-                        "      + return Math.abs(x);",
-                        "  }"),
+                        "  └── int m( boolean b, int x ) { [impl]",
+                        "-           return b ? x + 1 : x - 1;",
+                        "+           return Math.abs(x);",
+                        "      }"),
                 body(method("int m(boolean b, int x)", "return b ? x + 1 : x - 1;"),
                         method("int m(boolean b, int x)", "return Math.abs(x);")));
     }
@@ -330,22 +333,22 @@ public class AstPrinterTest extends TestCase {
     /** Context of lambda blocks, else branches and switch cases; a changed comment is not shown. */
     public void testNestedContexts() throws Exception {
         assertEquals(List.of(
-                        "  void m( java.util.List<String> l, int x ) { [impl]",
-                        "        l.forEach(s -> {",
-                        "      ~   ~~System.out~~ __System.err__.println(s);",
-                        "        });",
-                        "        if (x > 0) {",
-                        "        … (1 line)",
-                        "        } else {",
-                        "        … (1 line)",
-                        "      +   f(6);",
-                        "        }",
-                        "        switch (x) {",
-                        "        … (1 line)",
-                        "      ~   default: f(~~4~~ __7__);",
-                        "        }",
-                        "        … (1 line)",
-                        "  }"),
+                        "  └── void m( java.util.List<String> l, int x ) { [impl]",
+                        "            l.forEach(s -> {",
+                        "~             ~~System.out~~ __System.err__.println(s);",
+                        "            });",
+                        "            if (x > 0) {",
+                        "            … (1 line)",
+                        "            } else {",
+                        "            … (1 line)",
+                        "+             f(6);",
+                        "            }",
+                        "            switch (x) {",
+                        "            … (1 line)",
+                        "~             default: f(~~4~~ __7__);",
+                        "            }",
+                        "            … (1 line)",
+                        "      }"),
                 body(
                 "void m(java.util.List<String> l, int x) {\n  l.forEach(s -> {\n    System.out.println(s);\n  });\n  if (x > 0) {\n    f(1);\n  } else {\n    f(2);\n  }\n  switch (x) {\n    case 1: f(3); break;\n    default: f(4);\n  }\n  f(5); // five\n}\nvoid f(int i) {}",
                 "void m(java.util.List<String> l, int x) {\n  l.forEach(s -> {\n    System.err.println(s);\n  });\n  if (x > 0) {\n    f(1);\n  } else {\n    f(2);\n    f(6);\n  }\n  switch (x) {\n    case 1: f(3); break;\n    default: f(7);\n  }\n  f(5); // FIVE\n}\nvoid f(int i) {}", 0));
@@ -353,13 +356,13 @@ public class AstPrinterTest extends TestCase {
 
     public void testBigAddedBlockIsShown() throws Exception {
         assertEquals(List.of(
-                        "  void m( int[] xs ) { [impl]",
-                        "      + for (int x : xs) {",
-                        "      +   f(x);",
-                        "      +   f(x + 1);",
-                        "      +   f(x + 2);",
-                        "      + }",
-                        "  }"),
+                        "  └── void m( int[] xs ) { [impl]",
+                        "+           for (int x : xs) {",
+                        "+             f(x);",
+                        "+             f(x + 1);",
+                        "+             f(x + 2);",
+                        "+           }",
+                        "      }"),
                 body("void m(int[] xs) { }\nvoid f(int x) {}",
                         method("void m(int[] xs)", "for (int x : xs) {", "  f(x);", "  f(x + 1);", "  f(x + 2);", "}")
                                 + "\nvoid f(int x) {}"));
@@ -371,40 +374,40 @@ public class AstPrinterTest extends TestCase {
      */
     public void testMarkerOfDeclaration() throws Exception {
         assertEquals(List.of(
-                        "~ int f = ~~1~~ __2__ [impl]",
-                        "  int m() { [impl]",
-                        "      ~ return ~~1~~ __2__;",
-                        "  }"),
+                        "~ ├── int f = ~~1~~ __2__ [impl]",
+                        "  └── int m() { [impl]",
+                        "~           return ~~1~~ __2__;",
+                        "      }"),
                 body("int f = 1;\nint m() { return 1; }", "int f = 2;\nint m() { return 2; }"));
     }
 
     public void testConstructorSkipsImplicitSuper() throws Exception {
         assertEquals(List.of(
-                        "  Foo() { [impl]",
-                        "      ~ x = ~~1~~ __2__;",
-                        "  }"),
+                        "  └── Foo() { [impl]",
+                        "~           x = ~~1~~ __2__;",
+                        "      }"),
                 body("int x;\nFoo() { x = 1; }", "int x;\nFoo() { x = 2; }"));
     }
 
     public void testRewrittenBodyIsShown() throws Exception {
         assertEquals(List.of(
-                        "  void m() { [impl]",
-                        "      - a(1);",
-                        "      - a(2);",
-                        "      + int x = 1;",
-                        "      + b(\"x\" + x);",
-                        "  }"),
+                        "  └── void m() { [impl]",
+                        "-           a(1);",
+                        "-           a(2);",
+                        "+           int x = 1;",
+                        "+           b(\"x\" + x);",
+                        "      }"),
                 body("void m() {\n  a(1);\n  a(2);\n}\nvoid a(int i) {}\nvoid b(String s) {}",
                         method("void m()", "int x = 1;", "b(\"x\" + x);") + "\nvoid a(int i) {}\nvoid b(String s) {}"));
     }
 
     public void testUnrelatedStatementIsReplaced() throws Exception {
         assertEquals(List.of(
-                        "  int m( String s ) { [impl]",
-                        "      - int n = s.length();",
-                        "      + StringBuilder n = new StringBuilder();",
-                        "      ~ return n__.length()__;",
-                        "  }"),
+                        "  └── int m( String s ) { [impl]",
+                        "-           int n = s.length();",
+                        "+           StringBuilder n = new StringBuilder();",
+                        "~           return n__.length()__;",
+                        "      }"),
                 body(method("int m(String s)", "int n = s.length();", "return n;"),
                         method("int m(String s)", "StringBuilder n = new StringBuilder();", "return n.length();")));
     }
@@ -416,26 +419,26 @@ public class AstPrinterTest extends TestCase {
         String now = method("void m()", "a(1);", "a(2);", "a(3);", "a(4);", "a(5);", "a(60);", "a(7);", "a(8);")
                 + "\nvoid a(int i) {}";
         assertEquals(List.of(
-                        "  void m() { [impl]",
-                        "        … (5 lines)",
-                        "      ~ a(~~6~~ __60__);",
-                        "        a(7);",
-                        "        a(8);",
-                        "  }"),
+                        "  └── void m() { [impl]",
+                        "            … (5 lines)",
+                        "~           a(~~6~~ __60__);",
+                        "            a(7);",
+                        "            a(8);",
+                        "      }"),
                 body(old, now));
     }
 
     /** A negative context shows the whole body. */
     public void testWholeBody() throws Exception {
         assertEquals(List.of(
-                        "  void m() { [impl]",
-                        "        a(1);",
-                        "        a(2);",
-                        "        a(3);",
-                        "        a(4);",
-                        "        a(5);",
-                        "      ~ a(~~6~~ __60__);",
-                        "  }"),
+                        "  └── void m() { [impl]",
+                        "            a(1);",
+                        "            a(2);",
+                        "            a(3);",
+                        "            a(4);",
+                        "            a(5);",
+                        "~           a(~~6~~ __60__);",
+                        "      }"),
                 body(method("void m()", "a(1);", "a(2);", "a(3);", "a(4);", "a(5);", "a(6);") + "\nvoid a(int i) {}",
                         method("void m()", "a(1);", "a(2);", "a(3);", "a(4);", "a(5);", "a(60);") + "\nvoid a(int i) {}",
                         ReportOptions.WHOLE_BODY));
@@ -453,15 +456,15 @@ public class AstPrinterTest extends TestCase {
                 ReportOptions options = new ReportOptions(ChangeLevel.IMPLEMENTATION, ReportOptions.Grouping.BY_TYPE,
                         ReportOptions.DEFAULT_BODY_CONTEXT, ReportOptions.NO_JAVADOC, true);
                 assertEquals(List.of(
-                        "  ~ Foo.java",
+                        "~ Foo.java",
                         "1     class Foo",
-                        "3       void m() { [impl]",
-                        "4             a(1);",
-                        "4 -           a(2);",
-                        "5             a(3);",
-                        "6 +           a(4);",
-                        "7 +           a(5);",
-                        "8       }"), new Reporter(Theme.PLAIN, options).report(analyzer.analyzeChanges()));
+                        "3     └── void m() { [impl]",
+                        "4               a(1);",
+                        "4 -             a(2);",
+                        "5               a(3);",
+                        "6 +             a(4);",
+                        "7 +             a(5);",
+                        "8         }"), new Reporter(Theme.PLAIN, options).report(analyzer.analyzeChanges()));
             }
         }
     }

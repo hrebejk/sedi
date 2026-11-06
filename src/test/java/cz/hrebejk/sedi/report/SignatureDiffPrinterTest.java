@@ -148,7 +148,8 @@ public class SignatureDiffPrinterTest extends TestCase {
                 "declaration", "strike");
         List<String> lines = pairs("", "int fresh;").stream().map(p -> unnumbered(new SignatureDiffPrinter(theme).format(p, "T"), theme))
                 .toList();
-        assertEquals(List.of("\u001b[48;2;1;2;3m\u001b[4m+\u001b[24m \u001b[1mint\u001b[22m \u001b[9mfresh\u001b[29m"
+        // The marker is in its column, out of the style of the added code.
+        assertEquals(List.of("\u001b[4m+\u001b[24m \u001b[48;2;1;2;3m\u001b[1mint\u001b[22m \u001b[9mfresh\u001b[29m"
                 + "\u001b[49m"), lines);
     }
 }

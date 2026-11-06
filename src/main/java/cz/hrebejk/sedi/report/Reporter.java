@@ -41,6 +41,10 @@ public final class Reporter {
     private final JavadocPrinter javadoc;
     private final ReportOptions options;
     private final Theme theme;
+    private final int width;
+
+    /** The width of the lines between the files when it is not set, see {@link #withWidth}. */
+    public static final int DEFAULT_WIDTH = 80;
 
     /**
      * Creates a reporter showing the API changes grouped by type.
@@ -58,6 +62,11 @@ public final class Reporter {
      * @param options what to show and how to group it
      */
     public Reporter(Theme theme, ReportOptions options) {
+        this(theme, options, DEFAULT_WIDTH);
+    }
+
+    private Reporter(Theme theme, ReportOptions options, int width) {
+        this.width = width;
         this.printer = new SignatureDiffPrinter(theme);
         this.javadoc = new JavadocPrinter(theme, options.javadocContext());
         this.options = options;
@@ -71,7 +80,7 @@ public final class Reporter {
      * @return the new reporter
      */
     public Reporter withJavadocContext(int javadocContext) {
-        return new Reporter(theme, options.withJavadocContext(javadocContext));
+        return new Reporter(theme, options.withJavadocContext(javadocContext), width);
     }
 
     /**
@@ -81,7 +90,17 @@ public final class Reporter {
      * @return the new reporter
      */
     public Reporter withGrouping(ReportOptions.Grouping grouping) {
-        return new Reporter(theme, options.withGrouping(grouping));
+        return new Reporter(theme, options.withGrouping(grouping), width);
+    }
+
+    /**
+     * Returns a reporter like this one drawing the lines between the files as wide as given.
+     *
+     * @param width the width, usually that of the terminal
+     * @return the new reporter
+     */
+    public Reporter withWidth(int width) {
+        return new Reporter(theme, options, width);
     }
 
     /**
@@ -109,7 +128,7 @@ public final class Reporter {
             ReportOptions withoutImports = options.maxLevel() == ChangeLevel.IMPORTS
                     ? options.withMaxLevel(ChangeLevel.COSMETIC)
                     : options;
-            if (!new Reporter(theme, withoutImports).byType(files).isEmpty()) {
+            if (!new Reporter(theme, withoutImports, width).byType(files).isEmpty()) {
                 return numbered(byType(files));
             }
             // Nothing to show by type: say so for every shown level, as the grouping by category does.
@@ -131,7 +150,7 @@ public final class Reporter {
         return LineNumbers.render(lines, options.lineNumbers(), theme);
     }
 
-    /** The changes of every file, the files separated by an empty line as in the sections of the levels. */
+    /** The changes of every file, the files separated by a line as in the sections of the levels. */
     private List<String> byType(List<FileAnalysis> files) {
         List<String> result = new ArrayList<>();
         for (FileAnalysis file : files) {
@@ -139,7 +158,7 @@ public final class Reporter {
             addFile(part, file, fileLines(file), file.isStructural());
             if (!part.isEmpty()) {
                 if (!result.isEmpty()) {
-                    result.add("");
+                    result.add(separator());
                 }
                 result.addAll(part);
             }
@@ -202,7 +221,7 @@ public final class Reporter {
             addFile(part, file, fileLines, false);
             if (!part.isEmpty()) {
                 if (!lines.isEmpty()) {
-                    lines.add("");
+                    lines.add(separator());
                 }
                 lines.addAll(part);
             }
@@ -215,7 +234,7 @@ public final class Reporter {
 
     /**
      * The API changes: the public API of the added types, the names of the removed types, then the changes of the
-     * types present in both versions. The parts are separated by an empty line.
+     * types present in both versions. The parts are separated by a line.
      */
     private List<String> apiLines(List<FileAnalysis> files) {
         List<TypeRef> added = new ArrayList<>();
@@ -227,12 +246,10 @@ public final class Reporter {
         for (FileAnalysis file : files) {
             if (file.diff().getChangeType() == DiffEntry.ChangeType.ADD) {
                 List<String> list = new ArrayList<>();
-                list.add(title(file));
+                list.add(fileTitle(file));
                 for (TypeRef type : added) {
                     if (type.file() == file) {
-                        javadoc.plain(type.element()).forEach(l -> list.add("  " + l));
-                        printer.declaration(type.element(), "").forEach(l -> list.add("  " + l));
-                        addedMembers(type.element(), 2, list);
+                        addTree(list, "  ", addedNode(type.element(), ""));
                     }
                 }
                 parts.add(list);
@@ -241,15 +258,15 @@ public final class Reporter {
         for (TypeRef type : added) {
             if (type.file().diff().getChangeType() != DiffEntry.ChangeType.ADD) {
                 List<String> lines = new ArrayList<>();
-                addDeclaration(lines, 0, new ElementPair(null, type.element(), Set.of()), "", location(type, true));
-                addedMembers(type.element(), 2, lines);
+                addTree(lines, "", declarationNode(new ElementPair(null, type.element(), Set.of()), "", null,
+                        location(type, true), List.of(), addedMembers(type.element())));
                 parts.add(lines);
             }
         }
         List<String> names = new ArrayList<>();
         for (FileAnalysis file : files) {
             if (file.diff().getChangeType() == DiffEntry.ChangeType.DELETE) {
-                names.add(title(file));
+                names.add(fileTitle(file));
             }
         }
         for (TypeRef type : removed) {
@@ -279,7 +296,7 @@ public final class Reporter {
         for (List<String> part : parts) {
             if (!part.isEmpty()) {
                 if (!result.isEmpty()) {
-                    result.add("");
+                    result.add(separator());
                 }
                 result.addAll(part);
             }
@@ -323,51 +340,84 @@ public final class Reporter {
         return where.isEmpty() ? "" : " " + theme.style(Theme.Role.PACKAGE, where);
     }
 
-    /** Adds the members of an added type which are a part of the public API, and the types nested in it,
+    /** The members of an added type which are a part of the public API, and the types nested in it,
      * without the {@code +} as all of them are new. */
-    private void addedMembers(ElementInfo type, int depth, List<String> lines) {
+    private List<Node> addedMembers(ElementInfo type) {
         boolean inInterface = Visibility.isInterface(type);
+        List<Node> nodes = new ArrayList<>();
         for (ElementInfo member : type.getChildren()) {
             if (Visibility.isExposed(member, true, inInterface)) {
-                javadoc.plain(member).forEach(l -> lines.add("  ".repeat(depth) + l));
-                printer.declaration(member, type.getName()).forEach(l -> lines.add("  ".repeat(depth) + l));
-                if (member.getNodeType() == ElementInfo.NodeType.TYPE) {
-                    addedMembers(member, depth + 1, lines);
-                }
+                nodes.add(addedNode(member, type.getName()));
             }
         }
+        return nodes;
+    }
+
+    /** An element of an added type with its javadoc and, if it is a type, its members. */
+    private Node addedNode(ElementInfo element, String typeName) {
+        List<String> above = new ArrayList<>(javadoc.plain(element));
+        above.addAll(printer.declaration(element, typeName));
+        String head = above.remove(above.size() - 1);
+        return new Node(above, head, List.of(),
+                element.getNodeType() == ElementInfo.NodeType.TYPE ? addedMembers(element) : List.of());
+    }
+
+    /**
+     * An element shown in a tree: the lines above its signature, like the javadoc and the annotations, the line of
+     * the signature, the lines below it, like the body, and the elements in it.
+     */
+    private record Node(List<String> above, String head, List<String> below, List<Node> children) { }
+
+    /** Adds a top level element, its signature indented by {@code indent}, with the tree of the elements in it. */
+    private void addTree(List<String> lines, String indent, Node node) {
+        node.above().forEach(l -> lines.add(indent + l));
+        lines.add(indent + node.head());
+        node.below().forEach(l -> lines.add(indent + l));
+        addBranches(lines, indent, node.children());
+    }
+
+    /** Adds the elements below their parent, each on a branch starting under the signature of the parent. */
+    private void addBranches(List<String> lines, String prefix, List<Node> nodes) {
+        for (int i = 0; i < nodes.size(); i++) {
+            Node node = nodes.get(i);
+            boolean last = i == nodes.size() - 1;
+            String through = prefix + branch("\u2502   ");
+            String below = prefix + branch(last ? "    " : "\u2502   ");
+            node.above().forEach(l -> lines.add(through + l));
+            lines.add(prefix + branch(last ? "\u2514\u2500\u2500 " : "\u251c\u2500\u2500 ") + node.head());
+            node.below().forEach(l -> lines.add(below + l));
+            addBranches(lines, below, node.children());
+        }
+    }
+
+    /** A piece of the lines of a tree in their style. */
+    private String branch(String text) {
+        return text.isBlank() ? text : theme.style(Theme.Role.TREE, text);
     }
 
     /** Adds the lines of a file below its title. */
     private void addFile(List<String> result, FileAnalysis file, List<String> lines, boolean keepEmpty) {
         if (!lines.isEmpty() || keepEmpty) {
-            result.add(title(file));
+            result.add(fileTitle(file));
             result.addAll(lines);
         }
     }
 
     /**
-     * Adds the javadoc, the annotations and the signature of an element, each on a line of its own and indented by levels.
+     * The node of an element: its javadoc and annotations above its signature.
      *
-     * @param suffix the text added to the line of the signature
-     */
-    private void addDeclaration(List<String> lines, int depth, ElementPair pair, String typeName, String suffix) {
-        addDeclaration(lines, depth, pair, typeName, null, suffix);
-    }
-
-    /**
      * @param initializer the numbered line of the initializer shown after the signature on its line, such as
      *                    {@code = value}, {@code null} for none
+     * @param suffix      the text added to the line of the signature
      */
-    private void addDeclaration(List<String> lines, int depth, ElementPair pair, String typeName, String initializer,
-                                String suffix) {
-        String indent = "  ".repeat(depth);
-        javadocLines(pair).forEach(l -> lines.add(indent + l));
-        printer.annotations(pair).forEach(l -> lines.add(indent + l));
+    private Node declarationNode(ElementPair pair, String typeName, String initializer, String suffix,
+                                 List<String> below, List<Node> children) {
+        List<String> above = new ArrayList<>(javadocLines(pair));
+        above.addAll(printer.annotations(pair));
         boolean changedLine = initializer != null && LineNumbers.marker(initializer) != ' '
                 && LineNumbers.marker(initializer) != LineNumbers.NONE;
         String rest = initializer == null ? "" : " = " + LineNumbers.text(initializer).strip();
-        lines.add(indent + printer.format(pair, typeName, changedLine) + rest + suffix);
+        return new Node(above, printer.format(pair, typeName, changedLine) + rest + suffix, below, children);
     }
 
     /**
@@ -401,26 +451,28 @@ public final class Reporter {
         boolean hideJavadoc = options.javadocContext() == ReportOptions.NO_JAVADOC;
         BiPredicate<ApiChanges, MemberChange> filter = (container, c) -> accepted.test(container, c)
                 && !(hideJavadoc && c.isJavadocOnly());
-        List<String> lines = new ArrayList<>();
+        List<Node> nodes = new ArrayList<>();
         if (file.oldPrimary() != null) {
-            List<String> members = new ArrayList<>();
-            render(file.primaryChanges(), 2, members, filter, tagged, diff);
+            List<Node> members = render(file.primaryChanges(), filter, tagged, diff);
             if (header || !members.isEmpty()) {
-                addType(lines, 1, file.primaryChanges().type(), "", diff);
-                lines.addAll(members);
+                nodes.add(typeNode(file.primaryChanges().type(), "", diff, members));
             }
         }
-        render(file.rootChanges(), 1, lines, filter, tagged, diff);
+        nodes.addAll(render(file.rootChanges(), filter, tagged, diff));
+        List<String> lines = new ArrayList<>();
+        nodes.forEach(node -> addTree(lines, "  ", node));
         return lines;
     }
 
-    /** Adds the javadoc, the annotations and the signature of a changed type, the changes of them shown if {@code diff}. */
-    private void addType(List<String> lines, int depth, ElementPair type, String outerName, boolean diff) {
+    /**
+     * The node of a changed type with its javadoc, annotations and signature, the changes of them shown if
+     * {@code diff}, and the changes in it.
+     */
+    private Node typeNode(ElementPair type, String outerName, boolean diff, List<Node> children) {
         ElementPair shown = diff ? type : new ElementPair(type.newElement(), type.newElement(), Set.of());
-        String indent = "  ".repeat(depth);
-        javadocLines(shown).forEach(l -> lines.add(indent + l));
-        printer.annotations(shown).forEach(l -> lines.add(indent + l));
-        lines.add(indent + printer.formatType(shown, outerName));
+        List<String> above = new ArrayList<>(javadocLines(shown));
+        above.addAll(printer.annotations(shown));
+        return new Node(above, printer.formatType(shown, outerName), List.of(), children);
     }
 
     /**
@@ -502,6 +554,16 @@ public final class Reporter {
         return root.isEmpty() ? pkg : pkg + " " + root;
     }
 
+    /** The heading of a file in the report, starting at the left edge, left of the column of the line numbers. */
+    private String fileTitle(FileAnalysis file) {
+        return LineNumbers.outside(title(file));
+    }
+
+    /** The thin line separating the files, see {@link #withWidth}. */
+    private String separator() {
+        return LineNumbers.outside(theme.style(Theme.Role.TREE, "\u2500".repeat(width)));
+    }
+
     /**
      * Returns the heading of a changed file: the name of the file, a space, its package and its source root,
      * e.g. {@code Foo.java com.acme src/main/java}. Added files are prefixed with {@code +}, deleted ones with {@code -}, and
@@ -542,28 +604,28 @@ public final class Reporter {
     /**
      * Renders the changes of a container accepted by the filter and the types nested in it which have some, each
      * of them with its signature, in the order of the new source (a removed one at its line in the old source).
-     *
-     * @param depth the indentation of the lines, in levels
      */
-    private void render(ApiChanges changes, int depth, List<String> lines, BiPredicate<ApiChanges, MemberChange> filter,
-                        boolean tagged, boolean diff) {
+    private List<Node> render(ApiChanges changes, BiPredicate<ApiChanges, MemberChange> filter, boolean tagged,
+                              boolean diff) {
         List<Object> items = new ArrayList<>(changes.changes());
         items.addAll(changes.nested());
         items.sort(Comparator.comparingLong(Reporter::newLine));
+        List<Node> nodes = new ArrayList<>();
         for (Object item : items) {
             if (item instanceof MemberChange change) {
-                renderMember(changes, change, depth, lines, filter, tagged);
+                if (filter.test(changes, change) && !isSignatureOfNested(changes, change)) {
+                    nodes.add(memberNode(changes, change, tagged));
+                }
             } else if (item instanceof ApiChanges type) {
-                List<String> nested = new ArrayList<>();
-                render(type, depth + 1, nested, filter, tagged, diff);
+                List<Node> nested = render(type, filter, tagged, diff);
                 boolean own = changes.changes().stream()
                         .anyMatch(c -> filter.test(changes, c) && isSignatureOf(c, type));
                 if (own || !nested.isEmpty()) {
-                    addType(lines, depth, type.type(), changes.typeName(), diff);
-                    lines.addAll(nested);
+                    nodes.add(typeNode(type.type(), changes.typeName(), diff, nested));
                 }
             }
         }
+        return nodes;
     }
 
     /** The line of a member change or of a nested type in the new source, in the old one if it was removed. */
@@ -572,11 +634,8 @@ public final class Reporter {
         return pair.isRemoved() ? pair.oldElement().getLine() : pair.newElement().getLine();
     }
 
-    private void renderMember(ApiChanges changes, MemberChange change, int depth, List<String> lines,
-                              BiPredicate<ApiChanges, MemberChange> filter, boolean tagged) {
-        if (!filter.test(changes, change) || isSignatureOfNested(changes, change)) {
-            return;
-        }
+    /** The node of a changed member with the changes of its body below it. */
+    private Node memberNode(ApiChanges changes, MemberChange change, boolean tagged) {
         ElementPair pair = change.level() == ChangeLevel.API ? change.pair()
                 : new ElementPair(change.pair().newElement(), change.pair().newElement(), Set.of());
         List<String> body = change.body() == null ? List.of() : body(change.body());
@@ -584,18 +643,18 @@ public final class Reporter {
         boolean inline = body.size() == 1 && !(change.body().newRoot() instanceof BlockTree);
         // A shown block is enclosed in its braces, as in the source.
         boolean block = !body.isEmpty() && change.body().newRoot() instanceof BlockTree;
-        addDeclaration(lines, depth, pair, changes.typeName(), inline ? body.get(0) : null,
-                (block ? " {" : "") + (tagged ? tag(change) : ""));
-        if (change.level() == ChangeLevel.API && change.pair().isAdded()
-                && change.pair().newElement().getNodeType() == ElementInfo.NodeType.TYPE) {
-            addedMembers(change.pair().newElement(), depth + 2, lines);
-        }
+        List<String> below = new ArrayList<>();
         if (!inline) {
-            body.forEach(l -> lines.add("  ".repeat(depth + 3) + l));
+            body.forEach(l -> below.add("      " + l));
         }
         if (block) {
-            lines.add("  ".repeat(depth) + LineNumbers.number(closingLine(change.body()), ' ', theme.code("}")));
+            below.add(LineNumbers.number(closingLine(change.body()), ' ', theme.code("}")));
         }
+        List<Node> children = change.level() == ChangeLevel.API && change.pair().isAdded()
+                && change.pair().newElement().getNodeType() == ElementInfo.NodeType.TYPE
+                ? addedMembers(change.pair().newElement()) : List.of();
+        return declarationNode(pair, changes.typeName(), inline ? body.get(0) : null,
+                (block ? " {" : "") + (tagged ? tag(change) : ""), below, children);
     }
 
     /** The line of the closing brace of a body which is a block. */
