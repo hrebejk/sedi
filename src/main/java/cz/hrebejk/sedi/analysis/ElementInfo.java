@@ -8,9 +8,12 @@
  */
 package cz.hrebejk.sedi.analysis;
 
+import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.Tree;
+import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 
+import javax.lang.model.element.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -82,6 +85,14 @@ public class ElementInfo {
             this.facetDigests.put(facet, newDigest());
         }
         this.children = new ArrayList<>();
+    }
+
+    /**
+     * Whether the field is the one javac makes of a component of the record. A record cannot declare instance fields
+     * of its own.
+     */
+    public static boolean isRecordComponent(ClassTree owner, VariableTree field) {
+        return owner.getKind() == Tree.Kind.RECORD && !field.getModifiers().getFlags().contains(Modifier.STATIC);
     }
 
     static MessageDigest newDigest() {

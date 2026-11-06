@@ -46,9 +46,9 @@ public class ElementInfoTest extends TestCase {
             assertNotNull(typeNode.getOriginalTree());
             assertFalse(typeNode.getMessageDigests().isEmpty());
 
-            // Default constructor (<init>), field (username), method (getUsername) = 3 members
-            assertEquals(3, typeNode.getChildren().size());
-            ElementInfo fieldNode = typeNode.getChildren().get(1);
+            // Field (username), method (getUsername) = 2 members; the default constructor is not in the source
+            assertEquals(2, typeNode.getChildren().size());
+            ElementInfo fieldNode = typeNode.getChildren().get(0);
             assertEquals("username", fieldNode.getName());
             assertEquals(ElementInfo.NodeType.FIELD, fieldNode.getNodeType());
             assertNotNull(fieldNode.getOriginalTree());

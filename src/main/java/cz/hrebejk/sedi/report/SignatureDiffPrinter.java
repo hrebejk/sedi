@@ -258,9 +258,15 @@ public final class SignatureDiffPrinter {
                 }
                 (c.getKind() == Tree.Kind.INTERFACE ? extended : implemented)
                         .addAll(pieces(info, c.getImplementsClause(), theme));
+                List<Piece[]> components = new ArrayList<>();
+                for (Tree member : c.getMembers()) {
+                    if (member instanceof VariableTree v && ElementInfo.isRecordComponent(c, v)) {
+                        components.add(new Piece[]{Piece.type(info, v, theme), Piece.text(v.getName().toString())});
+                    }
+                }
                 return new Parts(info.getNodeType(), annotations(info, c.getModifiers(), theme), modifiers(info, c.getModifiers()),
                         pieces(info, c.getTypeParameters(), theme), Piece.text(keyword(c.getKind())),
-                        c.getSimpleName().toString(), List.of(), List.of(), extended, implemented,
+                        c.getSimpleName().toString(), components, List.of(), extended, implemented,
                         pieces(info, c.getPermitsClause(), theme));
             }
             return new Parts(info.getNodeType(), List.of(), List.of(), List.of(), Piece.NONE, info.getName(), List.of(),
@@ -308,7 +314,8 @@ public final class SignatureDiffPrinter {
             }
             default -> {
                 out.add(slot(o.type(), n.type()));
-                out.add(declared(o.name(), n.name()) + typeParams(o, n));
+                out.add(declared(o.name(), n.name()) + typeParams(o, n)
+                        + (n.type().text().equals("record") ? "(" + params(o, n) + ")" : ""));
                 addClause(out, "extends", o.extendsList(), n.extendsList());
                 addClause(out, "implements", o.implementsList(), n.implementsList());
                 addClause(out, "permits", o.permitsList(), n.permitsList());

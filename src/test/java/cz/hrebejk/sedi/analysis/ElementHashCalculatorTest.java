@@ -221,8 +221,8 @@ public class ElementHashCalculatorTest extends TestCase {
             assertEquals("Bodies and initializers must not affect SIGNATURE", base.getSha(sig), bodyChange.getSha(sig));
             assertFalse("FULL must see body changes", base.getSha(ChangeCategory.FULL).equals(bodyChange.getSha(ChangeCategory.FULL)));
             assertFalse("Return type change must change SIGNATURE of the CU member",
-                    base.getChildren().get(0).getChildren().get(2).getSha(sig)
-                            .equals(sigChange.getChildren().get(0).getChildren().get(2).getSha(sig)));
+                    base.getChildren().get(0).getChildren().get(1).getSha(sig)
+                            .equals(sigChange.getChildren().get(0).getChildren().get(1).getSha(sig)));
             // Members do not cascade into the type
             assertEquals(base.getChildren().get(0).getSha(sig), sigChange.getChildren().get(0).getSha(sig));
         }
@@ -399,6 +399,17 @@ public class ElementHashCalculatorTest extends TestCase {
     private String typeSha(AstLoader loader, GitTestHelper helper, String members) throws Exception {
         Path file = helper.writeFile("T.java", "abstract class T {\n  " + members + "\n}\n");
         return calc(loader, file).getChildren().get(0).getSha(ChangeCategory.FULL);
+    }
+
+    /** The fields javac makes of the components of a record are not members of their own; static fields are. */
+    public void testRecordComponentFieldsLeftOut() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            Path file = helper.writeFile("R.java", "record R(int a, String b) {\n  static int C = 1;\n}\n");
+            ElementInfo type = calc(new AstLoader(), file).getChildren().get(0);
+            List<String> fields = type.getChildren().stream()
+                    .filter(c -> c.getNodeType() == ElementInfo.NodeType.FIELD).map(ElementInfo::getName).toList();
+            assertEquals(List.of("C"), fields);
+        }
     }
 
     private String methodSha(AstLoader loader, GitTestHelper helper, String body) throws Exception {

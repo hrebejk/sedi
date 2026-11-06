@@ -340,6 +340,10 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
 
     @Override
     public Void visitMethod(MethodTree node, HashContext context) {
+        if (trees.getSourcePositions().getEndPosition(unit, node) < 0) {
+            // A constructor javac added, as the default one or the canonical one of a record: not in the source.
+            return null;
+        }
         localScopeStack.push(new HashSet<>());
         try {
             for (var param : node.getParameters()) {
@@ -396,7 +400,17 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
     @Override
     public Void visitVariable(VariableTree node, HashContext context) {
         TreePath path = getCurrentPath();
-        if (path != null && path.getParentPath() != null && path.getParentPath().getLeaf() instanceof ClassTree) {
+        if (path != null && path.getParentPath() != null && path.getParentPath().getLeaf() instanceof ClassTree owner) {
+            if (ElementInfo.isRecordComponent(owner, node)) {
+                // Not a member of its own: the component is a part of the signature of the record.
+                ElementInfo record = context.getCurrentNode();
+                String name = node.getName().toString();
+                updateAttribute(record, "COMPONENT:" + name,
+                        "COMPONENT:" + oldName(trees.getElement(path), name));
+                scan(node.getModifiers(), context);
+                scan(node.getType(), context);
+                return null;
+            }
             // Field
             ElementInfo parentNode = context.getCurrentNode();
             String varName = node.getName() != null ? node.getName().toString() : "";

@@ -327,6 +327,40 @@ public class ReporterTest extends TestCase {
     }
 
     /**
+     * Tests that the members javac adds are not reported: the default constructor and the fields of the components
+     * of a record. A constructor written in place of the default one is reported as added, and a change of the
+     * components shows in the header of the record.
+     */
+    public void testGeneratedMembersLeftOut() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", "public class Foo {\n  public int a;\n}\n");
+            helper.writeFile("Bar.java", "public class Bar {\n  public int a;\n}\n");
+            helper.writeFile("R.java", "public record R(int a, String b) { }\n");
+            helper.commit("init");
+            helper.writeFile("Foo.java", "public class Foo {\n  public long a;\n}\n");
+            helper.writeFile("Bar.java", "public class Bar {\n  public int a;\n  public Bar() { }\n}\n");
+            helper.writeFile("R.java", "public record R(int a, long c, String b) { }\n");
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                assertEquals(List.of(
+                                "# API changes",
+                                "",
+                                "~ Bar.java",
+                                "    public class Bar",
+                                "    + public Bar()",
+                                "",
+                                "~ Foo.java",
+                                "    public class Foo",
+                                "    ~ public ~~int~~ __long__ a",
+                                "",
+                                "~ R.java",
+                                "  ~ public record R( int a, __long c__, String b )"),
+                        new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY))
+                                .report(analyzer.analyzeChanges()).stream().map(String::stripTrailing).toList());
+            }
+        }
+    }
+
+    /**
      * Tests that the API changes list the public API of the new types, the names of the deleted ones and then
      * the changes of the other types, a removed nested type among the members of its outer type.
      */
@@ -355,7 +389,6 @@ public class ReporterTest extends TestCase {
                                 "    ~ ~~int~~ __long__ a",
                                 "    - ~~class Gone~~",
                                 "    + public static class Fresh",
-                                "        public Fresh()",
                                 "        public int x",
                                 "        protected void m()"),
                         new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY))
