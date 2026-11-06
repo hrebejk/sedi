@@ -541,8 +541,7 @@ public final class Reporter {
 
     /**
      * Renders the changes of a container accepted by the filter and the types nested in it which have some, each
-     * of them with its signature. Without {@code diff}, which shows only the new versions, they are in the order of
-     * the new source; with it, the members are followed by the nested types.
+     * of them with its signature, in the order of the new source (a removed one at its line in the old source).
      *
      * @param depth the indentation of the lines, in levels
      */
@@ -550,9 +549,7 @@ public final class Reporter {
                         boolean tagged, boolean diff) {
         List<Object> items = new ArrayList<>(changes.changes());
         items.addAll(changes.nested());
-        if (!diff) {
-            items.sort(Comparator.comparingLong(Reporter::newLine));
-        }
+        items.sort(Comparator.comparingLong(Reporter::newLine));
         for (Object item : items) {
             if (item instanceof MemberChange change) {
                 renderMember(changes, change, depth, lines, filter, tagged);

@@ -110,13 +110,13 @@ public class ReporterTest extends TestCase {
                 List<String> lines = new Reporter(Theme.PLAIN, options).report(analyzer.analyzeChanges());
                 assertEquals(lines.toString(), List.of(
                                 " 1     public class Foo",
-                                " 9 +     * Added.",
-                                "10 +     public void n()",
                                 " 4 ~     * Hello __big__ world.",
                                 " 4 -     * ~~Second line.~~",
                                 " 5 +     *",
                                 " 6 +     * Third.",
-                                " 8       public void m()"),
+                                " 8       public void m()",
+                                " 9 +     * Added.",
+                                "10 +     public void n()"),
                         lines.subList(1, lines.size()));
             }
         }
