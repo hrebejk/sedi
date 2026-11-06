@@ -582,8 +582,10 @@ public final class Reporter {
         List<String> body = change.body() == null ? List.of() : body(change.body());
         // The initializer of a field continues the line of its declaration.
         boolean inline = body.size() == 1 && !(change.body().newRoot() instanceof BlockTree);
+        // A shown block is enclosed in its braces, as in the source.
+        boolean block = !body.isEmpty() && change.body().newRoot() instanceof BlockTree;
         addDeclaration(lines, depth, pair, changes.typeName(), inline ? body.get(0) : null,
-                tagged ? tag(change) : "");
+                (block ? " {" : "") + (tagged ? tag(change) : ""));
         if (change.level() == ChangeLevel.API && change.pair().isAdded()
                 && change.pair().newElement().getNodeType() == ElementInfo.NodeType.TYPE) {
             addedMembers(change.pair().newElement(), depth + 2, lines);
@@ -591,6 +593,16 @@ public final class Reporter {
         if (!inline) {
             body.forEach(l -> lines.add("  ".repeat(depth + 3) + l));
         }
+        if (block) {
+            lines.add("  ".repeat(depth) + LineNumbers.number(closingLine(change.body()), ' ', theme.code("}")));
+        }
+    }
+
+    /** The line of the closing brace of a body which is a block. */
+    private static long closingLine(BodyChanges body) {
+        CompilationUnitTree unit = body.newUnit().compilationUnit();
+        long end = body.newUnit().trees().getSourcePositions().getEndPosition(unit, body.newRoot());
+        return end <= 0 ? 0 : unit.getLineMap().getLineNumber(end - 1);
     }
 
     /** Whether the change is the change of the signature of a type, which is shown in the heading of its changes. */
