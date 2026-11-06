@@ -537,40 +537,59 @@ public final class Reporter {
     }
 
     /**
-     * Renders the changes of a container accepted by the filter, then the types nested in it which have some, each
-     * of them with its signature.
+     * Renders the changes of a container accepted by the filter and the types nested in it which have some, each
+     * of them with its signature. Without {@code diff}, which shows only the new versions, they are in the order of
+     * the new source; with it, the members are followed by the nested types.
      *
      * @param depth the indentation of the lines, in levels
      */
     private void render(ApiChanges changes, int depth, List<String> lines, BiPredicate<ApiChanges, MemberChange> filter,
                         boolean tagged, boolean diff) {
-        for (MemberChange change : changes.changes()) {
-            if (filter.test(changes, change) && !isSignatureOfNested(changes, change)) {
-                ElementPair pair = change.level() == ChangeLevel.API ? change.pair()
-                        : new ElementPair(change.pair().newElement(), change.pair().newElement(), Set.of());
-                List<String> body = change.body() == null ? List.of() : body(change.body());
-                // The initializer of a field continues the line of its declaration.
-                boolean inline = body.size() == 1 && !(change.body().newRoot() instanceof BlockTree);
-                addDeclaration(lines, depth, pair, changes.typeName(), inline ? body.get(0) : null,
-                        tagged ? tag(change) : "");
-                if (change.level() == ChangeLevel.API && change.pair().isAdded()
-                        && change.pair().newElement().getNodeType() == ElementInfo.NodeType.TYPE) {
-                    addedMembers(change.pair().newElement(), depth + 2, lines);
-                }
-                if (!inline) {
-                    body.forEach(l -> lines.add("  ".repeat(depth + 3) + l));
+        List<Object> items = new ArrayList<>(changes.changes());
+        items.addAll(changes.nested());
+        if (!diff) {
+            items.sort(Comparator.comparingLong(Reporter::newLine));
+        }
+        for (Object item : items) {
+            if (item instanceof MemberChange change) {
+                renderMember(changes, change, depth, lines, filter, tagged);
+            } else if (item instanceof ApiChanges type) {
+                List<String> nested = new ArrayList<>();
+                render(type, depth + 1, nested, filter, tagged, diff);
+                boolean own = changes.changes().stream()
+                        .anyMatch(c -> filter.test(changes, c) && isSignatureOf(c, type));
+                if (own || !nested.isEmpty()) {
+                    addType(lines, depth, type.type(), changes.typeName(), diff);
+                    lines.addAll(nested);
                 }
             }
         }
-        for (ApiChanges type : changes.nested()) {
-            List<String> nested = new ArrayList<>();
-            render(type, depth + 1, nested, filter, tagged, diff);
-            boolean own = changes.changes().stream()
-                    .anyMatch(c -> filter.test(changes, c) && isSignatureOf(c, type));
-            if (own || !nested.isEmpty()) {
-                addType(lines, depth, type.type(), changes.typeName(), diff);
-                lines.addAll(nested);
-            }
+    }
+
+    /** The line of a member change or of a nested type in the new source, in the old one if it was removed. */
+    private static long newLine(Object item) {
+        ElementPair pair = item instanceof MemberChange change ? change.pair() : ((ApiChanges) item).type();
+        return pair.isRemoved() ? pair.oldElement().getLine() : pair.newElement().getLine();
+    }
+
+    private void renderMember(ApiChanges changes, MemberChange change, int depth, List<String> lines,
+                              BiPredicate<ApiChanges, MemberChange> filter, boolean tagged) {
+        if (!filter.test(changes, change) || isSignatureOfNested(changes, change)) {
+            return;
+        }
+        ElementPair pair = change.level() == ChangeLevel.API ? change.pair()
+                : new ElementPair(change.pair().newElement(), change.pair().newElement(), Set.of());
+        List<String> body = change.body() == null ? List.of() : body(change.body());
+        // The initializer of a field continues the line of its declaration.
+        boolean inline = body.size() == 1 && !(change.body().newRoot() instanceof BlockTree);
+        addDeclaration(lines, depth, pair, changes.typeName(), inline ? body.get(0) : null,
+                tagged ? tag(change) : "");
+        if (change.level() == ChangeLevel.API && change.pair().isAdded()
+                && change.pair().newElement().getNodeType() == ElementInfo.NodeType.TYPE) {
+            addedMembers(change.pair().newElement(), depth + 2, lines);
+        }
+        if (!inline) {
+            body.forEach(l -> lines.add("  ".repeat(depth + 3) + l));
         }
     }
 

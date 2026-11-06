@@ -306,6 +306,26 @@ public class ReporterTest extends TestCase {
                 report(new ReportOptions(ChangeLevel.IMPORTS, ReportOptions.Grouping.BY_CATEGORY)));
     }
 
+    /** The implementation changes are in the order of the new source, nested types among the members. */
+    public void testImplementationInSourceOrder() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", "class Foo {\n  int a() { return 1; }\n"
+                    + "  static class In {\n    int f() { return 1; }\n  }\n"
+                    + "  int m() { return 1; }\n  int z(int x) { return x; }\n}\n");
+            helper.commit("init");
+            helper.writeFile("Foo.java", "class Foo {\n  int a() { return 2; }\n"
+                    + "  static class In {\n    int f() { return 2; }\n  }\n"
+                    + "  int m() { return 2; }\n  int z(long x) { return (int) x; }\n}\n");
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                List<String> lines = new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.IMPLEMENTATION,
+                        ReportOptions.Grouping.BY_CATEGORY)).report(analyzer.analyzeChanges());
+                List<String> impl = lines.subList(lines.indexOf("# Implementation changes"), lines.size()).stream()
+                        .filter(l -> l.contains("(") && !l.contains("return")).map(String::strip).toList();
+                assertEquals(List.of("int a()", "int f()", "int m()", "int z( long x )"), impl);
+            }
+        }
+    }
+
     /**
      * Tests that the API changes list the public API of the new types, the names of the deleted ones and then
      * the changes of the other types.
