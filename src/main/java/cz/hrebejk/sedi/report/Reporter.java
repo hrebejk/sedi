@@ -362,7 +362,7 @@ public final class Reporter {
     private void addDeclaration(List<String> lines, int depth, ElementPair pair, String typeName, String initializer,
                                 String suffix) {
         String indent = "  ".repeat(depth);
-        javadoc.print(pair).forEach(l -> lines.add(indent + l));
+        javadocLines(pair).forEach(l -> lines.add(indent + l));
         printer.annotations(pair).forEach(l -> lines.add(indent + l));
         boolean changedLine = initializer != null && LineNumbers.marker(initializer) != ' '
                 && LineNumbers.marker(initializer) != LineNumbers.NONE;
@@ -418,9 +418,17 @@ public final class Reporter {
     private void addType(List<String> lines, int depth, ElementPair type, String outerName, boolean diff) {
         ElementPair shown = diff ? type : new ElementPair(type.newElement(), type.newElement(), Set.of());
         String indent = "  ".repeat(depth);
-        javadoc.print(shown).forEach(l -> lines.add(indent + l));
+        javadocLines(shown).forEach(l -> lines.add(indent + l));
         printer.annotations(shown).forEach(l -> lines.add(indent + l));
         lines.add(indent + printer.formatType(shown, outerName));
+    }
+
+    /**
+     * The javadoc shown above a declaration: the changes of it, or for an element shown without its changes, as in
+     * the sections other than the API, its javadoc as it is.
+     */
+    private List<String> javadocLines(ElementPair pair) {
+        return pair.oldElement() == pair.newElement() ? javadoc.unchanged(pair.newElement()) : javadoc.print(pair);
     }
 
     private void importLines(FileAnalysis file, boolean tagged, List<String> lines) {

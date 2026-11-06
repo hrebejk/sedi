@@ -89,6 +89,23 @@ final class JavadocPrinter {
         return out;
     }
 
+    /**
+     * The javadoc of an element whose javadoc did not change, e.g. one with a changed implementation, shown without
+     * marks. With a limited context only its first lines are shown, as many as the context, followed by {@code …}.
+     *
+     * @param element the element
+     * @return the lines, empty if javadoc is not shown
+     */
+    List<String> unchanged(ElementInfo element) {
+        List<String> lines = plain(element);
+        if (context < 0 || lines.size() <= context) {
+            return lines;
+        }
+        List<String> out = new ArrayList<>(lines.subList(0, context));
+        out.add("  " + theme.style(Theme.Role.NOTE, "…"));
+        return out;
+    }
+
     /** The line of the source of a line of a javadoc, {@code 0} if not known. */
     private static long line(long first, int index) {
         return first <= 0 ? 0 : first + index;

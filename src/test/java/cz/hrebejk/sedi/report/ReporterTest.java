@@ -689,4 +689,31 @@ public class ReporterTest extends TestCase {
                         "      public static class In"),
                 javadocReport(old, old.replace("one.", "two."), 1));
     }
+
+    /** Reports only the implementation changes of Foo.java from one content to the other, with the javadoc context. */
+    private static List<String> implReport(String oldSource, String newSource, int context) throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", oldSource);
+            helper.commit("init");
+            helper.writeFile("Foo.java", newSource);
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                return new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_TYPE,
+                        ReportOptions.DEFAULT_BODY_CONTEXT, context))
+                        .reportOnly(analyzer.analyzeChanges(), ChangeLevel.IMPLEMENTATION);
+            }
+        }
+    }
+
+    /** Tests that the implementation section shows the unchanged javadoc as the javadoc context says. */
+    public void testJavadocInImplementation() throws Exception {
+        String changed = DOC_OLD.replace("return null;", "return \"x\";");
+        List<String> none = implReport(DOC_OLD, changed, ReportOptions.NO_JAVADOC);
+        assertFalse(none.toString(), none.stream().anyMatch(l -> l.contains("* ")));
+        List<String> some = implReport(DOC_OLD, changed, 1);
+        assertTrue(some.toString(), some.stream().anyMatch(l -> l.contains("* Returns the first element.")));
+        assertFalse(some.toString(), some.stream().anyMatch(l -> l.contains("@param")));
+        assertTrue(some.toString(), some.stream().anyMatch(l -> l.strip().equals("…")));
+        List<String> whole = implReport(DOC_OLD, changed, ReportOptions.WHOLE_JAVADOC);
+        assertTrue(whole.toString(), whole.stream().anyMatch(l -> l.contains("* @throws IOException never")));
+    }
 }
