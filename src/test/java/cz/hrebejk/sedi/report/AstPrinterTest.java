@@ -255,12 +255,33 @@ public class AstPrinterTest extends TestCase {
                 body("String t;\nint m(String s) { return s.length(); }", "String t;\nint m(String s) { return t.hashCode(); }"));
     }
 
-    public void testExtraArgumentReplacesStatement() throws Exception {
+    /** An added argument is marked inline with its comma, the other lines of the call shown unchanged. */
+    public void testAddedArgument() throws Exception {
         assertEquals(List.of(
                         "  void m() [impl]",
-                        "      - f(1);",
-                        "      + f(1, 2);"),
-                body(method("void m()", "f(1);") + "\nvoid f(int... a) {}", method("void m()", "f(1, 2);") + "\nvoid f(int... a) {}"));
+                        "      ~ f(1__, 2__, 3,",
+                        "                4, 5);"),
+                body(method("void m()", "f(1, 3,", "        4, 5);") + "\nvoid f(int... a) {}",
+                        method("void m()", "f(1, 2, 3,", "        4, 5);") + "\nvoid f(int... a) {}"));
+    }
+
+    /** An argument added in front of one which differs only in the name of a local is the one marked. */
+    public void testAddedArgumentLikeAnother() throws Exception {
+        assertEquals(List.of(
+                        "  void m( String a, String b ) [impl]",
+                        "      ~ f(1__, a.length()__, b.length());"),
+                body(method("void m(String a, String b)", "f(1, b.length());") + "\nvoid f(int... x) {}",
+                        method("void m(String a, String b)", "f(1, a.length(), b.length());") + "\nvoid f(int... x) {}"));
+    }
+
+    /** A removed argument is struck through with its comma. */
+    public void testRemovedArguments() throws Exception {
+        assertEquals(List.of(
+                        "  void m() [impl]",
+                        "      ~ f(1, ~~2,~~ 3);",
+                        "      ~ f(1, 2~~, 3~~);"),
+                body(method("void m()", "f(1, 2, 3);", "f(1, 2, 3);") + "\nvoid f(int... a) {}",
+                        method("void m()", "f(1, 3);", "f(1, 2);") + "\nvoid f(int... a) {}"));
     }
 
     /** Arguments replaced by expressions of another kind are struck through in place. */

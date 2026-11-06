@@ -122,6 +122,24 @@ final class AstPrinter {
             return lines.getStartPosition(line) < from;
         }
 
+        /** The position of the comma in front of the position, but for spaces, {@code -1} if there is none. */
+        int commaBefore(int position) {
+            int i = position - 1;
+            while (i >= 0 && Character.isWhitespace(text.charAt(i))) {
+                i--;
+            }
+            return i >= 0 && text.charAt(i) == ',' ? i : -1;
+        }
+
+        /** The position of the comma after the position, but for spaces, {@code -1} if there is none. */
+        int commaAfter(int position) {
+            int i = position;
+            while (i < text.length() && Character.isWhitespace(text.charAt(i))) {
+                i++;
+            }
+            return i < text.length() && text.charAt(i) == ',' ? i : -1;
+        }
+
         /** Whether the character is code: neither a space nor in a comment. */
         boolean isCode(int position) {
             return !Character.isWhitespace(text.charAt(position)) && !comments.get(position);
@@ -366,9 +384,20 @@ final class AstPrinter {
         showUnit(tree);
     }
 
-    /** An added tree, shown with all of its lines. */
+    /** An added tree, shown with all of its lines; an added argument with its comma. */
     private void added(Tree tree) {
-        newSource.added.set(newSource.start(tree), newSource.end(tree));
+        int start = newSource.start(tree);
+        int end = newSource.end(tree);
+        if (!isStatement(tree)) {
+            int before = newSource.commaBefore(start);
+            int after = newSource.commaAfter(end);
+            if (before >= newSource.from) {
+                start = before;
+            } else if (after >= 0 && after < newSource.to) {
+                end = after + 1;
+            }
+        }
+        newSource.added.set(start, end);
         showUnit(tree);
     }
 
@@ -399,7 +428,9 @@ final class AstPrinter {
                 if (isStatement(old) && oldSource.isOnOwnLines(old)) {
                     block(newSource.firstLine(before), oldLines(old));
                 } else {
-                    newSource.insert(newSource.start(before), theme.strike(oldSource.oneLine(old)) + " ");
+                    // A removed argument is struck through with its comma.
+                    String comma = !isStatement(old) && oldSource.commaAfter(oldSource.end(old)) >= 0 ? "," : "";
+                    newSource.insert(newSource.start(before), theme.strike(oldSource.oneLine(old) + comma) + " ");
                     showUnit(before);
                 }
             }
@@ -410,6 +441,10 @@ final class AstPrinter {
             for (Tree old : olds) {
                 if (isStatement(old) && oldSource.isOnOwnLines(old)) {
                     block(newSource.line(Math.min(newSource.end(parent) - 1, newSource.to)), oldLines(old));
+                } else if (!isStatement(old) && oldSource.commaBefore(oldSource.start(old)) >= 0) {
+                    // A removed last argument is struck through with its comma.
+                    newSource.insert(position, theme.strike(", " + oldSource.oneLine(old)));
+                    showUnit(parent);
                 } else {
                     newSource.insert(position, " " + theme.strike(oldSource.oneLine(old)));
                     if (parent == changes.newRoot()) {

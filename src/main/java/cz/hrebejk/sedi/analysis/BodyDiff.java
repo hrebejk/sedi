@@ -31,7 +31,7 @@ import java.util.Set;
  * <p>
  * A simple statement (or an expression in the header of a compound statement) is a unit: it is shown with its
  * changes inline only if they are at most {@value #MAX_INLINE_EDITS} edited leaves (or small expressions replaced by
- * ones of another kind) and they are at most half of its text, else it is replaced as a whole. So unrelated statements
+ * ones of another kind, or added or removed expressions, like an argument) and they are at most half of its text, else it is replaced as a whole. So unrelated statements
  * are shown as removed and added rather than as one statement mostly struck through. Between aligned children, as
  * many expressions as before are paired by their position.
  * Synthetic trees without a place in the source, such as an implicit {@code super()}, take no part.
@@ -112,6 +112,8 @@ final class BodyDiff {
             inner.node(oldNode, newNode);
             if (inner.isInline() && !inner.isMostlyChanged(oldNode.getTree(), newNode.getTree())) {
                 marks.putAll(inner.marks);
+                inner.removedBefore.forEach((tree, olds) -> removedBefore.computeIfAbsent(tree, t -> new ArrayList<>()).addAll(olds));
+                inner.removedAtEnd.forEach((tree, olds) -> removedAtEnd.computeIfAbsent(tree, t -> new ArrayList<>()).addAll(olds));
             } else {
                 marks.put(newNode.getTree(), new BodyChanges.Replaced(oldNode.getTree()));
             }
@@ -122,20 +124,34 @@ final class BodyDiff {
 
     /** Whether the changes are a few edited leaves, so they can be shown inline. */
     private boolean isInline() {
-        if (!removedBefore.isEmpty() || !removedAtEnd.isEmpty()) {
-            return false;
-        }
         int edits = 0;
-        for (BodyChanges.Mark mark : marks.values()) {
-            if (mark instanceof BodyChanges.Added || mark instanceof BodyChanges.Replaced) {
+        for (List<Tree> olds : removed()) {
+            for (Tree old : olds) {
+                if (!isExpression(old)) {
+                    return false;
+                }
+                edits++;
+            }
+        }
+        for (Map.Entry<Tree, BodyChanges.Mark> entry : marks.entrySet()) {
+            BodyChanges.Mark mark = entry.getValue();
+            if (mark instanceof BodyChanges.Replaced
+                    || mark instanceof BodyChanges.Added && !isExpression(entry.getKey())) {
                 return false;
             }
             if (mark instanceof BodyChanges.Edited || mark instanceof BodyChanges.Wrapped
-                    || mark instanceof BodyChanges.Unwrapped) {
+                    || mark instanceof BodyChanges.Unwrapped || mark instanceof BodyChanges.Added) {
                 edits++;
             }
         }
         return edits <= MAX_INLINE_EDITS;
+    }
+
+    /** The old nodes without a counterpart, in groups. */
+    private List<List<Tree>> removed() {
+        List<List<Tree>> removed = new ArrayList<>(removedBefore.values());
+        removed.addAll(removedAtEnd.values());
+        return removed;
     }
 
     /** Diffs two different nodes of the same kind. */
@@ -374,8 +390,14 @@ final class BodyDiff {
                 case BodyChanges.Wrapped wrapped -> chars(newUnit, entry.getKey()) - chars(newUnit, wrapped.kept());
                 case BodyChanges.Unwrapped unwrapped ->
                         chars(oldUnit, unwrapped.oldTree()) - chars(oldUnit, unwrapped.oldKept());
+                case BodyChanges.Added added -> chars(newUnit, entry.getKey());
                 default -> 0;
             };
+        }
+        for (List<Tree> olds : removed()) {
+            for (Tree old : olds) {
+                changed += chars(oldUnit, old);
+            }
         }
         return 2 * changed > chars(oldUnit, oldTree) + chars(newUnit, newTree);
     }
@@ -428,27 +450,54 @@ final class BodyDiff {
         return child instanceof StatementTree ? !BodyChanges.isCompound(child) : BodyChanges.isCompound(parent);
     }
 
-    /** The longest common subsequence of equal hashes, as pairs of old and new index. */
-    private static List<int[]> lcs(List<NodeInfo> olds, List<NodeInfo> news) {
-        int[][] length = new int[olds.size() + 1][news.size() + 1];
+    /**
+     * The longest common subsequence of equal hashes, as pairs of old and new index. Of the longest ones, the one
+     * pairing the most children with the same text: hashes ignore the names of locals, so {@code a.size()} and
+     * {@code b.size()} are equal, but where both are in the code each is paired with itself.
+     */
+    private List<int[]> lcs(List<NodeInfo> olds, List<NodeInfo> news) {
+        // A pair counts more than any number of pairs with the same text.
+        int pairWeight = Math.min(olds.size(), news.size()) + 1;
+        int[][] weight = new int[olds.size()][news.size()];
+        for (int i = 0; i < olds.size(); i++) {
+            for (int j = 0; j < news.size(); j++) {
+                if (olds.get(i).getSha().equals(news.get(j).getSha())) {
+                    weight[i][j] = pairWeight + (sameText(olds.get(i), news.get(j)) ? 1 : 0);
+                }
+            }
+        }
+        int[][] best = new int[olds.size() + 1][news.size() + 1];
         for (int i = olds.size() - 1; i >= 0; i--) {
             for (int j = news.size() - 1; j >= 0; j--) {
-                length[i][j] = olds.get(i).getSha().equals(news.get(j).getSha()) ? length[i + 1][j + 1] + 1
-                        : Math.max(length[i + 1][j], length[i][j + 1]);
+                best[i][j] = Math.max(best[i + 1][j], best[i][j + 1]);
+                if (weight[i][j] > 0) {
+                    best[i][j] = Math.max(best[i][j], best[i + 1][j + 1] + weight[i][j]);
+                }
             }
         }
         List<int[]> result = new ArrayList<>();
         int i = 0;
         int j = 0;
         while (i < olds.size() && j < news.size()) {
-            if (olds.get(i).getSha().equals(news.get(j).getSha())) {
+            if (weight[i][j] > 0 && best[i][j] == best[i + 1][j + 1] + weight[i][j]) {
                 result.add(new int[]{i++, j++});
-            } else if (length[i + 1][j] >= length[i][j + 1]) {
+            } else if (best[i + 1][j] >= best[i][j + 1]) {
                 i++;
             } else {
                 j++;
             }
         }
         return result;
+    }
+
+    /** Whether the two nodes have the same text, but for spaces and comments. */
+    private boolean sameText(NodeInfo oldNode, NodeInfo newNode) {
+        String oldText = sourceText(oldUnit).oneLine(oldNode.getTree());
+        return oldText != null && oldText.equals(sourceText(newUnit).oneLine(newNode.getTree()));
+    }
+
+    private SourceText sourceText(CompilationUnitInfo unit) {
+        return new SourceText(unit.compilationUnit(), unit.trees().getSourcePositions(),
+                texts.computeIfAbsent(unit, BodyDiff::text));
     }
 }
