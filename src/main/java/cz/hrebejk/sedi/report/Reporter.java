@@ -38,6 +38,7 @@ import java.util.function.BiPredicate;
 public final class Reporter {
 
     private final SignatureDiffPrinter printer;
+    private final SignatureDiffPrinter cosmeticPrinter;
     private final JavadocPrinter javadoc;
     private final ReportOptions options;
     private final Theme theme;
@@ -68,6 +69,7 @@ public final class Reporter {
     private Reporter(Theme theme, ReportOptions options, int width) {
         this.width = width;
         this.printer = new SignatureDiffPrinter(theme);
+        this.cosmeticPrinter = printer.cosmetic();
         this.javadoc = new JavadocPrinter(theme, options.javadocContext());
         this.options = options;
         this.theme = theme;
@@ -412,12 +414,24 @@ public final class Reporter {
      */
     private Node declarationNode(ElementPair pair, String typeName, String initializer, String suffix,
                                  List<String> below, List<Node> children) {
-        List<String> above = new ArrayList<>(javadocLines(pair));
-        above.addAll(printer.annotations(pair));
+        return declarationNode(pair, false, typeName, initializer, suffix, below, children);
+    }
+
+    /**
+     * Like {@link #declarationNode(ElementPair, String, String, String, List, List)}.
+     *
+     * @param cosmetic whether to show the cosmetic changes of the signature, the javadoc and annotations as they are
+     */
+    private Node declarationNode(ElementPair pair, boolean cosmetic, String typeName, String initializer, String suffix,
+                                 List<String> below, List<Node> children) {
+        ElementPair unchanged = cosmetic ? new ElementPair(pair.newElement(), pair.newElement(), Set.of()) : pair;
+        List<String> above = new ArrayList<>(javadocLines(unchanged));
+        above.addAll(printer.annotations(unchanged));
         boolean changedLine = initializer != null && LineNumbers.marker(initializer) != ' '
                 && LineNumbers.marker(initializer) != LineNumbers.NONE;
         String rest = initializer == null ? "" : " = " + LineNumbers.text(initializer).strip();
-        return new Node(above, printer.format(pair, typeName, changedLine) + rest + suffix, below, children);
+        String head = (cosmetic ? cosmeticPrinter : printer).format(pair, typeName, changedLine);
+        return new Node(above, head + rest + suffix, below, children);
     }
 
     /**
@@ -636,7 +650,9 @@ public final class Reporter {
 
     /** The node of a changed member with the changes of its body below it. */
     private Node memberNode(ApiChanges changes, MemberChange change, boolean tagged) {
-        ElementPair pair = change.level() == ChangeLevel.API ? change.pair()
+        // The signature shows the changes of its level: of the API, the cosmetic ones, or none.
+        boolean cosmetic = change.level() == ChangeLevel.COSMETIC;
+        ElementPair pair = change.level() == ChangeLevel.API || cosmetic ? change.pair()
                 : new ElementPair(change.pair().newElement(), change.pair().newElement(), Set.of());
         List<String> body = change.body() == null ? List.of() : body(change.body());
         // The initializer of a field continues the line of its declaration.
@@ -653,7 +669,7 @@ public final class Reporter {
         List<Node> children = change.level() == ChangeLevel.API && change.pair().isAdded()
                 && change.pair().newElement().getNodeType() == ElementInfo.NodeType.TYPE
                 ? addedMembers(change.pair().newElement()) : List.of();
-        return declarationNode(pair, changes.typeName(), inline ? body.get(0) : null,
+        return declarationNode(pair, cosmetic, changes.typeName(), inline ? body.get(0) : null,
                 (block ? " {" : "") + (tagged ? tag(change) : ""), below, children);
     }
 

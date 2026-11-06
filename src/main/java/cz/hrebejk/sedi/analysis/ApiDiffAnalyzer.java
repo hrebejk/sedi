@@ -9,6 +9,9 @@
 package cz.hrebejk.sedi.analysis;
 
 import com.sun.source.tree.ImportTree;
+import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.Tree;
+import com.sun.source.tree.VariableTree;
 import com.sun.source.util.SourcePositions;
 import cz.hrebejk.sedi.compilation.CompilationUnitInfo;
 import org.eclipse.jgit.diff.DiffEntry;
@@ -182,36 +185,57 @@ final class ApiDiffAnalyzer {
         }
     }
 
-    /** The two compilation units, to compare the source text of the members. */
+    /** The two compilation units, to diff the bodies and compare the source text of the signatures. */
     private record Sources(CompilationUnitInfo oldUnit, CompilationUnitInfo newUnit) {
 
-        /** The source text of the element, empty if it is not known. */
-        private static String text(CompilationUnitInfo unit, ElementInfo element) {
-            if (unit == null || element.getOriginalTree() == null) {
-                return "";
+        /**
+         * The tokens of the declaration of the element up to its body or initializer: annotations, modifiers, types,
+         * names and parameters; whitespace and comments left out. Empty if the source is not known.
+         */
+        private static List<String> header(CompilationUnitInfo unit, ElementInfo element) {
+            Tree tree = element.getOriginalTree();
+            if (unit == null || tree == null) {
+                return List.of();
             }
             SourcePositions positions = unit.trees().getSourcePositions();
-            long start = positions.getStartPosition(unit.compilationUnit(), element.getOriginalTree());
-            long end = positions.getEndPosition(unit.compilationUnit(), element.getOriginalTree());
+            long start = positions.getStartPosition(unit.compilationUnit(), tree);
+            Tree body = tree instanceof MethodTree m ? m.getBody() : tree instanceof VariableTree v ? v.getInitializer() : null;
+            long end = body == null ? positions.getEndPosition(unit.compilationUnit(), tree)
+                    : positions.getStartPosition(unit.compilationUnit(), body);
             if (start < 0 || end < start) {
-                return "";
+                return List.of();
             }
             try {
-                return unit.compilationUnit().getSourceFile().getCharContent(true)
-                        .subSequence((int) start, (int) end).toString();
+                String text = unit.compilationUnit().getSourceFile().getCharContent(true).toString();
+                return new SourceText(unit.compilationUnit(), positions, text).tokens((int) start, (int) end).stream()
+                        .map(SourceText.Token::text).toList();
             } catch (IOException e) {
-                return "";
+                return List.of();
             }
         }
 
-        boolean sameText(ElementPair pair) {
-            return text(oldUnit, pair.oldElement()).equals(text(newUnit, pair.newElement()));
+        /**
+         * Whether the source of the signature differs, though not its hash: a renamed parameter, a renamed type
+         * referred to or a name qualified differently.
+         */
+        boolean signatureDiffers(ElementPair pair) {
+            return !header(oldUnit, pair.oldElement()).equals(header(newUnit, pair.newElement()));
         }
 
-        /** An implementation change of the pair, with the details of what changed in the body. */
-        MemberChange implementation(ElementPair pair, boolean publicApi) {
-            return new MemberChange(pair, ChangeLevel.IMPLEMENTATION, publicApi,
-                    BodyDiff.diff(pair.oldElement(), pair.newElement(), oldUnit, newUnit));
+        /**
+         * Adds the implementation and the cosmetic change of the body of a member present in both versions, if it
+         * has them; the cosmetic change of an unchanged signature too.
+         *
+         * @param signatureChanged whether the signature changed, so it is an API change already
+         */
+        void addBodyChanges(List<MemberChange> changes, ElementPair pair, boolean publicApi, boolean signatureChanged) {
+            BodyDiff.Result body = BodyDiff.diff(pair.oldElement(), pair.newElement(), oldUnit, newUnit);
+            if (bodyChanged(pair) || body.implementation() != null) {
+                changes.add(new MemberChange(pair, ChangeLevel.IMPLEMENTATION, publicApi, body.implementation()));
+            }
+            if (body.cosmetic() != null || !signatureChanged && signatureDiffers(pair)) {
+                changes.add(new MemberChange(pair, ChangeLevel.COSMETIC, publicApi, body.cosmetic()));
+            }
         }
     }
 
@@ -230,21 +254,18 @@ final class ApiDiffAnalyzer {
             ElementInfo shown = pair.isRemoved() ? pair.oldElement() : pair.newElement();
             boolean publicApi = Visibility.isExposed(shown, exposed, inInterface);
             changes.add(new MemberChange(pair, ChangeLevel.API, publicApi));
-            if (!pair.isAdded() && !pair.isRemoved() && isCode(pair) && bodyChanged(pair)) {
-                changes.add(sources.implementation(pair, publicApi));
+            if (!pair.isAdded() && !pair.isRemoved() && isCode(pair)) {
+                sources.addBodyChanges(changes, pair, publicApi, true);
             }
         }
         for (ElementPair pair : matches.unchanged()) {
-            ChangeLevel level = isCode(pair) ? bodyLevel(pair, sources) : null;
             boolean publicApi = Visibility.isExposed(pair.newElement(), exposed, inInterface);
             if (!pair.oldElement().getJavadoc().equals(pair.newElement().getJavadoc())) {
                 // The javadoc is a part of the API, even when the signature did not change.
                 changes.add(new MemberChange(pair, ChangeLevel.API, publicApi));
             }
-            if (level == ChangeLevel.IMPLEMENTATION) {
-                changes.add(sources.implementation(pair, publicApi));
-            } else if (level != null) {
-                changes.add(new MemberChange(pair, level, publicApi));
+            if (isCode(pair)) {
+                sources.addBodyChanges(changes, pair, publicApi, false);
             }
         }
         ElementPair self = new ElementPair(oldContainer, newContainer, Set.of());
@@ -268,21 +289,6 @@ final class ApiDiffAnalyzer {
 
     private static boolean bodyChanged(ElementPair pair) {
         return !pair.oldElement().getSha(ChangeCategory.BODY).equals(pair.newElement().getSha(ChangeCategory.BODY));
-    }
-
-    /**
-     * Classifies the change of a member whose signature did not change: real code changes are implementation
-     * changes; what is left after undoing the renames, such as renamed locals, referred elements or whitespace,
-     * is cosmetic.
-     *
-     * @return the level, {@code null} if the member did not change at all
-     */
-    private static ChangeLevel bodyLevel(ElementPair pair, Sources sources) {
-        if (bodyChanged(pair)) {
-            return ChangeLevel.IMPLEMENTATION;
-        }
-        boolean sameTree = pair.oldElement().getSha(ChangeCategory.FULL).equals(pair.newElement().getSha(ChangeCategory.FULL));
-        return !sameTree || !sources.sameText(pair) ? ChangeLevel.COSMETIC : null;
     }
 
     private static ImportChanges importChanges(CompilationUnitInfo oldUnit, CompilationUnitInfo newUnit) {

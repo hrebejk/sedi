@@ -67,7 +67,7 @@ public class DiffAnalysisTest extends TestCase {
 
     /**
      * Tests that a file analyzed alone, as when the watched file changes, knows the types renamed in the other
-     * changed files: its references to them do not change its API.
+     * changed files: its references to them do not change its API, they are cosmetic changes.
      */
     public void testFilteredFileKnowsRenamesOfOtherFiles() throws Exception {
         try (GitTestHelper helper = new GitTestHelper()) {
@@ -84,7 +84,7 @@ public class DiffAnalysisTest extends TestCase {
                 DiffAnalysis analysis = analyzer.analyzeChanges("Usages.java"::equals);
                 assertEquals(1, analysis.files().size());
                 ApiChanges usages = analysis.files().get(0).rootChanges().nested().get(0);
-                assertEquals(java.util.List.of("COSMETIC:obj", "IMPLEMENTATION:m"), usages.changes().stream()
+                assertEquals(java.util.List.of("COSMETIC:m", "COSMETIC:obj", "IMPLEMENTATION:m"), usages.changes().stream()
                         .map(c -> c.level() + ":" + c.pair().newElement().getName()).sorted().toList());
             }
         }

@@ -283,6 +283,7 @@ final class AstPrinter {
         findUnits(changes.newRoot(), null);
         decorate(changes.newRoot(), true);
         removed();
+        comments();
         return render(entries());
     }
 
@@ -374,7 +375,66 @@ final class AstPrinter {
             case BodyChanges.UnwrappedStatements unwrapped -> unwrapped(unwrapped);
             case BodyChanges.Kept kept -> {
             }
+            case BodyChanges.Renamed renamed -> {
+                for (BodyChanges.Edit edit : renamed.edits()) {
+                    edited(edit);
+                }
+                showUnit(tree);
+                for (Tree child : children(tree, newSource)) {
+                    decorate(child, false);
+                }
+            }
         }
+    }
+
+    /**
+     * A part of the text changed in place: the old text struck through in front of the new one, which is marked as
+     * added.
+     */
+    private void edited(BodyChanges.Edit edit) {
+        if (!edit.oldText().isEmpty()) {
+            boolean replaced = edit.newEnd() > edit.newStart();
+            newSource.insert(edit.newStart(), theme.strike(edit.oldText()) + (replaced ? " " : ""));
+        }
+        newSource.added.set(edit.newStart(), edit.newEnd());
+    }
+
+    /**
+     * The comments added, marked as added, and removed: lines of their own if they were on their own lines, else
+     * struck through where they were.
+     */
+    private void comments() {
+        for (BodyChanges.CommentChange comment : changes.comments()) {
+            if (comment.isAdded()) {
+                newSource.added.set(comment.newStart(), comment.newEnd());
+                for (long l = newSource.line(comment.newStart()); l <= newSource.line(comment.newEnd() - 1); l++) {
+                    shown.add(l);
+                }
+                continue;
+            }
+            int at = Math.min(comment.newStart(), newSource.text.length());
+            if (isOnOwnLines(oldSource, comment.oldStart(), comment.oldEnd())) {
+                List<Entry> entries = new ArrayList<>();
+                for (long l = oldSource.line(comment.oldStart()); l <= oldSource.line(comment.oldEnd() - 1); l++) {
+                    entries.add(Entry.line(oldSource, l, '-'));
+                }
+                block(newSource.line(at), entries);
+            } else {
+                String text = theme.strike(oldSource.text.substring(comment.oldStart(), comment.oldEnd())
+                        .replaceAll("\\s+", " "));
+                boolean leading = at > 0 && Character.isWhitespace(newSource.text.charAt(at - 1));
+                newSource.insert(at, leading ? text + " " : " " + text);
+                shown.add(newSource.line(at));
+            }
+        }
+    }
+
+    /** Whether the part of the source is alone on its lines, but for spaces. */
+    private static boolean isOnOwnLines(Source source, int start, int end) {
+        int lineStart = source.text.lastIndexOf('\n', start - 1) + 1;
+        int lineEnd = source.text.indexOf('\n', end);
+        lineEnd = lineEnd < 0 ? source.text.length() : lineEnd;
+        return source.text.substring(lineStart, start).isBlank() && source.text.substring(end, lineEnd).isBlank();
     }
 
     /** The new tree replaced the old one: the old one struck through in front of the new one, marked as added. */
@@ -610,7 +670,9 @@ final class AstPrinter {
 
     private boolean hasCode(long line) {
         return newSource.hasCode(newSource.lineStart(line), newSource.lineEnd(line))
-                || inserts(newSource, line).findAny().isPresent();
+                || inserts(newSource, line).findAny().isPresent()
+                || newSource.added.nextSetBit(newSource.lineStart(line)) >= 0
+                && newSource.added.nextSetBit(newSource.lineStart(line)) < newSource.lineEnd(line);
     }
 
     private java.util.stream.Stream<String> inserts(Source source, long line) {
@@ -628,7 +690,8 @@ final class AstPrinter {
         boolean allAdded = true;
         boolean anyAdded = false;
         for (int i = from; i < to; i++) {
-            if (newSource.isCode(i)) {
+            // An added comment counts like code.
+            if (newSource.isCode(i) || newSource.added.get(i) && !Character.isWhitespace(newSource.text.charAt(i))) {
                 code = true;
                 allAdded &= newSource.added.get(i);
                 anyAdded |= newSource.added.get(i);

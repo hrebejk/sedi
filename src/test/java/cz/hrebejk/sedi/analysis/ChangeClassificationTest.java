@@ -134,9 +134,25 @@ public class ChangeClassificationTest extends TestCase {
                         "class Foo { int x; Foo o; int m() { return o.x; } }"));
     }
 
-    public void testWhitespaceIsCosmetic() throws Exception {
-        assertEquals(List.of("COSMETIC:m"),
+    /** Changes of whitespace alone are not reported at all. */
+    public void testWhitespaceIsNotReported() throws Exception {
+        assertEquals(List.of(),
+                classify("class Foo { int m() { return 1; } }", "class Foo { int m() {\n    return  1;\n  } }"));
+    }
+
+    /** A comment in a body is a part of the implementation; a reformatted one is not a change. */
+    public void testCommentInBodyIsImplementation() throws Exception {
+        assertEquals(List.of("IMPLEMENTATION:m"),
                 classify("class Foo { int m() { return 1; } }", "class Foo { int m() {\n    return 1;  // one\n  } }"));
+        assertEquals(List.of(),
+                classify("class Foo { int m() { /* a  b */ return 1; } }", "class Foo { int m() {\n /* a\n b */\n return 1; } }"));
+    }
+
+    /** A member with both kinds of changes has an implementation and a cosmetic change, each with its own body. */
+    public void testImplementationAndCosmeticChangesTogether() throws Exception {
+        assertEquals(List.of("IMPLEMENTATION:m", "COSMETIC:m"),
+                classify("class Foo { int m() { int a = 1; return a + 1; } }",
+                        "class Foo { int m() { int b = 1; return b + 2; } }"));
     }
 
     public void testUnchangedIsNotReported() throws Exception {

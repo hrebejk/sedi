@@ -28,6 +28,8 @@ import java.util.stream.Collectors;
  * Renders the signature of an {@link ElementPair} as a single line in which every changed part
  * shows the old value struck through followed by the new value, for example
  * {@code public String method( ~~int~~ __float__ f )}. Renamed parameters show only the new name: the rename is cosmetic.
+ * A {@link #cosmetic() cosmetic} printer shows the cosmetic changes instead: renamed parameters and the parts which
+ * differ only by a renamed type or a name qualified differently.
  * Added elements are prefixed with {@code +}, removed elements with {@code -}. The line is colored by a
  * {@link Theme}. The lines are numbered by the lines of the source, for the report to show the numbers, see
  * {@link LineNumbers}.
@@ -35,6 +37,8 @@ import java.util.stream.Collectors;
 public final class SignatureDiffPrinter {
 
     private final Theme theme;
+    /** Whether the parts equal but for renames and qualification are shown changed, see {@link #cosmetic()}. */
+    private final boolean cosmetic;
 
     /**
      * Creates a printer.
@@ -42,7 +46,23 @@ public final class SignatureDiffPrinter {
      * @param theme the colors of the code; {@link Theme#PLAIN} strikes through with {@code ~~old~~}
      */
     public SignatureDiffPrinter(Theme theme) {
+        this(theme, false);
+    }
+
+    private SignatureDiffPrinter(Theme theme, boolean cosmetic) {
         this.theme = theme;
+        this.cosmetic = cosmetic;
+    }
+
+    /**
+     * Returns a printer showing the cosmetic changes of a signature: the renamed parameters and the parts whose text
+     * differs only by a renamed type or a name qualified differently. The changes of the API are not shown, the
+     * signature is shown as it is in the new version.
+     *
+     * @return the printer
+     */
+    public SignatureDiffPrinter cosmetic() {
+        return new SignatureDiffPrinter(theme, true);
     }
 
     /**
@@ -372,6 +392,10 @@ public final class SignatureDiffPrinter {
 
     /** A parameter, its type and name; {@code null} for the old one if it was added, for the new if removed. */
     private String param(Piece[] op, Piece[] np) {
+        if (cosmetic && (op == null || np == null)) {
+            // An added or removed parameter is a change of the API: the new parameter is shown as it is.
+            return np == null ? "" : join(List.of(np[0].text(), np[1].text()), " ");
+        }
         if (op == null) {
             return theme.added(join(List.of(np[0].text(), np[1].text()), " "));
         }
@@ -379,7 +403,7 @@ public final class SignatureDiffPrinter {
             return strike(join(List.of(op[0].text(), op[1].text()), " "));
         }
         // A renamed parameter is a cosmetic change, not one of the signature: only the new name is shown.
-        return join(List.of(slot(op[0], np[0]), np[1].text()), " ");
+        return join(List.of(slot(op[0], np[0]), cosmetic ? slot(op[1].text(), np[1].text()) : np[1].text()), " ");
     }
 
     /** The longest common subsequence of the parameters of the same types, as pairs of old and new index. */
@@ -408,7 +432,11 @@ public final class SignatureDiffPrinter {
 
     /** Like {@link #slot(String, String)}, the parts compared by their keys. */
     private String slot(Piece oldPiece, Piece newPiece) {
-        if (oldPiece.sameAs(newPiece) || oldPiece.text().isEmpty()) {
+        if (oldPiece.sameAs(newPiece)) {
+            return same(oldPiece, newPiece);
+        }
+        if (cosmetic || oldPiece.text().isEmpty()) {
+            // A change of the API is not shown by a cosmetic printer.
             return newPiece.text();
         }
         return newPiece.text().isEmpty() ? strike(oldPiece.text()) : theme.replace(oldPiece.text(), newPiece.text());
@@ -432,7 +460,7 @@ public final class SignatureDiffPrinter {
     /** Like {@link #slot}, the new name shown as a declaration. */
     private String declared(String oldName, String newName) {
         String name = theme.style(Theme.Role.DECLARATION, newName);
-        return oldName.equals(newName) || oldName.isEmpty() ? name : theme.replace(oldName, name);
+        return cosmetic || oldName.equals(newName) || oldName.isEmpty() ? name : theme.replace(oldName, name);
     }
 
     /** Removed tokens struck through, followed by all tokens of the new version, the added ones underlined. */
@@ -443,15 +471,21 @@ public final class SignatureDiffPrinter {
     private String tokens(List<Piece> oldTokens, List<Piece> newTokens, String separator) {
         List<String> removed = new ArrayList<>();
         for (Piece t : oldTokens) {
-            if (newTokens.stream().noneMatch(t::sameAs)) {
+            if (!cosmetic && newTokens.stream().noneMatch(t::sameAs)) {
                 removed.add(strike(t.text()));
             }
         }
         List<String> current = new ArrayList<>();
         for (Piece t : newTokens) {
-            current.add(oldTokens.stream().anyMatch(t::sameAs) ? t.text() : theme.added(t.text()));
+            current.add(oldTokens.stream().filter(t::sameAs).findFirst().map(o -> same(o, t))
+                    .orElseGet(() -> cosmetic ? t.text() : theme.added(t.text())));
         }
         return join(List.of(join(removed, separator), join(current, separator)), " ");
+    }
+
+    /** A part which did not change but cosmetically: the new text, or for a cosmetic printer the change of the text. */
+    private String same(Piece oldPiece, Piece newPiece) {
+        return cosmetic ? slot(oldPiece.text(), newPiece.text()) : newPiece.text();
     }
 
     /** The text struck through. */

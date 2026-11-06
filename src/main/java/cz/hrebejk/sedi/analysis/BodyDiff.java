@@ -46,6 +46,10 @@ final class BodyDiff {
     private final Map<Tree, BodyChanges.Mark> marks = new IdentityHashMap<>();
     private final Map<Tree, List<Tree>> removedBefore = new IdentityHashMap<>();
     private final Map<Tree, List<Tree>> removedAtEnd = new IdentityHashMap<>();
+    /** The old and new nodes paired with each other which have the same hash: they differ at most cosmetically. */
+    private final List<NodeInfo[]> equal = new ArrayList<>();
+    /** The old trees paired with new ones, to the new ones (identity map). */
+    private final Map<Tree, Tree> paired = new IdentityHashMap<>();
     private final CompilationUnitInfo oldUnit;
     private final CompilationUnitInfo newUnit;
     /** The source texts of the units, read when first needed and shared with the inner diffs (identity map). */
@@ -58,21 +62,135 @@ final class BodyDiff {
     }
 
     /**
-     * Diffs the bodies of two versions of an element.
+     * The differences of the bodies of two versions of an element.
      *
-     * @return the changes, {@code null} if either version has no body or the bodies do not differ
+     * @param implementation the changes of the code and of the comments, {@code null} if there are none
+     * @param cosmetic       the cosmetic changes of the code which did not change otherwise, see {@link CosmeticDiff},
+     *                       {@code null} if there are none
      */
-    static BodyChanges diff(ElementInfo oldElement, ElementInfo newElement, CompilationUnitInfo oldUnit,
-                            CompilationUnitInfo newUnit) {
+    record Result(BodyChanges implementation, BodyChanges cosmetic) {
+
+        static final Result NONE = new Result(null, null);
+    }
+
+    /**
+     * Diffs the bodies of two versions of an element. Whitespace is ignored.
+     *
+     * @return the changes, {@link Result#NONE} if either version has no body
+     */
+    static Result diff(ElementInfo oldElement, ElementInfo newElement, CompilationUnitInfo oldUnit,
+                       CompilationUnitInfo newUnit) {
         NodeInfo oldBody = oldElement.getBody();
         NodeInfo newBody = newElement.getBody();
-        if (oldBody == null || newBody == null || oldBody.getSha().equals(newBody.getSha())) {
-            return null;
+        if (oldBody == null || newBody == null) {
+            return Result.NONE;
         }
         BodyDiff diff = new BodyDiff(oldUnit, newUnit, new IdentityHashMap<>());
         diff.pair(oldBody, newBody, !BodyChanges.isCompound(newBody.getTree()));
-        return new BodyChanges(oldUnit, newUnit, oldBody.getTree(), newBody.getTree(), diff.marks, diff.removedBefore,
-                diff.removedAtEnd, unresolved(oldElement, newElement));
+        Set<Tree> unresolved = unresolved(oldElement, newElement);
+        List<BodyChanges.CommentChange> comments = diff.comments(oldBody.getTree(), newBody.getTree());
+        BodyChanges implementation = diff.marks.isEmpty() && comments.isEmpty() ? null
+                : new BodyChanges(oldUnit, newUnit, oldBody.getTree(), newBody.getTree(), diff.marks,
+                diff.removedBefore, diff.removedAtEnd, unresolved, comments);
+        Map<Tree, BodyChanges.Mark> cosmetic = new CosmeticDiff(diff.sourceText(oldUnit), diff.sourceText(newUnit),
+                newBody.getTree()).marks(diff.equal);
+        return new Result(implementation, cosmetic.isEmpty() ? null
+                : new BodyChanges(oldUnit, newUnit, oldBody.getTree(), newBody.getTree(), cosmetic,
+                Map.of(), Map.of(), unresolved, List.of()));
+    }
+
+    /**
+     * The comments added and removed, compared by their text with the whitespace collapsed. A removed comment is
+     * shown where the code next to it in the old version is in the new one: after the code in front of it on its
+     * line, else in front of the code following it.
+     */
+    private List<BodyChanges.CommentChange> comments(Tree oldRoot, Tree newRoot) {
+        SourceText oldText = sourceText(oldUnit);
+        SourceText newText = sourceText(newUnit);
+        List<SourceText.Token> olds = oldText.comments(start(oldText, oldRoot), end(oldText, oldRoot));
+        List<SourceText.Token> news = newText.comments(start(newText, newRoot), end(newText, newRoot));
+        if (olds.stream().map(SourceText.Token::text).toList().equals(news.stream().map(SourceText.Token::text).toList())) {
+            return List.of();
+        }
+        Map<Tree, Tree> mapping = mapping();
+        List<BodyChanges.CommentChange> changes = new ArrayList<>();
+        List<int[]> anchors = new ArrayList<>(SourceText.lcs(olds, news));
+        anchors.add(new int[]{olds.size(), news.size()});
+        int o = 0;
+        int n = 0;
+        int newEnd = end(newText, newRoot) - (newRoot instanceof com.sun.source.tree.BlockTree ? 1 : 0);
+        for (int[] anchor : anchors) {
+            for (; o < anchor[0]; o++) {
+                SourceText.Token old = olds.get(o);
+                int at = anchor(oldText, newText, mapping, old, newEnd);
+                changes.add(new BodyChanges.CommentChange(old.start(), old.end(), at, at));
+            }
+            for (; n < anchor[1]; n++) {
+                SourceText.Token added = news.get(n);
+                changes.add(new BodyChanges.CommentChange(-1, -1, added.start(), added.end()));
+            }
+            o = anchor[0] + 1;
+            n = anchor[1] + 1;
+        }
+        return changes;
+    }
+
+    /** The position in the new source a removed comment is shown at, see {@link #comments}. */
+    private static int anchor(SourceText oldText, SourceText newText, Map<Tree, Tree> mapping, SourceText.Token comment,
+                              int fallback) {
+        String text = oldText.text();
+        int lineStart = text.lastIndexOf('\n', comment.start() - 1) + 1;
+        boolean trailing = !text.substring(lineStart, comment.start()).isBlank();
+        Tree best = null;
+        long bestPosition = 0;
+        for (Map.Entry<Tree, Tree> e : mapping.entrySet()) {
+            long position = trailing ? end(oldText, e.getKey()) : start(oldText, e.getKey());
+            boolean candidate = trailing ? position <= comment.start() && position > lineStart
+                    : position >= comment.end();
+            if (candidate && (best == null || (trailing ? position > bestPosition : position < bestPosition)
+                    || position == bestPosition && size(oldText, e.getKey()) > size(oldText, best))) {
+                best = e.getKey();
+                bestPosition = position;
+            }
+        }
+        if (best == null) {
+            return fallback;
+        }
+        Tree counterpart = mapping.get(best);
+        int at = trailing ? end(newText, counterpart) : start(newText, counterpart);
+        return at < 0 ? fallback : at;
+    }
+
+    private static int start(SourceText source, Tree tree) {
+        return (int) source.positions().getStartPosition(source.unit(), tree);
+    }
+
+    private static int end(SourceText source, Tree tree) {
+        return (int) source.positions().getEndPosition(source.unit(), tree);
+    }
+
+    private static int size(SourceText source, Tree tree) {
+        return end(source, tree) - start(source, tree);
+    }
+
+    /** The old trees paired with new ones, those of the nodes with the same hash with all the trees in them. */
+    private Map<Tree, Tree> mapping() {
+        Map<Tree, Tree> mapping = new IdentityHashMap<>(paired);
+        for (NodeInfo[] pair : equal) {
+            mapEqual(pair[0], pair[1], mapping);
+        }
+        return mapping;
+    }
+
+    private void mapEqual(NodeInfo oldNode, NodeInfo newNode, Map<Tree, Tree> mapping) {
+        mapping.put(oldNode.getTree(), newNode.getTree());
+        List<NodeInfo> olds = present(oldNode.getChildren(), oldUnit);
+        List<NodeInfo> news = present(newNode.getChildren(), newUnit);
+        if (olds.size() == news.size()) {
+            for (int i = 0; i < olds.size(); i++) {
+                mapEqual(olds.get(i), news.get(i), mapping);
+            }
+        }
     }
 
     /** The names javac could not resolve in either version (identity set). */
@@ -85,7 +203,9 @@ final class BodyDiff {
 
     /** Diffs two nodes paired with each other. */
     private void pair(NodeInfo oldNode, NodeInfo newNode, boolean unit) {
+        paired.put(oldNode.getTree(), newNode.getTree());
         if (oldNode.getSha().equals(newNode.getSha())) {
+            equal.add(new NodeInfo[]{oldNode, newNode});
             return;
         }
         if (isExpression(oldNode.getTree()) && isExpression(newNode.getTree())) {
@@ -93,11 +213,13 @@ final class BodyDiff {
             NodeInfo kept = find(newNode, oldNode.getSha(), newUnit);
             if (kept != null && isKept(kept, newNode)) {
                 marks.put(newNode.getTree(), new BodyChanges.Wrapped(kept.getTree()));
+                equal.add(new NodeInfo[]{oldNode, kept});
                 return;
             }
             NodeInfo oldKept = find(oldNode, newNode.getSha(), oldUnit);
             if (oldKept != null && isKept(oldKept, oldNode)) {
                 marks.put(newNode.getTree(), new BodyChanges.Unwrapped(oldNode.getTree(), oldKept.getTree()));
+                equal.add(new NodeInfo[]{oldKept, newNode});
                 return;
             }
         }
@@ -114,6 +236,8 @@ final class BodyDiff {
                 marks.putAll(inner.marks);
                 inner.removedBefore.forEach((tree, olds) -> removedBefore.computeIfAbsent(tree, t -> new ArrayList<>()).addAll(olds));
                 inner.removedAtEnd.forEach((tree, olds) -> removedAtEnd.computeIfAbsent(tree, t -> new ArrayList<>()).addAll(olds));
+                equal.addAll(inner.equal);
+                paired.putAll(inner.paired);
             } else {
                 marks.put(newNode.getTree(), new BodyChanges.Replaced(oldNode.getTree()));
             }
@@ -168,6 +292,12 @@ final class BodyDiff {
         marks.put(newNode.getTree(), CHANGED);
         List<int[]> anchors = new ArrayList<>(lcs(oldChildren, newChildren));
         anchors.add(new int[]{oldChildren.size(), newChildren.size()});
+        for (int[] anchor : anchors) {
+            if (anchor[0] < oldChildren.size()) {
+                paired.put(oldChildren.get(anchor[0]).getTree(), newChildren.get(anchor[1]).getTree());
+                equal.add(new NodeInfo[]{oldChildren.get(anchor[0]), newChildren.get(anchor[1])});
+            }
+        }
         int o = 0;
         int n = 0;
         for (int[] anchor : anchors) {
@@ -238,6 +368,7 @@ final class BodyDiff {
         pair(oldChild, newChild, isUnit(parent, newChild.getTree()));
         if (marks.get(newChild.getTree()) instanceof BodyChanges.Replaced) {
             marks.remove(newChild.getTree());
+            paired.remove(oldChild.getTree());
             return false;
         }
         return true;
@@ -266,6 +397,7 @@ final class BodyDiff {
                 if (inside != null) {
                     kept.add(inside.getTree());
                     used.add(inside.getTree());
+                    equal.add(new NodeInfo[]{old, inside});
                     it.remove();
                 }
             }
@@ -287,6 +419,7 @@ final class BodyDiff {
                     if (inside != null) {
                         kept.put(inside.getTree(), statement.getTree());
                         used.add(inside.getTree());
+                        equal.add(new NodeInfo[]{inside, statement});
                         shown.add(statement);
                     }
                 }
@@ -365,7 +498,7 @@ final class BodyDiff {
     }
 
     /** The nodes which have a place in the source of the unit. */
-    private static List<NodeInfo> present(List<NodeInfo> nodes, CompilationUnitInfo unit) {
+    static List<NodeInfo> present(List<NodeInfo> nodes, CompilationUnitInfo unit) {
         SourcePositions positions = unit.trees().getSourcePositions();
         return nodes.stream().filter(node -> {
             long start = positions.getStartPosition(unit.compilationUnit(), node.getTree());

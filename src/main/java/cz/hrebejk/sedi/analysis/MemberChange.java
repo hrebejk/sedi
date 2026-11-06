@@ -14,8 +14,9 @@ package cz.hrebejk.sedi.analysis;
  * @param pair      the old and new version of the member, one of them {@code null} if it was added or removed
  * @param level     the importance of the change
  * @param publicApi {@code true} if the member is visible outside of the package, see {@link Visibility}
- * @param body      what changed in the body, for {@link ChangeLevel#IMPLEMENTATION} changes of methods and fields;
- *                  else {@code null}
+ * @param body      what changed in the body, for {@link ChangeLevel#IMPLEMENTATION} and {@link ChangeLevel#COSMETIC}
+ *                  changes of methods and fields; {@code null} if not known or, for a cosmetic change, if only the
+ *                  signature changed
  */
 public record MemberChange(ElementPair pair, ChangeLevel level, boolean publicApi, BodyChanges body) {
 

@@ -40,14 +40,58 @@ import java.util.Set;
  * @param removedAtEnd        old nodes without a counterpart, by the new node they are shown at the end of (identity map)
  * @param unresolved          names javac could not resolve in either version, as in code which does not compile
  *                            (identity set)
+ * @param comments            the comments added to or removed from the body, in the order of the old and the new
+ *                            version
  */
 public record BodyChanges(CompilationUnitInfo oldUnit, CompilationUnitInfo newUnit, Tree oldRoot, Tree newRoot,
                           Map<Tree, Mark> marks, Map<Tree, List<Tree>> removedBefore,
-                          Map<Tree, List<Tree>> removedAtEnd, Set<Tree> unresolved) {
+                          Map<Tree, List<Tree>> removedAtEnd, Set<Tree> unresolved, List<CommentChange> comments) {
 
     /** What happened to a node of the new version. */
     public sealed interface Mark permits Changed, Edited, Added, Replaced, Wrapped, Unwrapped, WrappedStatements,
-            UnwrappedStatements, Kept {
+            UnwrappedStatements, Kept, Renamed {
+    }
+
+    /**
+     * A node whose own text, not that of the nodes in it, differs only cosmetically: renamed locals, parameters or
+     * referred elements, or a name qualified differently. Shown in place, the old text struck through in front of the
+     * new one.
+     *
+     * @param edits the differing parts of the text, in the order of the new version
+     */
+    public record Renamed(List<Edit> edits) implements Mark {
+    }
+
+    /**
+     * A part of the new text which replaced a part of the old one.
+     *
+     * @param newStart the start of the part in the new source
+     * @param newEnd   the end of the part in the new source, {@code newStart} if the old text was just removed, as
+     *                 a qualification of a name
+     * @param oldText  the old text, empty if the new text was just added
+     */
+    public record Edit(int newStart, int newEnd, String oldText) {
+    }
+
+    /**
+     * A comment added to or removed from the body. A changed comment is a removed and an added one.
+     *
+     * @param oldStart the start of the removed comment in the old source, {@code -1} for an added one
+     * @param oldEnd   the end of the removed comment in the old source, {@code -1} for an added one
+     * @param newStart the start of the added comment in the new source; for a removed one the position in the new
+     *                 source it is shown at
+     * @param newEnd   the end of the added comment in the new source, {@code newStart} for a removed one
+     */
+    public record CommentChange(int oldStart, int oldEnd, int newStart, int newEnd) {
+
+        /**
+         * Returns whether the comment was added.
+         *
+         * @return {@code true} for an added comment, {@code false} for a removed one
+         */
+        public boolean isAdded() {
+            return oldStart < 0;
+        }
     }
 
     /**

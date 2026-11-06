@@ -16,10 +16,16 @@ public enum ChangeLevel {
     /** Signature changes: added, removed, renamed or retyped types and members. */
     API,
 
-    /** Changes of method bodies, field initializers and initializer blocks which are more than renames. */
+    /**
+     * Changes of method bodies, field initializers and initializer blocks which are more than renames, the changes
+     * of the comments in them included.
+     */
     IMPLEMENTATION,
 
-    /** Renames of locals, parameters and of the elements referred to in bodies, whitespace and comments. */
+    /**
+     * Renames of locals and parameters, references to renamed elements and names qualified differently. Changes of
+     * whitespace alone are not reported at all.
+     */
     COSMETIC,
 
     /** Added and removed imports. */

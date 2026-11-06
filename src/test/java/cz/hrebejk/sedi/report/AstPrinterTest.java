@@ -251,11 +251,11 @@ public class AstPrinterTest extends TestCase {
                         "void m() { c(); b(\"done\"); }\nvoid a() {}\nvoid b(String s) {}\nvoid c() {}"));
     }
 
-    /** A statement on several lines is shown on its lines, with the comments, the tabs expanded. */
+    /** A statement on several lines is shown on its lines, with the comments, the tabs expanded; an added comment is a change. */
     public void testMultiLineStatement() throws Exception {
         assertEquals(List.of(
                         "  └── int m( int a, int b ) { [impl]",
-                        "            return Math.max( // the bigger",
+                        "~           return Math.max( __// the bigger__",
                         "                    a,",
                         "~                   ~~b~~ __3__);",
                         "      }"),
@@ -330,7 +330,7 @@ public class AstPrinterTest extends TestCase {
                 "int m() { int b = g(); return b; }\nint g() { return 1; }").stream().noneMatch(l -> l.contains("[impl]")));
     }
 
-    /** Context of lambda blocks, else branches and switch cases; a changed comment is not shown. */
+    /** Context of lambda blocks, else branches and switch cases; a changed comment is an implementation change. */
     public void testNestedContexts() throws Exception {
         assertEquals(List.of(
                         "  └── void m( java.util.List<String> l, int x ) { [impl]",
@@ -347,7 +347,7 @@ public class AstPrinterTest extends TestCase {
                         "            … (1 line)",
                         "~             default: f(~~4~~ __7__);",
                         "            }",
-                        "            … (1 line)",
+                        "~           f(5); ~~// five~~ __// FIVE__",
                         "      }"),
                 body(
                 "void m(java.util.List<String> l, int x) {\n  l.forEach(s -> {\n    System.out.println(s);\n  });\n  if (x > 0) {\n    f(1);\n  } else {\n    f(2);\n  }\n  switch (x) {\n    case 1: f(3); break;\n    default: f(4);\n  }\n  f(5); // five\n}\nvoid f(int i) {}",
