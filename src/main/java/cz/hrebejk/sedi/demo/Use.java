@@ -25,13 +25,13 @@ public class Use implements Greertr {
     };
 
     
-    private String great(YeahNay polite, boolean b) {
+    private String great(YeahNay polite, boolean very) {
         
         if ( polite == YEAH ) {
             return DOBRY_DEN;
         }
         else {
-            return b ? CAU : NAZDAR;
+            return !very ? CAU : NAZDAR;
         }
         
     }
@@ -42,9 +42,9 @@ public class Use implements Greertr {
     }
 
 
-    public static void main(String... ps) {
+    public static void main(String... args) {
         Use m = new Use();
-        if ( ps.length == 0 ) {
+        if ( args.length == 0 ) {
             m.great();
         }
     }
