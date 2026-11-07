@@ -9,14 +9,9 @@
 package cz.hrebejk.sedi.analysis;
 
 import com.sun.source.tree.ImportTree;
-import com.sun.source.tree.MethodTree;
-import com.sun.source.tree.Tree;
-import com.sun.source.tree.VariableTree;
-import com.sun.source.util.SourcePositions;
 import cz.hrebejk.sedi.compilation.CompilationUnitInfo;
 import org.eclipse.jgit.diff.DiffEntry;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
@@ -185,41 +180,25 @@ final class ApiDiffAnalyzer {
         }
     }
 
-    /** The two compilation units, to diff the bodies and compare the source text of the signatures. */
+    /** The two compilation units, to diff the bodies. */
     private record Sources(CompilationUnitInfo oldUnit, CompilationUnitInfo newUnit) {
 
         /**
-         * The tokens of the declaration of the element up to its body or initializer: annotations, modifiers, types,
-         * names and parameters; whitespace and comments left out. Empty if the source is not known.
+         * Whether the signature differs cosmetically, though not its hash: a renamed parameter, a renamed type
+         * referred to or a name qualified differently. Its parts are compared by their full hashes.
          */
-        private static List<String> header(CompilationUnitInfo unit, ElementInfo element) {
-            Tree tree = element.getOriginalTree();
-            if (unit == null || tree == null) {
-                return List.of();
+        static boolean signatureDiffers(ElementPair pair) {
+            List<NodeInfo> olds = pair.oldElement().getSignatureRoots();
+            List<NodeInfo> news = pair.newElement().getSignatureRoots();
+            if (olds.size() != news.size()) {
+                return true;
             }
-            SourcePositions positions = unit.trees().getSourcePositions();
-            long start = positions.getStartPosition(unit.compilationUnit(), tree);
-            Tree body = tree instanceof MethodTree m ? m.getBody() : tree instanceof VariableTree v ? v.getInitializer() : null;
-            long end = body == null ? positions.getEndPosition(unit.compilationUnit(), tree)
-                    : positions.getStartPosition(unit.compilationUnit(), body);
-            if (start < 0 || end < start) {
-                return List.of();
+            for (int i = 0; i < olds.size(); i++) {
+                if (!olds.get(i).getFullSha().equals(news.get(i).getFullSha())) {
+                    return true;
+                }
             }
-            try {
-                String text = unit.compilationUnit().getSourceFile().getCharContent(true).toString();
-                return new SourceText(unit.compilationUnit(), positions, text).tokens((int) start, (int) end).stream()
-                        .map(SourceText.Token::text).toList();
-            } catch (IOException e) {
-                return List.of();
-            }
-        }
-
-        /**
-         * Whether the source of the signature differs, though not its hash: a renamed parameter, a renamed type
-         * referred to or a name qualified differently.
-         */
-        boolean signatureDiffers(ElementPair pair) {
-            return !header(oldUnit, pair.oldElement()).equals(header(newUnit, pair.newElement()));
+            return false;
         }
 
         /**

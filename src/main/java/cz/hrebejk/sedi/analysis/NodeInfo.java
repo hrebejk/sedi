@@ -20,7 +20,8 @@ import java.util.List;
  * A node of the body of a method or of a field initializer, with the {@link ChangeCategory#BODY} hash of its subtree:
  * renames undone and names of locals ignored, so two nodes with an equal hash differ at most cosmetically. A node of
  * a signature, such as the type of a parameter, has the {@link ChangeCategory#SIGNATURE} hash instead: references to
- * renamed elements undone.
+ * renamed elements undone. Every node has the {@link ChangeCategory#FULL} hash too, of everything as it is written:
+ * two nodes with an equal hash of their category but different full hashes differ cosmetically.
  */
 final class NodeInfo {
 
@@ -28,9 +29,13 @@ final class NodeInfo {
     private final ChangeCategory category;
     private final MessageDigest digest = ElementInfo.newDigest();
     private final MessageDigest ownDigest = ElementInfo.newDigest();
+    private final MessageDigest fullDigest = ElementInfo.newDigest();
+    private final MessageDigest fullOwnDigest = ElementInfo.newDigest();
     private final List<NodeInfo> children = new ArrayList<>();
     private String sha;
     private String ownSha;
+    private String fullSha;
+    private String fullOwnSha;
 
     /** @param category the category whose attributes go into the hash: {@code BODY} or {@code SIGNATURE} */
     NodeInfo(TreePath path, ChangeCategory category) {
@@ -55,6 +60,20 @@ final class NodeInfo {
         // The number and presence of the children are left to the diff of the children.
         if (own && !attribute.startsWith("LIST:") && !attribute.equals("NULL")) {
             ownDigest.update(bytes);
+        }
+    }
+
+    /**
+     * Adds an attribute of the {@link ChangeCategory#FULL} hash of the subtree.
+     *
+     * @param attribute the attribute
+     * @param own       {@code true} if the attribute is of the node itself, not of a node inside it
+     */
+    void updateFull(String attribute, boolean own) {
+        byte[] bytes = attribute.getBytes(StandardCharsets.UTF_8);
+        fullDigest.update(bytes);
+        if (own && !attribute.startsWith("LIST:") && !attribute.equals("NULL")) {
+            fullOwnDigest.update(bytes);
         }
     }
 
@@ -85,6 +104,25 @@ final class NodeInfo {
             ownSha = ElementInfo.sha(ownDigest);
         }
         return ownSha;
+    }
+
+    /** The {@link ChangeCategory#FULL} hash of the subtree; the node must be complete. */
+    String getFullSha() {
+        if (fullSha == null) {
+            fullSha = ElementInfo.sha(fullDigest);
+        }
+        return fullSha;
+    }
+
+    /**
+     * The {@link ChangeCategory#FULL} hash of what the node has besides its children, like the name of a declared
+     * local variable or the text of a name which is a node of its own, as a qualified name of a type.
+     */
+    String getFullOwnSha() {
+        if (fullOwnSha == null) {
+            fullOwnSha = ElementInfo.sha(fullOwnDigest);
+        }
+        return fullOwnSha;
     }
 
     /** The nodes directly in this one, in the order javac scans them. */

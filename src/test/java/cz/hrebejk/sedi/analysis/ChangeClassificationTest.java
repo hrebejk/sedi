@@ -178,8 +178,9 @@ public class ChangeClassificationTest extends TestCase {
     }
 
     /**
-     * When a class is renamed, its constructors and the members referring to it change only by the rename, which
-     * is cosmetic; a constructor whose signature changed otherwise is an API change.
+     * When a class is renamed, the members referring to it change only by the rename, which is cosmetic; a
+     * constructor which does not refer to it is not changed at all, one whose signature changed otherwise is an API
+     * change.
      */
     public void testTypeRenameChangesReferencesOnlyCosmetically() throws Exception {
         try (GitTestHelper helper = new GitTestHelper()) {
@@ -197,7 +198,8 @@ public class ChangeClassificationTest extends TestCase {
                                 + c.pair().newElement().getParamCount()
                                 + (c.pair().isAdded() || c.pair().isRemoved() ? "!" : ""))
                         .sorted().toList();
-                assertEquals(List.of("API:<init>/1", "COSMETIC:<init>/0", "COSMETIC:<init>/1", "COSMETIC:copy/0"),
+                // A() differs only by the name of the class, which is the rename of the class itself.
+                assertEquals(List.of("API:<init>/1", "COSMETIC:<init>/1", "COSMETIC:copy/0"),
                         changes);
             }
         }
@@ -220,7 +222,8 @@ public class ChangeClassificationTest extends TestCase {
                 assertEquals("E2", file.newPrimary().getName());
                 List<String> changes = file.primaryChanges().changes().stream()
                         .map(c -> c.level() + ":" + c.pair().newElement().getName()).sorted().toList();
-                assertEquals(List.of("COSMETIC:<init>", "COSMETIC:<init>", "IMPLEMENTATION:NO"), changes);
+                // The constructors differ only by the name of the enum, which is the rename of the enum itself.
+                assertEquals(List.of("IMPLEMENTATION:NO"), changes);
             }
         }
     }

@@ -53,24 +53,14 @@ public record BodyChanges(CompilationUnitInfo oldUnit, CompilationUnitInfo newUn
     }
 
     /**
-     * A node whose own text, not that of the nodes in it, differs only cosmetically: renamed locals, parameters or
-     * referred elements, or a name qualified differently. Shown in place, the old text struck through in front of the
-     * new one.
+     * A node whose name, not a node of its own, was renamed: a declared local variable or parameter, or the name of a
+     * member selected from an expression. Shown in place, the old name struck through in front of the new one.
      *
-     * @param edits the differing parts of the text, in the order of the new version
+     * @param nameStart the start of the new name in the new source
+     * @param nameEnd   the end of the new name in the new source
+     * @param oldName   the old name
      */
-    public record Renamed(List<Edit> edits) implements Mark {
-    }
-
-    /**
-     * A part of the new text which replaced a part of the old one.
-     *
-     * @param newStart the start of the part in the new source
-     * @param newEnd   the end of the part in the new source, {@code newStart} if the old text was just removed, as
-     *                 a qualification of a name
-     * @param oldText  the old text, empty if the new text was just added
-     */
-    public record Edit(int newStart, int newEnd, String oldText) {
+    public record Renamed(int nameStart, int nameEnd, String oldName) implements Mark {
     }
 
     /**

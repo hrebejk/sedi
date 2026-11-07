@@ -176,16 +176,28 @@ public final class SignatureDiffPrinter {
     }
 
     /**
-     * A part of a signature: the text shown and the key it is compared by. The key of a tree is its hash, in which
-     * references to renamed elements are undone, so a part which only refers to a renamed type is unchanged.
+     * A part of a signature: the text shown and the keys it is compared by. The key of a tree is its hash, in which
+     * references to renamed elements are undone, so a part which only refers to a renamed type is unchanged. The full
+     * key is its {@link cz.hrebejk.sedi.analysis.ChangeCategory#FULL full} hash, of the tree as it is written: parts
+     * with equal keys but different full keys differ cosmetically.
      */
-    private record Piece(String text, String key, long line) {
+    private record Piece(String text, String key, long line, String full) {
 
-        static final Piece NONE = new Piece("", "", 0);
+        static final Piece NONE = new Piece("", "", 0, "");
 
         /** A part compared by its text, like a modifier or a name. */
         static Piece text(String text) {
-            return new Piece(text, text, 0);
+            return new Piece(text, text, 0, text);
+        }
+
+        /**
+         * The name of a parameter, its full key that of the parameter without its type and modifiers, so a renamed
+         * parameter differs cosmetically.
+         */
+        static Piece name(ElementInfo info, VariableTree parameter) {
+            String name = parameter.getName().toString();
+            String full = info.getSignatureFullOwnSha(parameter);
+            return new Piece(name, name, 0, full == null ? name : full);
         }
 
         /**
@@ -217,8 +229,9 @@ public final class SignatureDiffPrinter {
 
         private static Piece of(ElementInfo info, Tree tree, String text, Theme theme) {
             String sha = info.getSignatureSha(tree);
+            String full = info.getSignatureFullSha(tree);
             return new Piece(hasUnresolved(info, tree) ? theme.error(text) : text, sha == null ? text : sha,
-                    info.getLine(tree));
+                    info.getLine(tree), full == null ? text : full);
         }
 
         /** Whether the tree is, or contains, a name javac could not resolve. */
@@ -253,7 +266,7 @@ public final class SignatureDiffPrinter {
                 String name = m.getName().contentEquals("<init>") ? typeName : m.getName().toString();
                 List<Piece[]> params = new ArrayList<>();
                 for (VariableTree p : m.getParameters()) {
-                    params.add(new Piece[]{Piece.type(info, p, theme), Piece.text(p.getName().toString())});
+                    params.add(new Piece[]{Piece.type(info, p, theme), Piece.name(info, p)});
                 }
                 return new Parts(info.getNodeType(), annotations(info, m.getModifiers(), theme), modifiers(info, m.getModifiers()),
                         pieces(info, m.getTypeParameters(), theme), Piece.of(info, m.getReturnType(), theme), name, params,
@@ -264,7 +277,7 @@ public final class SignatureDiffPrinter {
                 if (info.getSignatureSha(v.getType()) == null) {
                     // A type javac added, as to an enum constant: compared by the type itself, renames undone.
                     type = new Piece(type.text(), info.getFacetSha(cz.hrebejk.sedi.analysis.Facet.RETURN_TYPE),
-                            type.line());
+                            type.line(), type.full());
                 }
                 return new Parts(info.getNodeType(), annotations(info, v.getModifiers(), theme), modifiers(info, v.getModifiers()),
                         List.of(), type, v.getName().toString(), List.of(), List.of(), List.of(), List.of(), List.of());
@@ -403,7 +416,7 @@ public final class SignatureDiffPrinter {
             return strike(join(List.of(op[0].text(), op[1].text()), " "));
         }
         // A renamed parameter is a cosmetic change, not one of the signature: only the new name is shown.
-        return join(List.of(slot(op[0], np[0]), cosmetic ? slot(op[1].text(), np[1].text()) : np[1].text()), " ");
+        return join(List.of(slot(op[0], np[0]), same(op[1], np[1])), " ");
     }
 
     /** The longest common subsequence of the parameters of the same types, as pairs of old and new index. */
@@ -483,9 +496,13 @@ public final class SignatureDiffPrinter {
         return join(List.of(join(removed, separator), join(current, separator)), " ");
     }
 
-    /** A part which did not change but cosmetically: the new text, or for a cosmetic printer the change of the text. */
+    /**
+     * A part which did not change but cosmetically: the new text, or for a cosmetic printer the change if the full
+     * keys differ.
+     */
     private String same(Piece oldPiece, Piece newPiece) {
-        return cosmetic ? slot(oldPiece.text(), newPiece.text()) : newPiece.text();
+        return cosmetic && !oldPiece.full().equals(newPiece.full())
+                ? theme.replace(oldPiece.text(), newPiece.text()) : newPiece.text();
     }
 
     /** The text struck through. */

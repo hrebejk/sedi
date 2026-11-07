@@ -75,10 +75,10 @@ public class CosmeticReportTest extends TestCase {
         assertEquals(List.of(
                         "    class Foo",
                         "~   ├── int m( ~~java.util.List<String>~~ __List<String>__ list ) {",
-                        "~   │         __java.util.__List<String> x = ~~java.util.~~List.of();",
+                        "~   │         ~~List~~ __java.util.List__<String> x = ~~java.util.List.of~~ __List.of__();",
                         "    │         return list.size() + x.size();",
                         "    │   }",
-                        "~   └── int f = __java.lang.__Math.max(1, 2)"),
+                        "~   └── int f = ~~Math.max~~ __java.lang.Math.max__(1, 2)"),
                 section("import java.util.List;\nclass Foo {\n  int m(java.util.List<String> list) {\n"
                                 + "    List<String> x = java.util.List.of();\n    return list.size() + x.size();\n  }\n"
                                 + "  int f = Math.max(1, 2);\n}\n",

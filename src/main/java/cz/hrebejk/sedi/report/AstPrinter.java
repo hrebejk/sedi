@@ -376,27 +376,15 @@ final class AstPrinter {
             case BodyChanges.Kept kept -> {
             }
             case BodyChanges.Renamed renamed -> {
-                for (BodyChanges.Edit edit : renamed.edits()) {
-                    edited(edit);
-                }
+                // The old name struck through in front of the new one, which is marked as added.
+                newSource.insert(renamed.nameStart(), theme.strike(renamed.oldName()) + " ");
+                newSource.added.set(renamed.nameStart(), renamed.nameEnd());
                 showUnit(tree);
                 for (Tree child : children(tree, newSource)) {
                     decorate(child, false);
                 }
             }
         }
-    }
-
-    /**
-     * A part of the text changed in place: the old text struck through in front of the new one, which is marked as
-     * added.
-     */
-    private void edited(BodyChanges.Edit edit) {
-        if (!edit.oldText().isEmpty()) {
-            boolean replaced = edit.newEnd() > edit.newStart();
-            newSource.insert(edit.newStart(), theme.strike(edit.oldText()) + (replaced ? " " : ""));
-        }
-        newSource.added.set(edit.newStart(), edit.newEnd());
     }
 
     /**

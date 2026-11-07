@@ -49,6 +49,8 @@ public class ElementInfo {
     private NodeInfo body;
     /** The nodes of the signature, by their trees (identity map). */
     private final Map<Tree, NodeInfo> signatureNodes = new IdentityHashMap<>();
+    /** The outermost nodes of the signature, like the modifiers, the type and the parameters, in the order scanned. */
+    private final List<NodeInfo> signatureRoots = new ArrayList<>();
     /** The names javac could not resolve, in the signature and the body (identity set). */
     private final Set<Tree> unresolved = Collections.newSetFromMap(new IdentityHashMap<>());
     /** The source the element is in, {@code null} if it is not known. */
@@ -241,6 +243,9 @@ public class ElementInfo {
                 if (node.getCategory() == category) {
                     node.update(attribute, node == openNodes.getLast());
                 }
+                if (category == ChangeCategory.FULL) {
+                    node.updateFull(attribute, node == openNodes.getLast());
+                }
             }
         }
     }
@@ -261,6 +266,9 @@ public class ElementInfo {
         NodeInfo node = openNodes.removeLast();
         if (node.getCategory() == ChangeCategory.SIGNATURE) {
             signatureNodes.put(node.getTree(), node);
+            if (openNodes.isEmpty()) {
+                signatureRoots.add(node);
+            }
         }
         if (!openNodes.isEmpty()) {
             openNodes.getLast().addChild(node);
@@ -280,6 +288,40 @@ public class ElementInfo {
     public String getSignatureSha(Tree tree) {
         NodeInfo node = signatureNodes.get(tree);
         return node == null ? null : node.getSha();
+    }
+
+    /**
+     * Returns the {@link ChangeCategory#FULL} hash of a part of the signature of the element, of everything as it is
+     * written: a part whose {@link #getSignatureSha signature hash} is equal to that of its old version, but not this
+     * one, changed cosmetically, as a renamed type it refers to or a name qualified differently.
+     *
+     * @param tree a tree of the signature of the element
+     * @return the hash, {@code null} if the tree is not a part of the signature
+     */
+    public String getSignatureFullSha(Tree tree) {
+        NodeInfo node = signatureNodes.get(tree);
+        return node == null ? null : node.getFullSha();
+    }
+
+    /**
+     * Returns the {@link ChangeCategory#FULL} hash of what a part of the signature has besides the parts in it, like
+     * the name of a parameter besides its type.
+     *
+     * @param tree a tree of the signature of the element
+     * @return the hash, {@code null} if the tree is not a part of the signature
+     */
+    public String getSignatureFullOwnSha(Tree tree) {
+        NodeInfo node = signatureNodes.get(tree);
+        return node == null ? null : node.getFullOwnSha();
+    }
+
+    /**
+     * The outermost nodes of the signature: the modifiers, the types, the parameters and so on, in the order scanned.
+     *
+     * @return the nodes
+     */
+    List<NodeInfo> getSignatureRoots() {
+        return signatureRoots;
     }
 
     /**

@@ -8,46 +8,54 @@
  */
 package cz.hrebejk.sedi.analysis;
 
+import com.sun.source.tree.MemberReferenceTree;
+import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.Tree;
+import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
+import cz.hrebejk.sedi.compilation.CompilationUnitInfo;
 
-import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
  * Finds the cosmetic changes of a body: renamed locals and parameters, references to renamed elements and names
- * qualified differently. Only the old and new nodes with the same hash are compared (see {@link BodyDiff}): they have
- * the same structure, so they are walked side by side and the own text of every node, not that of the nodes in it, is
- * compared token by token. Whitespace and comments are ignored.
+ * qualified differently. Only the old and new nodes with the same {@link ChangeCategory#BODY} hash are compared (see
+ * {@link BodyDiff}): they have the same structure, so they are walked side by side and compared by their
+ * {@link ChangeCategory#FULL} hashes, which hash the names as they are written. A node whose own full hash differs is
+ * the change.
  */
 final class CosmeticDiff {
 
     private static final BodyChanges.Mark CHANGED = new BodyChanges.Changed();
 
-    private final SourceText oldText;
-    private final SourceText newText;
+    private final CompilationUnitInfo oldUnit;
+    private final CompilationUnitInfo newUnit;
+    private final SourceText newSource;
     private final Tree newRoot;
     private final Map<Tree, BodyChanges.Mark> marks = new IdentityHashMap<>();
 
     /**
-     * @param oldText the old source
-     * @param newText the new source
-     * @param newRoot the new body, where the marks of the trees around the changes end
+     * @param oldUnit   the old compilation unit
+     * @param newUnit   the new compilation unit
+     * @param newSource the source of the new one, to find where the names are
+     * @param newRoot   the new body, where the marks of the trees around the changes end
      */
-    CosmeticDiff(SourceText oldText, SourceText newText, Tree newRoot) {
-        this.oldText = oldText;
-        this.newText = newText;
+    CosmeticDiff(CompilationUnitInfo oldUnit, CompilationUnitInfo newUnit, SourceText newSource, Tree newRoot) {
+        this.oldUnit = oldUnit;
+        this.newUnit = newUnit;
+        this.newSource = newSource;
         this.newRoot = newRoot;
     }
 
     /**
      * Marks the cosmetic changes of the nodes.
      *
-     * @param equal pairs of an old and a new node with the same hash
-     * @return the nodes whose own text changed marked {@link BodyChanges.Renamed}, the nodes around them up to the
-     *         body {@link BodyChanges.Changed} (identity map); empty if nothing changed
+     * @param equal pairs of an old and a new node with the same body hash
+     * @return the changed names marked {@link BodyChanges.Renamed}, or {@link BodyChanges.Edited} if the name is a
+     *         node of its own, and the nodes around them up to the body {@link BodyChanges.Changed} (identity map);
+     *         empty if nothing changed
      */
     Map<Tree, BodyChanges.Mark> marks(List<NodeInfo[]> equal) {
         for (NodeInfo[] pair : equal) {
@@ -57,19 +65,79 @@ final class CosmeticDiff {
     }
 
     private void walk(NodeInfo oldNode, NodeInfo newNode) {
-        List<NodeInfo> olds = present(oldNode.getChildren(), oldText);
-        List<NodeInfo> news = present(newNode.getChildren(), newText);
-        List<BodyChanges.Edit> edits = edits(own(oldText, oldNode.getTree(), olds), own(newText, newNode.getTree(), news),
-                newText.positions().getEndPosition(newText.unit(), newNode.getTree()));
-        if (!edits.isEmpty()) {
-            marks.put(newNode.getTree(), new BodyChanges.Renamed(edits));
+        if (oldNode.getFullSha().equals(newNode.getFullSha())) {
+            return;
+        }
+        List<NodeInfo> olds = BodyDiff.present(oldNode.getChildren(), oldUnit);
+        List<NodeInfo> news = BodyDiff.present(newNode.getChildren(), newUnit);
+        if (!oldNode.getFullOwnSha().equals(newNode.getFullOwnSha())) {
+            BodyChanges.Mark mark = mark(oldNode.getTree(), newNode.getTree(), news.isEmpty());
+            marks.put(newNode.getTree(), mark);
             markParents(newNode.getPath());
+            if (mark instanceof BodyChanges.Edited) {
+                // Shown as a whole, the old version struck through.
+                return;
+            }
         }
         if (olds.size() == news.size()) {
             for (int i = 0; i < olds.size(); i++) {
                 walk(olds.get(i), news.get(i));
             }
         }
+    }
+
+    /**
+     * The mark of a node whose own part changed: a declaration or a selected member renamed, else the node as a whole,
+     * like a name which is a node of its own or a qualified name of a type.
+     */
+    private BodyChanges.Mark mark(Tree oldTree, Tree newTree, boolean leaf) {
+        if (!leaf && oldTree instanceof VariableTree oldVariable && newTree instanceof VariableTree newVariable) {
+            int start = declaredName(newVariable);
+            if (start >= 0) {
+                return new BodyChanges.Renamed(start, start + newVariable.getName().length(),
+                        oldVariable.getName().toString());
+            }
+        }
+        String oldName = selectedName(oldTree);
+        String newName = selectedName(newTree);
+        if (!leaf && oldName != null && newName != null) {
+            int end = end(newSource, newTree);
+            return new BodyChanges.Renamed(end - newName.length(), end, oldName);
+        }
+        return new BodyChanges.Edited(oldTree);
+    }
+
+    /** The name after the dot or the {@code ::} of a member select or reference, {@code null} for other trees. */
+    private static String selectedName(Tree tree) {
+        return switch (tree) {
+            case MemberSelectTree select -> select.getIdentifier().toString();
+            case MemberReferenceTree reference -> reference.getName().toString();
+            default -> null;
+        };
+    }
+
+    /**
+     * The position of the name of a declared variable: after its modifiers and type, before its initializer. javac
+     * does not tell where the name is, so it is looked up there.
+     *
+     * @return the position, {@code -1} if not found
+     */
+    private int declaredName(VariableTree variable) {
+        int from = Math.max(start(newSource, variable), Math.max(end(newSource, variable.getModifiers()),
+                variable.getType() == null ? -1 : end(newSource, variable.getType())));
+        int to = variable.getInitializer() == null || start(newSource, variable.getInitializer()) < 0
+                ? end(newSource, variable) : start(newSource, variable.getInitializer());
+        String text = newSource.text();
+        String name = variable.getName().toString();
+        for (int i = text.indexOf(name, from); i >= 0 && i + name.length() <= to; i = text.indexOf(name, i + 1)) {
+            boolean before = i == 0 || !Character.isJavaIdentifierPart(text.charAt(i - 1));
+            boolean after = i + name.length() >= text.length()
+                    || !Character.isJavaIdentifierPart(text.charAt(i + name.length()));
+            if (before && after) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /** Marks the trees around a changed one as {@link BodyChanges.Changed}, up to the body. */
@@ -85,65 +153,11 @@ final class CosmeticDiff {
         }
     }
 
-    /** The tokens of the tree which are not in the trees in it. */
-    private static List<SourceText.Token> own(SourceText source, Tree tree, List<NodeInfo> children) {
-        int start = (int) source.positions().getStartPosition(source.unit(), tree);
-        int end = (int) source.positions().getEndPosition(source.unit(), tree);
-        List<SourceText.Token> own = new ArrayList<>();
-        for (SourceText.Token token : source.tokens(start, end)) {
-            boolean inChild = false;
-            for (NodeInfo child : children) {
-                long from = source.positions().getStartPosition(source.unit(), child.getTree());
-                long to = source.positions().getEndPosition(source.unit(), child.getTree());
-                if (token.start() >= from && token.end() <= to) {
-                    inChild = true;
-                    break;
-                }
-            }
-            if (!inChild) {
-                own.add(token);
-            }
-        }
-        return own;
+    private static int start(SourceText source, Tree tree) {
+        return tree == null ? -1 : (int) source.positions().getStartPosition(source.unit(), tree);
     }
 
-    /**
-     * The runs of tokens which differ: the new ones replaced the old ones; where there are no new ones, the old ones
-     * were removed in front of the next new token.
-     *
-     * @param end where the old tokens removed at the end are shown, the end of the new tree
-     */
-    private List<BodyChanges.Edit> edits(List<SourceText.Token> olds, List<SourceText.Token> news, long end) {
-        List<BodyChanges.Edit> edits = new ArrayList<>();
-        List<int[]> anchors = new ArrayList<>(SourceText.lcs(olds, news));
-        anchors.add(new int[]{olds.size(), news.size()});
-        int o = 0;
-        int n = 0;
-        for (int[] anchor : anchors) {
-            if (o < anchor[0] || n < anchor[1]) {
-                String old = o < anchor[0] ? oldText.text().substring(olds.get(o).start(), olds.get(anchor[0] - 1).end())
-                        .replaceAll("\\s+", " ") : "";
-                int start;
-                int stop;
-                if (n < anchor[1]) {
-                    start = news.get(n).start();
-                    stop = news.get(anchor[1] - 1).end();
-                } else {
-                    start = anchor[1] < news.size() ? news.get(anchor[1]).start() : (int) end;
-                    stop = start;
-                }
-                edits.add(new BodyChanges.Edit(start, stop, old));
-            }
-            o = anchor[0] + 1;
-            n = anchor[1] + 1;
-        }
-        return edits;
-    }
-
-    private static List<NodeInfo> present(List<NodeInfo> nodes, SourceText source) {
-        return nodes.stream().filter(node -> {
-            long start = source.positions().getStartPosition(source.unit(), node.getTree());
-            return start >= 0 && source.positions().getEndPosition(source.unit(), node.getTree()) > start;
-        }).toList();
+    private static int end(SourceText source, Tree tree) {
+        return tree == null ? -1 : (int) source.positions().getEndPosition(source.unit(), tree);
     }
 }

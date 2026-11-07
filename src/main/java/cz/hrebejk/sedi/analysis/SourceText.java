@@ -83,45 +83,26 @@ record SourceText(CompilationUnitTree unit, SourcePositions positions, String te
     }
 
     /**
-     * A token of the code or a comment: its place in the text and its text.
+     * A comment: its place in the text and its text, every run of whitespace a single space, so a comment which was
+     * only reformatted is equal to its old version.
      *
      * @param start the position of its first character
      * @param end   the position after its last character
-     * @param text  the text; for a comment with every run of whitespace a single space
+     * @param text  the text
      */
-    record Token(int start, int end, String text) {
+    record Comment(int start, int end, String text) {
     }
 
     /**
-     * The tokens of a part of the text: names and numbers, string and character literals and text blocks as a whole,
-     * every other character on its own. Whitespace and comments are left out.
-     *
-     * @param from the start of the part
-     * @param to   the end of the part
-     * @return the tokens in the order of the text
-     */
-    List<Token> tokens(int from, int to) {
-        List<Token> tokens = new ArrayList<>();
-        scan(from, to, tokens, null);
-        return tokens;
-    }
-
-    /**
-     * The comments in a part of the text, their whitespace collapsed, so a comment which was only reformatted is
-     * equal to its old version.
+     * The comments in a part of the text. Comments are not a part of the trees, so they are found in the text,
+     * skipping string and character literals and text blocks.
      *
      * @param from the start of the part
      * @param to   the end of the part
      * @return the comments in the order of the text
      */
-    List<Token> comments(int from, int to) {
-        List<Token> comments = new ArrayList<>();
-        scan(from, to, null, comments);
-        return comments;
-    }
-
-    /** Splits a part of the text into tokens and comments, either list {@code null} if not wanted. */
-    private void scan(int from, int to, List<Token> tokens, List<Token> comments) {
+    List<Comment> comments(int from, int to) {
+        List<Comment> comments = new ArrayList<>();
         int i = Math.max(from, 0);
         int end = Math.min(to, text.length());
         while (i < end) {
@@ -136,16 +117,8 @@ record SourceText(CompilationUnitTree unit, SourcePositions positions, String te
                     int close = text.indexOf("*/", i + 2);
                     i = close < 0 || close + 2 > end ? end : close + 2;
                 }
-                if (comments != null) {
-                    comments.add(new Token(start, i, text.substring(start, i).strip().replaceAll("\\s+", " ")));
-                }
-                continue;
-            }
-            if (Character.isWhitespace(c)) {
-                i++;
-                continue;
-            }
-            if (text.startsWith("\"\"\"", i)) {
+                comments.add(new Comment(start, i, text.substring(start, i).strip().replaceAll("\\s+", " ")));
+            } else if (text.startsWith("\"\"\"", i)) {
                 int close = text.indexOf("\"\"\"", i + 3);
                 i = close < 0 || close + 3 > end ? end : close + 3;
             } else if (c == '"' || c == '\'') {
@@ -154,27 +127,21 @@ record SourceText(CompilationUnitTree unit, SourcePositions positions, String te
                     i += text.charAt(i) == '\\' ? 2 : 1;
                 }
                 i = Math.min(i + 1, end);
-            } else if (Character.isJavaIdentifierPart(c)) {
-                while (i < end && Character.isJavaIdentifierPart(text.charAt(i))) {
-                    i++;
-                }
             } else {
                 i++;
             }
-            if (tokens != null) {
-                tokens.add(new Token(start, i, text.substring(start, i)));
-            }
         }
+        return comments;
     }
 
     /**
-     * The longest common subsequence of the tokens with equal texts.
+     * The longest common subsequence of the comments with equal texts.
      *
-     * @param olds the old tokens
-     * @param news the new tokens
+     * @param olds the old comments
+     * @param news the new comments
      * @return pairs of old and new index, in order
      */
-    static List<int[]> lcs(List<Token> olds, List<Token> news) {
+    static List<int[]> lcs(List<Comment> olds, List<Comment> news) {
         int[][] length = new int[olds.size() + 1][news.size() + 1];
         for (int i = olds.size() - 1; i >= 0; i--) {
             for (int j = news.size() - 1; j >= 0; j--) {

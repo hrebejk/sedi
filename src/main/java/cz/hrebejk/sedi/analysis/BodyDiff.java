@@ -92,7 +92,7 @@ final class BodyDiff {
         BodyChanges implementation = diff.marks.isEmpty() && comments.isEmpty() ? null
                 : new BodyChanges(oldUnit, newUnit, oldBody.getTree(), newBody.getTree(), diff.marks,
                 diff.removedBefore, diff.removedAtEnd, unresolved, comments);
-        Map<Tree, BodyChanges.Mark> cosmetic = new CosmeticDiff(diff.sourceText(oldUnit), diff.sourceText(newUnit),
+        Map<Tree, BodyChanges.Mark> cosmetic = new CosmeticDiff(oldUnit, newUnit, diff.sourceText(newUnit),
                 newBody.getTree()).marks(diff.equal);
         return new Result(implementation, cosmetic.isEmpty() ? null
                 : new BodyChanges(oldUnit, newUnit, oldBody.getTree(), newBody.getTree(), cosmetic,
@@ -107,9 +107,9 @@ final class BodyDiff {
     private List<BodyChanges.CommentChange> comments(Tree oldRoot, Tree newRoot) {
         SourceText oldText = sourceText(oldUnit);
         SourceText newText = sourceText(newUnit);
-        List<SourceText.Token> olds = oldText.comments(start(oldText, oldRoot), end(oldText, oldRoot));
-        List<SourceText.Token> news = newText.comments(start(newText, newRoot), end(newText, newRoot));
-        if (olds.stream().map(SourceText.Token::text).toList().equals(news.stream().map(SourceText.Token::text).toList())) {
+        List<SourceText.Comment> olds = oldText.comments(start(oldText, oldRoot), end(oldText, oldRoot));
+        List<SourceText.Comment> news = newText.comments(start(newText, newRoot), end(newText, newRoot));
+        if (olds.stream().map(SourceText.Comment::text).toList().equals(news.stream().map(SourceText.Comment::text).toList())) {
             return List.of();
         }
         Map<Tree, Tree> mapping = mapping();
@@ -121,12 +121,12 @@ final class BodyDiff {
         int newEnd = end(newText, newRoot) - (newRoot instanceof com.sun.source.tree.BlockTree ? 1 : 0);
         for (int[] anchor : anchors) {
             for (; o < anchor[0]; o++) {
-                SourceText.Token old = olds.get(o);
+                SourceText.Comment old = olds.get(o);
                 int at = anchor(oldText, newText, mapping, old, newEnd);
                 changes.add(new BodyChanges.CommentChange(old.start(), old.end(), at, at));
             }
             for (; n < anchor[1]; n++) {
-                SourceText.Token added = news.get(n);
+                SourceText.Comment added = news.get(n);
                 changes.add(new BodyChanges.CommentChange(-1, -1, added.start(), added.end()));
             }
             o = anchor[0] + 1;
@@ -136,7 +136,7 @@ final class BodyDiff {
     }
 
     /** The position in the new source a removed comment is shown at, see {@link #comments}. */
-    private static int anchor(SourceText oldText, SourceText newText, Map<Tree, Tree> mapping, SourceText.Token comment,
+    private static int anchor(SourceText oldText, SourceText newText, Map<Tree, Tree> mapping, SourceText.Comment comment,
                               int fallback) {
         String text = oldText.text();
         int lineStart = text.lastIndexOf('\n', comment.start() - 1) + 1;
@@ -585,17 +585,17 @@ final class BodyDiff {
 
     /**
      * The longest common subsequence of equal hashes, as pairs of old and new index. Of the longest ones, the one
-     * pairing the most children with the same text: hashes ignore the names of locals, so {@code a.size()} and
+     * pairing the most children equal as written (by their full hashes): hashes ignore the names of locals, so {@code a.size()} and
      * {@code b.size()} are equal, but where both are in the code each is paired with itself.
      */
     private List<int[]> lcs(List<NodeInfo> olds, List<NodeInfo> news) {
-        // A pair counts more than any number of pairs with the same text.
+        // A pair counts more than any number of pairs equal as written.
         int pairWeight = Math.min(olds.size(), news.size()) + 1;
         int[][] weight = new int[olds.size()][news.size()];
         for (int i = 0; i < olds.size(); i++) {
             for (int j = 0; j < news.size(); j++) {
                 if (olds.get(i).getSha().equals(news.get(j).getSha())) {
-                    weight[i][j] = pairWeight + (sameText(olds.get(i), news.get(j)) ? 1 : 0);
+                    weight[i][j] = pairWeight + (olds.get(i).getFullSha().equals(news.get(j).getFullSha()) ? 1 : 0);
                 }
             }
         }
@@ -621,12 +621,6 @@ final class BodyDiff {
             }
         }
         return result;
-    }
-
-    /** Whether the two nodes have the same text, but for spaces and comments. */
-    private boolean sameText(NodeInfo oldNode, NodeInfo newNode) {
-        String oldText = sourceText(oldUnit).oneLine(oldNode.getTree());
-        return oldText != null && oldText.equals(sourceText(newUnit).oneLine(newNode.getTree()));
     }
 
     private SourceText sourceText(CompilationUnitInfo unit) {
