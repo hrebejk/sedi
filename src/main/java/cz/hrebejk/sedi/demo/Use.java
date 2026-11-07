@@ -4,17 +4,17 @@
  */
 package cz.hrebejk.sedi.demo;
 
-import cz.hrebejk.sedi.demo.lib.Greertr;
-import static cz.hrebejk.sedi.demo.lib.Gretaings.*;
-import cz.hrebejk.sedi.demo.lib.YeahNay;
-import static cz.hrebejk.sedi.demo.lib.YeahNay.NAY;
-import static cz.hrebejk.sedi.demo.lib.YeahNay.YEAH;
+import cz.hrebejk.sedi.demo.lib.Greeter;
+import static cz.hrebejk.sedi.demo.lib.Greetings.*;
+import cz.hrebejk.sedi.demo.lib.YesNo;
+import static cz.hrebejk.sedi.demo.lib.YesNo.NAY;
+import static cz.hrebejk.sedi.demo.lib.YesNo.YEAH;
 
 /**
  *
  * @author phrebejk
  */
-public class Use implements Greertr {
+public class Use implements Greeter {
     
     private final String EMPTY = empty();
     
@@ -25,7 +25,7 @@ public class Use implements Greertr {
     };
 
     
-    private String great(YeahNay polite, boolean very) {
+    private String great(YesNo polite, boolean very) {
         
         if ( polite == YEAH ) {
             return DOBRY_DEN;
@@ -37,7 +37,7 @@ public class Use implements Greertr {
     }
 
     @Override
-    public String great()  {
+    public String greet()  {
         return great( NAY, false );
     }
 
@@ -45,7 +45,7 @@ public class Use implements Greertr {
     public static void main(String... args) {
         Use m = new Use();
         if ( args.length == 0 ) {
-            m.great();
+            m.greet();
         }
     }
 

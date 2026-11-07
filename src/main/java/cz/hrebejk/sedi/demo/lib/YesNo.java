@@ -8,8 +8,9 @@ package cz.hrebejk.sedi.demo.lib;
  *
  * @author phrebejk
  */
-public interface Greertr {
+public enum YesNo {
     
-    public String great();
+    YEAH,
+    NAY
     
 }

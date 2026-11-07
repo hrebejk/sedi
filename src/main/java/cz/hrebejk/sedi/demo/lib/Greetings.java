@@ -8,7 +8,7 @@ package cz.hrebejk.sedi.demo.lib;
  *
  * @author phrebejk
  */
-public class Gretaings {
+public class Greetings {
     
     public static final String DOBRY_DEN = "Dobry den";
     public static final String CAU = "Cau";

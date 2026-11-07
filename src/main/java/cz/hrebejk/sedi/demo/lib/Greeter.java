@@ -8,9 +8,8 @@ package cz.hrebejk.sedi.demo.lib;
  *
  * @author phrebejk
  */
-public enum YeahNay {
+public interface Greeter {
     
-    YEAH,
-    NAY
+    public String greet();
     
 }
