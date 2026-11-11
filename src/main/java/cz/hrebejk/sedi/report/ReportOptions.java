@@ -20,9 +20,11 @@ import cz.hrebejk.sedi.analysis.ChangeLevel;
  * @param javadocContext the unchanged javadoc lines shown around a change of a javadoc, {@link #NO_JAVADOC} to show
  *                       no javadoc, {@link #WHOLE_JAVADOC} to show the whole javadoc
  * @param lineNumbers    whether to show the numbers of the lines of the source on the left
+ * @param showAdditions  whether the implementation changes show the whole source of the added types and members
+ * @param showDeletions  whether the implementation changes show the whole source of the removed types and members
  */
 public record ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyContext, int javadocContext,
-                            boolean lineNumbers) {
+                            boolean lineNumbers, boolean showAdditions, boolean showDeletions) {
 
     /** The {@link #bodyContext()} showing all the unchanged lines of a changed body. */
     public static final int WHOLE_BODY = -1;
@@ -38,6 +40,20 @@ public record ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyCon
 
     /** The default of {@link #javadocContext()}: no javadoc. */
     public static final int DEFAULT_JAVADOC_CONTEXT = NO_JAVADOC;
+
+    /**
+     * Creates options showing the whole source of the added types and members, not of the removed ones.
+     *
+     * @param maxLevel       the least important level of changes to show
+     * @param grouping       how the changes are grouped
+     * @param bodyContext    the most unchanged lines of a body shown in a row
+     * @param javadocContext the unchanged javadoc lines shown around a change of a javadoc
+     * @param lineNumbers    whether to show the numbers of the lines of the source on the left
+     */
+    public ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyContext, int javadocContext,
+                         boolean lineNumbers) {
+        this(maxLevel, grouping, bodyContext, javadocContext, lineNumbers, true, false);
+    }
 
     /**
      * Creates options showing no line numbers.
@@ -58,7 +74,7 @@ public record ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyCon
      * @return the new options
      */
     public ReportOptions withMaxLevel(ChangeLevel level) {
-        return new ReportOptions(level, grouping, bodyContext, javadocContext, lineNumbers);
+        return new ReportOptions(level, grouping, bodyContext, javadocContext, lineNumbers, showAdditions, showDeletions);
     }
 
     /**
@@ -68,7 +84,7 @@ public record ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyCon
      * @return the new options
      */
     public ReportOptions withGrouping(Grouping grouping) {
-        return new ReportOptions(maxLevel, grouping, bodyContext, javadocContext, lineNumbers);
+        return new ReportOptions(maxLevel, grouping, bodyContext, javadocContext, lineNumbers, showAdditions, showDeletions);
     }
 
     /**
@@ -78,7 +94,27 @@ public record ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyCon
      * @return the new options
      */
     public ReportOptions withJavadocContext(int javadocContext) {
-        return new ReportOptions(maxLevel, grouping, bodyContext, javadocContext, lineNumbers);
+        return new ReportOptions(maxLevel, grouping, bodyContext, javadocContext, lineNumbers, showAdditions, showDeletions);
+    }
+
+    /**
+     * Returns these options showing the whole source of the added types and members, or not.
+     *
+     * @param show whether to show it
+     * @return the new options
+     */
+    public ReportOptions withAdditions(boolean show) {
+        return new ReportOptions(maxLevel, grouping, bodyContext, javadocContext, lineNumbers, show, showDeletions);
+    }
+
+    /**
+     * Returns these options showing the whole source of the removed types and members, or not.
+     *
+     * @param show whether to show it
+     * @return the new options
+     */
+    public ReportOptions withDeletions(boolean show) {
+        return new ReportOptions(maxLevel, grouping, bodyContext, javadocContext, lineNumbers, showAdditions, show);
     }
 
     /**

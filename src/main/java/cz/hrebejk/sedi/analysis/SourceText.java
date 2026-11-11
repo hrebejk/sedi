@@ -31,6 +31,23 @@ record SourceText(CompilationUnitTree unit, SourcePositions positions, String te
     }
 
     /**
+     * The text of the tree as it is in the source, its lines breaks and comments kept. The text in front of the tree
+     * on its first line is replaced by spaces, tabs kept, so the first line is indented like the others.
+     *
+     * @return the text, {@code null} if the tree has no place in the source
+     */
+    String text(Tree tree) {
+        long start = tree == null ? -1 : positions.getStartPosition(unit, tree);
+        long end = tree == null ? -1 : positions.getEndPosition(unit, tree);
+        if (start < 0 || end <= start || end > text.length()) {
+            return null;
+        }
+        int lineStart = text.lastIndexOf('\n', (int) start - 1) + 1;
+        String indent = text.substring(lineStart, (int) start).replaceAll("[^\t]", " ");
+        return indent + text.substring((int) start, (int) end);
+    }
+
+    /**
      * The text of the tree on a single line: comments left out, every run of whitespace a single space, string and
      * character literals as they are.
      *

@@ -33,7 +33,8 @@ import java.util.stream.Collectors;
 /**
  * The running application: shows a report, keeps the analysis it was made from and reacts to the keys and
  * to the changes of the watched directory. The keys {@code a i c m} show only the changes of one category,
- * {@code d} cycles the javadoc shown, {@code g} shows all the changes again, switching between grouping them by
+ * {@code d} cycles the javadoc shown, {@code +} and {@code -} show or hide the whole source of the added and the
+ * removed types and members, {@code g} shows all the changes again, switching between grouping them by
  * category and by type, {@code h} shows the help, {@code Esc} leaves it and {@code q} quits. All rendering happens on the thread
  * that calls {@link #run}.
  */
@@ -58,6 +59,8 @@ final class Session {
             "  c        show only the cosmetic changes",
             "  m        show only the changed imports",
             "  d        javadoc: none, 3 lines around changes, whole",
+            "  +        show or hide the whole source of the added types and members",
+            "  -        show or hide the whole source of the removed types and members",
             "  g        group all the changes by category or by type",
             "  h        this help",
             "  Esc      leave the help and show the last output again",
@@ -256,6 +259,12 @@ final class Session {
                     default -> ReportOptions.WHOLE_JAVADOC;
                 };
                 reporter = reporter.withJavadocContext(javadocContext);
+                return last == null || show();
+            case '+':
+                reporter = reporter.withAdditions(!reporter.options().showAdditions());
+                return last == null || show();
+            case '-':
+                reporter = reporter.withDeletions(!reporter.options().showDeletions());
                 return last == null || show();
             case 'g':
                 // One level alone has no grouping, so all the levels are shown again.

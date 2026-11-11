@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.io.Reader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
@@ -430,6 +431,56 @@ public final class Theme {
             }
         }
         return out.toString();
+    }
+
+    /**
+     * Java code of several lines, every line colored as by {@link #code}. A comment going on over several lines is
+     * colored as a comment on each of them.
+     *
+     * @param code the code, its lines separated by {@code \n}
+     * @return the lines
+     */
+    List<String> codeLines(String code) {
+        List<String> lines = new ArrayList<>();
+        StringBuilder line = new StringBuilder();
+        int i = 0;
+        while (i < code.length()) {
+            char c = code.charAt(i);
+            int start = i;
+            if (c == '\n') {
+                lines.add(code(line.toString()));
+                line.setLength(0);
+                i++;
+            } else if (code.startsWith("/*", i)) {
+                int close = code.indexOf("*/", i + 2);
+                i = close < 0 ? code.length() : close + 2;
+                String[] parts = code.substring(start, i).split("\n", -1);
+                for (int p = 0; p < parts.length; p++) {
+                    if (p > 0) {
+                        lines.add(code(line.toString()));
+                        line.setLength(0);
+                    }
+                    line.append(parts[p].isEmpty() ? "" : style(Role.COMMENT, parts[p]));
+                }
+            } else if (code.startsWith("//", i)) {
+                int eol = code.indexOf('\n', i);
+                i = eol < 0 ? code.length() : eol;
+                line.append(code, start, i);
+            } else if (c == '"' || c == '\'') {
+                // A literal is copied whole, so a comment start in it is not taken for a comment.
+                i++;
+                while (i < code.length() && code.charAt(i) != c && code.charAt(i) != '\n') {
+                    i += code.charAt(i) == '\\' ? 2 : 1;
+                }
+                i = Math.min(i + 1, code.length());
+                line.append(code, start, i);
+            } else {
+                line.append(c);
+                i++;
+            }
+        }
+        lines.add(code(line.toString()));
+        return lines;
     }
 
     /** Whether a style, which sets something, starts at the index of the code. */

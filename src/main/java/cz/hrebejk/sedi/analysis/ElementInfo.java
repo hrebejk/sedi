@@ -365,6 +365,25 @@ public class ElementInfo {
         return source == null ? null : source.oneLine(tree);
     }
 
+    /**
+     * Returns the whole element as it is in the source: its annotations, modifiers, signature and body, with the
+     * comments and line breaks, but without its javadoc. The first line is indented by spaces as in the source.
+     *
+     * @return the text, {@code null} if it is not known
+     */
+    public String getSourceText() {
+        return source == null ? null : source.text(originalTree);
+    }
+
+    /**
+     * Returns the line where the element starts in the source, with its annotations, unlike {@link #getLine()}.
+     *
+     * @return the line, starting at 1; {@code 0} if it is not known
+     */
+    public long getStartLine() {
+        return getLine(originalTree);
+    }
+
     /** Sets the source the element is in, and the line of its declaration. */
     void setSource(SourceText source, long line) {
         this.source = source;

@@ -96,6 +96,35 @@ public final class Reporter {
     }
 
     /**
+     * Returns a reporter like this one showing the whole source of the added types and members, or not.
+     *
+     * @param show see {@link ReportOptions#showAdditions()}
+     * @return the new reporter
+     */
+    public Reporter withAdditions(boolean show) {
+        return new Reporter(theme, options.withAdditions(show), width);
+    }
+
+    /**
+     * Returns a reporter like this one showing the whole source of the removed types and members, or not.
+     *
+     * @param show see {@link ReportOptions#showDeletions()}
+     * @return the new reporter
+     */
+    public Reporter withDeletions(boolean show) {
+        return new Reporter(theme, options.withDeletions(show), width);
+    }
+
+    /**
+     * Returns what this reporter shows and how.
+     *
+     * @return the options
+     */
+    public ReportOptions options() {
+        return options;
+    }
+
+    /**
      * Returns a reporter like this one drawing the lines between the files as wide as given.
      *
      * @param width the width, usually that of the terminal
@@ -217,7 +246,9 @@ public final class Reporter {
                 }
                 importLines(file, false, fileLines);
             } else {
-                fileLines = lines(file, (container, c) -> c.level() == level, false, false, false);
+                // The added and removed elements are listed in the API changes, their code is shown here.
+                fileLines = lines(file, (container, c) -> c.level() == level
+                        || level == ChangeLevel.IMPLEMENTATION && isShownWhole(c), false, false, false, true);
             }
             List<String> part = new ArrayList<>();
             addFile(part, file, fileLines, false);
@@ -282,7 +313,7 @@ public final class Reporter {
             if (file.diff().getChangeType() == DiffEntry.ChangeType.RENAME) {
                 List<String> renamed = new ArrayList<>();
                 addFile(renamed, file, lines(file, (container, c) -> c.level() == ChangeLevel.API
-                        && !isListedApart(container, c), true, false, true), true);
+                        && !isListedApart(container, c), true, false, true, false), true);
                 parts.add(renamed);
             }
         }
@@ -290,7 +321,7 @@ public final class Reporter {
             List<String> changed = new ArrayList<>();
             if (file.diff().getChangeType() != DiffEntry.ChangeType.RENAME) {
                 addFile(changed, file, lines(file, (container, c) -> c.level() == ChangeLevel.API
-                        && !isListedApart(container, c), true, false, true), false);
+                        && !isListedApart(container, c), true, false, true, false), false);
             }
             parts.add(changed);
         }
@@ -445,7 +476,9 @@ public final class Reporter {
     }
 
     private List<String> fileLines(FileAnalysis file) {
-        List<String> lines = lines(file, (container, c) -> c.level().compareTo(options.maxLevel()) <= 0, true, true, true);
+        boolean whole = options.maxLevel().compareTo(ChangeLevel.IMPLEMENTATION) >= 0;
+        List<String> lines = lines(file, (container, c) -> c.level().compareTo(options.maxLevel()) <= 0, true, true,
+                true, whole);
         if (options.maxLevel() == ChangeLevel.IMPORTS) {
             importLines(file, true, lines);
         }
@@ -458,21 +491,23 @@ public final class Reporter {
      * @param header whether to show the type renamed together with the file
      * @param tagged whether to end the lines with the level of the change
      * @param diff   whether to show the changes of the signatures of the types
+     * @param whole  whether to show the added and removed elements with their whole source, see
+     *               {@link #isShownWhole}
      */
     private List<String> lines(FileAnalysis file, BiPredicate<ApiChanges, MemberChange> accepted, boolean header,
-                               boolean tagged, boolean diff) {
+                               boolean tagged, boolean diff, boolean whole) {
         // A change of the javadoc alone has nothing to show when the javadoc is not shown.
         boolean hideJavadoc = options.javadocContext() == ReportOptions.NO_JAVADOC;
         BiPredicate<ApiChanges, MemberChange> filter = (container, c) -> accepted.test(container, c)
                 && !(hideJavadoc && c.isJavadocOnly());
         List<Node> nodes = new ArrayList<>();
         if (file.oldPrimary() != null) {
-            List<Node> members = render(file.primaryChanges(), filter, tagged, diff);
+            List<Node> members = render(file.primaryChanges(), filter, tagged, diff, whole);
             if (header || !members.isEmpty()) {
                 nodes.add(typeNode(file.primaryChanges().type(), "", diff, members));
             }
         }
-        nodes.addAll(render(file.rootChanges(), filter, tagged, diff));
+        nodes.addAll(render(file.rootChanges(), filter, tagged, diff, whole));
         List<String> lines = new ArrayList<>();
         nodes.forEach(node -> addTree(lines, "  ", node));
         return lines;
@@ -620,7 +655,7 @@ public final class Reporter {
      * of them with its signature, in the order of the new source (a removed one at its line in the old source).
      */
     private List<Node> render(ApiChanges changes, BiPredicate<ApiChanges, MemberChange> filter, boolean tagged,
-                              boolean diff) {
+                              boolean diff, boolean whole) {
         List<Object> items = new ArrayList<>(changes.changes());
         items.addAll(changes.nested());
         items.sort(Comparator.comparingLong(Reporter::newLine));
@@ -628,10 +663,10 @@ public final class Reporter {
         for (Object item : items) {
             if (item instanceof MemberChange change) {
                 if (filter.test(changes, change) && !isSignatureOfNested(changes, change)) {
-                    nodes.add(memberNode(changes, change, tagged));
+                    nodes.add(whole && isShownWhole(change) ? wholeNode(change) : memberNode(changes, change, tagged));
                 }
             } else if (item instanceof ApiChanges type) {
-                List<Node> nested = render(type, filter, tagged, diff);
+                List<Node> nested = render(type, filter, tagged, diff, whole);
                 boolean own = changes.changes().stream()
                         .anyMatch(c -> filter.test(changes, c) && isSignatureOf(c, type));
                 if (own || !nested.isEmpty()) {
@@ -672,6 +707,60 @@ public final class Reporter {
         return declarationNode(pair, cosmetic, changes.typeName(), inline ? body.get(0) : null,
                 (block ? " {" : "") + (tagged ? tag(change) : ""), below, children);
     }
+
+    /**
+     * Whether the change is an added or removed element whose whole source is shown with the implementation changes,
+     * see {@link ReportOptions#showAdditions()} and {@link ReportOptions#showDeletions()}.
+     */
+    private boolean isShownWhole(MemberChange change) {
+        ElementPair pair = change.pair();
+        return change.level() == ChangeLevel.API
+                && (pair.isAdded() && options.showAdditions() || pair.isRemoved() && options.showDeletions());
+    }
+
+    /**
+     * The node of an added or removed element showing its whole source, every line marked as added or removed, the
+     * javadoc of an added one above it.
+     */
+    private Node wholeNode(MemberChange change) {
+        boolean added = change.pair().isAdded();
+        ElementInfo element = added ? change.pair().newElement() : change.pair().oldElement();
+        String text = element.getSourceText();
+        if (text == null) {
+            return declarationNode(change.pair(), "", null, "", List.of(), List.of());
+        }
+        List<String> code = theme.codeLines(dedent(text));
+        char marker = added ? '+' : '-';
+        long first = element.getStartLine();
+        List<String> lines = new ArrayList<>();
+        for (int i = 0; i < code.size(); i++) {
+            lines.add(LineNumbers.number(first <= 0 ? 0 : first + i, marker, code.get(i)));
+        }
+        return new Node(javadocLines(change.pair()), lines.get(0), lines.subList(1, lines.size()), List.of());
+    }
+
+    /** The text with its tabs expanded and the indentation all its lines have removed. */
+    private static String dedent(String text) {
+        List<String> lines = text.lines().map(Reporter::expandTabs).toList();
+        int indent = lines.stream().filter(l -> !l.isBlank())
+                .mapToInt(l -> l.length() - l.stripLeading().length()).min().orElse(0);
+        return String.join("\n", lines.stream()
+                .map(l -> l.isBlank() ? "" : l.substring(indent).stripTrailing()).toList());
+    }
+
+    private static String expandTabs(String line) {
+        StringBuilder out = new StringBuilder();
+        for (char c : line.toCharArray()) {
+            if (c == '\t') {
+                out.append(" ".repeat(TAB_WIDTH - out.length() % TAB_WIDTH));
+            } else {
+                out.append(c);
+            }
+        }
+        return out.toString();
+    }
+
+    private static final int TAB_WIDTH = 4;
 
     /** The line of the closing brace of a body which is a block. */
     private static long closingLine(BodyChanges body) {

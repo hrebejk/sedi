@@ -74,6 +74,15 @@ public class Main implements Callable<Integer> {
                     + "-2 for no javadoc (default: -2).")
     private int javadocContext = ReportOptions.DEFAULT_JAVADOC_CONTEXT;
 
+    @Option(names = "--show-deletions",
+            description = "Show the whole source of the removed types and members with the implementation changes, "
+                    + "as of the added ones.")
+    private boolean showDeletions;
+
+    @Option(names = "--hide-additions",
+            description = "Do not show the whole source of the added types and members with the implementation changes.")
+    private boolean hideAdditions;
+
     @Option(names = "--rename-score", paramLabel = "<percent>",
             description = "Least similarity of a deleted and an added file for git to report them as a rename, "
                     + "0 - 100 (default: " + GitInspector.DEFAULT_RENAME_SCORE + ", as in the git command line).")
@@ -179,7 +188,8 @@ public class Main implements Callable<Integer> {
             System.err.println("Cannot read the theme: " + e.getMessage());
             return 1;
         }
-        Reporter reporter = new Reporter(theme, new ReportOptions(level, grouping, bodyContext, javadocContext, !noLineNumbers))
+        Reporter reporter = new Reporter(theme, new ReportOptions(level, grouping, bodyContext, javadocContext, !noLineNumbers,
+                !hideAdditions, showDeletions))
                 .withWidth(Terminal.width());
         boolean keepRunning = commit == null || interactive;
         if (!keepRunning || !terminal && commit != null) {

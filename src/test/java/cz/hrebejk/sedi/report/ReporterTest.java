@@ -801,4 +801,70 @@ public class ReporterTest extends TestCase {
         List<String> whole = implReport(DOC_OLD, changed, ReportOptions.WHOLE_JAVADOC);
         assertTrue(whole.toString(), whole.stream().anyMatch(l -> l.contains("* @throws IOException never")));
     }
+
+    private static final String WHOLE_OLD = "public class Foo {\n  void keep() { }\n  int gone() {\n    return 1;\n  }\n}\n";
+    private static final String WHOLE_NEW = "public class Foo {\n  void keep() { }\n  void added() {\n"
+            + "    /* two\n       lines */\n    run();\n  }\n  static class In {\n\tint f;\n  }\n}\n";
+
+    /** Reports the changes of Foo.java from {@link #WHOLE_OLD} to {@link #WHOLE_NEW} with the options. */
+    private static List<String> wholeReport(ReportOptions options, boolean implOnly) throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", WHOLE_OLD);
+            helper.commit("init");
+            helper.writeFile("Foo.java", WHOLE_NEW);
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                Reporter reporter = new Reporter(Theme.PLAIN, options);
+                return implOnly ? reporter.reportOnly(analyzer.analyzeChanges(), ChangeLevel.IMPLEMENTATION)
+                        : reporter.report(analyzer.analyzeChanges());
+            }
+        }
+    }
+
+    /**
+     * Tests that the implementation changes show the whole source of the added members and types, their
+     * indentation and comments kept and tabs expanded, and not that of the removed ones by default.
+     */
+    public void testAddedShownWhole() throws Exception {
+        assertEquals(List.of(
+                        "# Implementation changes",
+                        "",
+                        "~ Foo.java",
+                        "    public class Foo",
+                        "+   ├── void added() {",
+                        "+   │     /* two",
+                        "+   │        lines */",
+                        "+   │     run();",
+                        "+   │   }",
+                        "+   └── static class In {",
+                        "+         int f;",
+                        "+       }"),
+                wholeReport(new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY), true));
+    }
+
+    /** Tests that the removed members are shown whole with the deletions on, and the added ones not with them off. */
+    public void testDeletionsShownWhole() throws Exception {
+        ReportOptions options = new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY)
+                .withAdditions(false).withDeletions(true);
+        assertEquals(List.of(
+                        "# Implementation changes",
+                        "",
+                        "~ Foo.java",
+                        "    public class Foo",
+                        "-   └── int gone() {",
+                        "-         return 1;",
+                        "-       }"),
+                wholeReport(options, true));
+    }
+
+    /** Tests that grouped by type, the whole source replaces the signature of an added member. */
+    public void testWholeByType() throws Exception {
+        List<String> lines = wholeReport(new ReportOptions(ChangeLevel.IMPLEMENTATION, ReportOptions.Grouping.BY_TYPE),
+                false);
+        assertTrue(lines.toString(), lines.contains("+   ├── void added() {"));
+        assertTrue(lines.toString(), lines.contains("+   │     run();"));
+        assertTrue(lines.toString(), lines.contains("-   ├── ~~int gone()~~"));
+        assertEquals(lines.toString(), 1, lines.stream().filter(l -> l.contains("added()")).count());
+        List<String> api = wholeReport(new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_TYPE), false);
+        assertFalse(api.toString(), api.stream().anyMatch(l -> l.contains("run();")));
+    }
 }
