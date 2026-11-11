@@ -13,6 +13,7 @@ import com.sun.source.tree.StatementTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.util.SourcePositions;
 import cz.hrebejk.sedi.compilation.CompilationUnitInfo;
+import cz.hrebejk.sedi.util.WordDiff;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -100,7 +101,8 @@ final class BodyDiff {
     }
 
     /**
-     * The comments added and removed, compared by their text with the whitespace collapsed. A removed comment is
+     * The comments added, removed and changed, compared by their text with the whitespace collapsed. A removed comment
+     * similar to an added one in its place is a changed comment. A removed comment is
      * shown where the code next to it in the old version is in the new one: after the code in front of it on its
      * line, else in front of the code following it.
      */
@@ -120,19 +122,41 @@ final class BodyDiff {
         int n = 0;
         int newEnd = end(newText, newRoot) - (newRoot instanceof com.sun.source.tree.BlockTree ? 1 : 0);
         for (int[] anchor : anchors) {
+            List<SourceText.Comment> added = news.subList(n, anchor[1]);
+            int next = 0;
             for (; o < anchor[0]; o++) {
                 SourceText.Comment old = olds.get(o);
-                int at = anchor(oldText, newText, mapping, old, newEnd);
-                changes.add(new BodyChanges.CommentChange(old.start(), old.end(), at, at));
+                int similar = similar(old, added, next);
+                if (similar >= 0) {
+                    // A changed comment: the added ones in front of it are added.
+                    for (; next < similar; next++) {
+                        changes.add(new BodyChanges.CommentChange(-1, -1, added.get(next).start(), added.get(next).end()));
+                    }
+                    SourceText.Comment changed = added.get(similar);
+                    changes.add(new BodyChanges.CommentChange(old.start(), old.end(), changed.start(), changed.end()));
+                    next = similar + 1;
+                } else {
+                    int at = anchor(oldText, newText, mapping, old, newEnd);
+                    changes.add(new BodyChanges.CommentChange(old.start(), old.end(), at, at));
+                }
             }
-            for (; n < anchor[1]; n++) {
-                SourceText.Comment added = news.get(n);
-                changes.add(new BodyChanges.CommentChange(-1, -1, added.start(), added.end()));
+            for (; next < added.size(); next++) {
+                changes.add(new BodyChanges.CommentChange(-1, -1, added.get(next).start(), added.get(next).end()));
             }
             o = anchor[0] + 1;
             n = anchor[1] + 1;
         }
         return changes;
+    }
+
+    /** The index of the first added comment from {@code from} on similar enough to the old one, -1 if none. */
+    private static int similar(SourceText.Comment old, List<SourceText.Comment> added, int from) {
+        for (int i = from; i < added.size(); i++) {
+            if (WordDiff.similarity(old.text(), added.get(i).text()) >= WordDiff.SIMILAR) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /** The position in the new source a removed comment is shown at, see {@link #comments}. */
@@ -519,7 +543,7 @@ final class BodyDiff {
         int changed = 0;
         for (Map.Entry<Tree, BodyChanges.Mark> entry : marks.entrySet()) {
             changed += switch (entry.getValue()) {
-                case BodyChanges.Edited edited -> chars(oldUnit, edited.oldTree()) + chars(newUnit, entry.getKey());
+                case BodyChanges.Edited edited -> editedChars(edited.oldTree(), entry.getKey());
                 case BodyChanges.Wrapped wrapped -> chars(newUnit, entry.getKey()) - chars(newUnit, wrapped.kept());
                 case BodyChanges.Unwrapped unwrapped ->
                         chars(oldUnit, unwrapped.oldTree()) - chars(oldUnit, unwrapped.oldKept());
@@ -533,6 +557,39 @@ final class BodyDiff {
             }
         }
         return 2 * changed > chars(oldUnit, oldTree) + chars(newUnit, newTree);
+    }
+
+    /**
+     * The characters changed by an edit: those of both versions, but only those of the changed words for a string
+     * literal which is shown with them, see {@link WordDiff}.
+     */
+    private int editedChars(Tree oldTree, Tree newTree) {
+        int whole = chars(oldUnit, oldTree) + chars(newUnit, newTree);
+        String oldText = source(oldUnit, oldTree);
+        String newText = source(newUnit, newTree);
+        if (oldTree.getKind() != Tree.Kind.STRING_LITERAL || newTree.getKind() != Tree.Kind.STRING_LITERAL
+                || oldText == null || newText == null) {
+            return whole;
+        }
+        List<WordDiff.Change> changes = WordDiff.diff(oldText, newText);
+        if (changes == null) {
+            return whole;
+        }
+        int changed = 0;
+        for (WordDiff.Change change : changes) {
+            changed += change.removed().replaceAll("\\s+", "").length()
+                    + newText.substring(change.start(), change.end()).replaceAll("\\s+", "").length();
+        }
+        return changed;
+    }
+
+    /** The source of the tree, {@code null} if it has no place in the source. */
+    private String source(CompilationUnitInfo unit, Tree tree) {
+        SourcePositions positions = unit.trees().getSourcePositions();
+        long start = positions.getStartPosition(unit.compilationUnit(), tree);
+        long end = positions.getEndPosition(unit.compilationUnit(), tree);
+        String text = texts.computeIfAbsent(unit, BodyDiff::text);
+        return start < 0 || end <= start || end > text.length() ? null : text.substring((int) start, (int) end);
     }
 
     /** The number of characters of the tree other than whitespace, {@code 0} if it has no place in the source. */

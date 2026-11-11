@@ -20,6 +20,7 @@ import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreeScanner;
 import cz.hrebejk.sedi.analysis.BodyChanges;
 import cz.hrebejk.sedi.compilation.CompilationUnitInfo;
+import cz.hrebejk.sedi.util.WordDiff;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -393,6 +394,17 @@ final class AstPrinter {
      */
     private void comments() {
         for (BodyChanges.CommentChange comment : changes.comments()) {
+            if (comment.isChanged()) {
+                String oldText = oldSource.text.substring(comment.oldStart(), comment.oldEnd());
+                if (!words(oldText, comment.newStart(), comment.newEnd())) {
+                    newSource.insert(comment.newStart(), theme.strike(oldText.replaceAll("\\s+", " ")) + " ");
+                    newSource.added.set(comment.newStart(), comment.newEnd());
+                }
+                for (long l = newSource.line(comment.newStart()); l <= newSource.line(comment.newEnd() - 1); l++) {
+                    shown.add(l);
+                }
+                continue;
+            }
             if (comment.isAdded()) {
                 newSource.added.set(comment.newStart(), comment.newEnd());
                 for (long l = newSource.line(comment.newStart()); l <= newSource.line(comment.newEnd() - 1); l++) {
@@ -425,11 +437,41 @@ final class AstPrinter {
         return source.text.substring(lineStart, start).isBlank() && source.text.substring(end, lineEnd).isBlank();
     }
 
-    /** The new tree replaced the old one: the old one struck through in front of the new one, marked as added. */
+    /**
+     * The new tree replaced the old one: the old one struck through in front of the new one, marked as added. A
+     * changed string literal shows only the changed words, if it did not change too much.
+     */
     private void replace(Tree tree, Tree old) {
+        if (tree.getKind() == Tree.Kind.STRING_LITERAL && old.getKind() == Tree.Kind.STRING_LITERAL
+                && words(oldSource.text.substring(oldSource.start(old), oldSource.end(old)),
+                newSource.start(tree), newSource.end(tree))) {
+            showUnit(tree);
+            return;
+        }
         newSource.insert(newSource.start(tree), theme.strike(oldSource.oneLine(old)) + " ");
         newSource.added.set(newSource.start(tree), newSource.end(tree));
         showUnit(tree);
+    }
+
+    /**
+     * Marks the words of the new source from {@code start} to {@code end} which changed from the old text: the added
+     * ones as added, the removed ones struck through in front of them.
+     *
+     * @return {@code false}, with nothing marked, if the texts differ too much for a word diff
+     */
+    private boolean words(String oldText, int start, int end) {
+        List<WordDiff.Change> words = WordDiff.diff(oldText, newSource.text.substring(start, end));
+        if (words == null) {
+            return false;
+        }
+        for (WordDiff.Change change : words) {
+            String removed = theme.removed(change);
+            if (!removed.isEmpty()) {
+                newSource.insert(start + change.start(), removed);
+            }
+            newSource.added.set(start + change.start(), start + change.end());
+        }
+        return true;
     }
 
     /** An added tree, shown with all of its lines; an added argument with its comma. */

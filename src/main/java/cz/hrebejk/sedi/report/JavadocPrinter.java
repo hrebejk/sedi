@@ -10,9 +10,9 @@ package cz.hrebejk.sedi.report;
 
 import cz.hrebejk.sedi.analysis.ElementInfo;
 import cz.hrebejk.sedi.analysis.ElementPair;
+import cz.hrebejk.sedi.util.WordDiff;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -25,7 +25,6 @@ import java.util.List;
 final class JavadocPrinter {
 
     /** Lines at least this similar, by the words they share, are shown as one line with the changed words. */
-    private static final double SIMILAR = 0.5;
 
     private final Theme theme;
     private final int context;
@@ -174,7 +173,7 @@ final class JavadocPrinter {
             for (int old : removed) {
                 int similar = -1;
                 for (int i = next; i < inserted.size() && similar < 0; i++) {
-                    if (similarity(oldLines.get(old), newLines.get(inserted.get(i))) >= SIMILAR) {
+                    if (WordDiff.similarity(oldLines.get(old), newLines.get(inserted.get(i))) >= WordDiff.SIMILAR) {
                         similar = i;
                     }
                 }
@@ -253,49 +252,8 @@ final class JavadocPrinter {
 
     /** The new line with the words removed from the old one struck through and the added ones underlined. */
     private String words(String oldLine, String newLine) {
-        List<String> o = words(oldLine);
-        List<String> n = words(newLine);
-        List<String> out = new ArrayList<>();
-        List<String> removed = new ArrayList<>();
-        List<String> inserted = new ArrayList<>();
-        int i = 0;
-        int j = 0;
-        for (int[] match : lcs(o, n)) {
-            removed.addAll(o.subList(i, match[0]));
-            inserted.addAll(n.subList(j, match[1]));
-            flush(removed, inserted, out);
-            out.add(n.get(match[1]));
-            i = match[0] + 1;
-            j = match[1] + 1;
-        }
-        removed.addAll(o.subList(i, o.size()));
-        inserted.addAll(n.subList(j, n.size()));
-        flush(removed, inserted, out);
         String indent = newLine.substring(0, newLine.length() - newLine.stripLeading().length());
-        return indent + String.join(" ", out);
-    }
-
-    private void flush(List<String> removed, List<String> inserted, List<String> out) {
-        if (!removed.isEmpty()) {
-            out.add(theme.strike(String.join(" ", removed)));
-        }
-        if (!inserted.isEmpty()) {
-            out.add(theme.added(String.join(" ", inserted)));
-        }
-        removed.clear();
-        inserted.clear();
-    }
-
-    private static List<String> words(String line) {
-        String stripped = line.strip();
-        return stripped.isEmpty() ? List.of() : Arrays.asList(stripped.split("\\s+"));
-    }
-
-    /** How many of the words of the two lines are common, from 0 to 1. */
-    private static double similarity(String a, String b) {
-        List<String> x = words(a);
-        List<String> y = words(b);
-        return x.isEmpty() && y.isEmpty() ? 1 : 2.0 * lcs(x, y).size() / (x.size() + y.size());
+        return indent + theme.replaceWords(oldLine.strip(), newLine.strip());
     }
 
     /** The longest common subsequence of the lists, as pairs of the indexes of the equal items. */

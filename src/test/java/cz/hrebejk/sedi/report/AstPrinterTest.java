@@ -314,6 +314,24 @@ public class AstPrinterTest extends TestCase {
                         "boolean m() { return new java.util.ArrayList<String>(Integer.MAX_VALUE).add(String.valueOf(1)); }"));
     }
 
+    /** A changed string literal and a changed comment show only the changed words, if they did not change too much. */
+    public void testWordDiffOfLiteralsAndComments() throws Exception {
+        assertEquals(List.of(
+                        "  └── String m() { [impl]",
+                        "~           // returns the ~~old~~ __new__ greeting",
+                        "~           return \"Hello ~~big~~ __small__ world, nice day\";",
+                        "      }"),
+                body("String m() {\n// returns the old greeting\nreturn \"Hello big world, nice day\"; }",
+                        "String m() {\n// returns the new greeting\nreturn \"Hello small world, nice day\"; }"));
+        // Too different for a word diff: the statement is mostly changed, so it is shown removed and added.
+        assertEquals(List.of(
+                        "  └── String m() { [impl]",
+                        "-           return \"one two\";",
+                        "+           return \"three four\";",
+                        "      }"),
+                body("String m() { return \"one two\"; }", "String m() { return \"three four\"; }"));
+    }
+
     /** A big expression replaced by one of another kind replaces the statement. */
     public void testBigExpressionOfOtherKind() throws Exception {
         assertEquals(List.of(

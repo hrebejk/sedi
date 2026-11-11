@@ -66,11 +66,11 @@ public record BodyChanges(CompilationUnitInfo oldUnit, CompilationUnitInfo newUn
     /**
      * A comment added to or removed from the body. A changed comment is a removed and an added one.
      *
-     * @param oldStart the start of the removed comment in the old source, {@code -1} for an added one
-     * @param oldEnd   the end of the removed comment in the old source, {@code -1} for an added one
-     * @param newStart the start of the added comment in the new source; for a removed one the position in the new
-     *                 source it is shown at
-     * @param newEnd   the end of the added comment in the new source, {@code newStart} for a removed one
+     * @param oldStart the start of the removed or changed comment in the old source, {@code -1} for an added one
+     * @param oldEnd   the end of the removed or changed comment in the old source, {@code -1} for an added one
+     * @param newStart the start of the added or changed comment in the new source; for a removed one the position in
+     *                 the new source it is shown at
+     * @param newEnd   the end of the added or changed comment in the new source, {@code newStart} for a removed one
      */
     public record CommentChange(int oldStart, int oldEnd, int newStart, int newEnd) {
 
@@ -81,6 +81,16 @@ public record BodyChanges(CompilationUnitInfo oldUnit, CompilationUnitInfo newUn
          */
         public boolean isAdded() {
             return oldStart < 0;
+        }
+
+        /**
+         * Returns whether the comment was changed: a removed comment similar to the added one in its place, shown
+         * with the changed words.
+         *
+         * @return {@code true} if both the old and the new comment are there
+         */
+        public boolean isChanged() {
+            return oldStart >= 0 && newEnd > newStart;
         }
     }
 

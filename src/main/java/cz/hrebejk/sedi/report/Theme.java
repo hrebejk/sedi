@@ -8,12 +8,15 @@
  */
 package cz.hrebejk.sedi.report;
 
+import cz.hrebejk.sedi.util.WordDiff;
+
 import java.io.IOException;
 import java.io.Reader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -308,6 +311,31 @@ public final class Theme {
     /** The old text struck through, followed by the new text which replaced it. */
     String replace(String oldText, String newText) {
         return strike(oldText) + " " + added(newText);
+    }
+
+    /**
+     * The new text with the words removed from the old one struck through and the added ones marked, see
+     * {@link WordDiff}; if the texts differ too much, the old text struck through followed by the new one.
+     */
+    String replaceWords(String oldText, String newText) {
+        List<WordDiff.Change> changes = WordDiff.diff(oldText, newText);
+        if (changes == null) {
+            return replace(oldText, newText);
+        }
+        StringBuilder out = new StringBuilder();
+        int at = 0;
+        for (WordDiff.Change change : changes) {
+            out.append(newText, at, change.start()).append(removed(change));
+            out.append(added(newText.substring(change.start(), change.end())));
+            at = change.end();
+        }
+        return out.append(newText.substring(at)).toString();
+    }
+
+    /** The removed text of a word change struck through, on one line, with the spaces around it; empty if none. */
+    String removed(WordDiff.Change change) {
+        return change.removed().isEmpty() ? ""
+                : change.before() + strike(change.removed().replaceAll("\\s+", " ")) + change.after();
     }
 
     /** The {@code +} or {@code -} starting a line of added or removed code. */

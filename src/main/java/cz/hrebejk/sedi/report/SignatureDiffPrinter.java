@@ -552,7 +552,7 @@ public final class SignatureDiffPrinter {
             // A change of the API is not shown by a cosmetic printer.
             return newPiece.text();
         }
-        return newPiece.text().isEmpty() ? strike(oldPiece.text()) : theme.replace(oldPiece.text(), newPiece.text());
+        return newPiece.text().isEmpty() ? strike(oldPiece.text()) : replace(oldPiece.text(), newPiece.text());
     }
 
     /**
@@ -567,7 +567,13 @@ public final class SignatureDiffPrinter {
         if (oldValue.equals(newValue) || oldValue.isEmpty()) {
             return newValue;
         }
-        return newValue.isEmpty() ? strike(oldValue) : theme.replace(oldValue, newValue);
+        return newValue.isEmpty() ? strike(oldValue) : replace(oldValue, newValue);
+    }
+
+    /** A changed value; string literals, and expressions starting with one, show the changed words. */
+    private String replace(String oldValue, String newValue) {
+        return oldValue.startsWith("\"") && newValue.startsWith("\"")
+                ? theme.replaceWords(oldValue, newValue) : theme.replace(oldValue, newValue);
     }
 
     /** Like {@link #slot}, the new name shown as a declaration. */

@@ -770,7 +770,7 @@ public class ReporterTest extends TestCase {
         String old = "public class Foo {\n  /** Inner one. */\n  public static class In { }\n}\n";
         assertEquals(List.of(
                         "    public class Foo",
-                        "~   │   * Inner ~~one.~~ __two.__",
+                        "~   │   * Inner ~~one~~ __two__.",
                         "    └── public static class In"),
                 javadocReport(old, old.replace("one.", "two."), 1));
     }

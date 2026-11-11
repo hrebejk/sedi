@@ -82,6 +82,12 @@ public class SignatureDiffPrinterTest extends TestCase {
         String type = "@interface A { int x() default 0; String y() default \"\"; int z() default 0; }\n";
         assertEquals(List.of("~ @A(x = 1, y = ~~\"old\"~~ __\"new\"__)", "  void m()"),
                 print(type + "@A(x = 1, y = \"old\") void m() {}", type + "@A(x = 1, y = \"new\") void m() {}"));
+        // A string which did not change too much shows the changed words.
+        assertEquals(List.of("~ @A(y = \"Show the ~~old~~ __new__ diff and exit\")", "  void m()"),
+                print(type + "@A(y = \"Show the old diff and exit\") void m() {}",
+                        type + "@A(y = \"Show the new diff and exit\") void m() {}"));
+        assertEquals(List.of("~ @A(x = 1, y = ~~\"old\"~~ __\"new\"__)", "  void m()"),
+                print(type + "@A(x = 1, y = \"old\") void m() {}", type + "@A(x = 1, y = \"new\") void m() {}"));
         assertEquals(List.of("~ @A(~~x = 1~~, y = \"s\", __z = 2__)", "  void m()"),
                 print(type + "@A(x = 1, y = \"s\") void m() {}", type + "@A(y = \"s\", z = 2) void m() {}"));
         assertEquals(List.of("~ @SuppressWarnings(~~\"a\"~~ __\"b\"__)", "  void m()"),
