@@ -52,6 +52,31 @@ public class GitInspectorTest extends TestCase {
     }
 
     /**
+     * Tests that a range with no right side ({@code a..}) compares commit {@code a} with the working copy,
+     * including the commits after {@code a} and the uncommitted changes.
+     */
+    public void testRangeToWorkingCopy() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("A.java", "public class A {}");
+            helper.commit("Initial commit");
+            helper.writeFile("B.java", "public class B {}");
+            helper.commit("Add B");
+            helper.writeFile("C.java", "public class C {}");
+
+            GitInspector inspector = new GitInspector(helper.getRepositoryPath());
+            GitInspector.Range range = inspector.resolveRange("HEAD~1..");
+            assertNull(range.newCommit());
+            assertNotNull(range.oldCommit());
+            List<DiffEntry> changes = inspector.getChanges("HEAD~1..");
+            assertEquals(List.of("B.java", "C.java"), changes.stream().map(DiffEntry::getNewPath).sorted().toList());
+
+            // With both sides the working copy is ignored.
+            List<DiffEntry> committed = inspector.getChanges("HEAD~1..HEAD");
+            assertEquals(List.of("B.java"), committed.stream().map(DiffEntry::getNewPath).toList());
+        }
+    }
+
+    /**
      * Tests that the working copy is compared with HEAD whether the changes are staged, unstaged or untracked.
      */
     public void testWorkingCopyIgnoresStaging() throws Exception {

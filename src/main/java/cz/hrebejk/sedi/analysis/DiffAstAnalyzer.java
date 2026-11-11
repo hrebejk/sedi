@@ -122,10 +122,11 @@ public class DiffAstAnalyzer implements AutoCloseable {
 
     /**
      * Analyzes the Java files changed by a commit (compared with its first parent) or a range of commits.
-     * Both versions of every file, and the classes they refer to, are read from the git objects, never from
-     * the working tree.
+     * Both versions of every file, and the classes they refer to, are read from the git objects, except for
+     * a range with no right side ({@code a..}), whose new versions are read from the working tree.
      *
-     * @param revision any revision git understands: SHA, abbreviated SHA, tag, branch, {@code HEAD~2}, ...
+     * @param revision any revision git understands: SHA, abbreviated SHA, tag, branch, {@code HEAD~2}, ...;
+     *                 or a range, see {@link GitInspector#getChanges(String)}
      * @param filter   accepts repository relative paths ({@code /} separated)
      * @return the analysis of the diff: hashes, renames and API changes of every changed file
      * @throws IOException              if an I/O error occurs

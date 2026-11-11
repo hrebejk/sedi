@@ -45,14 +45,15 @@ public class Main implements Callable<Integer> {
     private Path projectDir = Path.of("").toAbsolutePath();
 
     @Parameters(arity = "0..1", paramLabel = "<rev>",
-            description = "Show the API diff of the given commit (SHA, abbreviated SHA, tag, branch, HEAD~2, ...) or range (a..b, a...b) and exit, unless --interactive is given.")
+            description = "Show the API diff of the given commit (SHA, abbreviated SHA, tag, branch, HEAD~2, ...) or range (a..b, a...b; a.. compares a with the working copy) and exit, unless --interactive is given.")
     private String commit;
 
     @Option(names = "--info", description = "Print the resolved class path.")
     private boolean info;
 
     @Option(names = {"-i", "--interactive"},
-            description = "Keep running after the diff of <rev> is shown, reacting to keys (h shows the help).")
+            description = "Keep running after the diff of <rev> is shown, reacting to keys (h shows the help). "
+                    + "With <rev> a.. the working copy is watched and the diff is shown again when it changes.")
     private boolean interactive;
 
     @Option(names = {"-l", "--level"}, paramLabel = "<level>", converter = LevelConverter.class,
@@ -197,13 +198,14 @@ public class Main implements Callable<Integer> {
             }
         }
         try {
-            if (commit != null) {
+            if (commit != null && !comparesWorkingCopy()) {
                 session.run(filter -> analyzeCommit(filter), path -> path.endsWith(".java"));
                 return 0;
             }
+            Session.Analysis analysis = commit == null ? this::analyzeChanges : this::analyzeCommit;
             try (DirectoryWatcher watcher = new DirectoryWatcher(projectDir)) {
                 session.watch(watcher, projectDir);
-                session.run(this::analyzeChanges, path -> path.endsWith(".java"));
+                session.run(analysis, path -> path.endsWith(".java"));
             }
             return 0;
         } finally {
@@ -217,6 +219,18 @@ public class Main implements Callable<Integer> {
     private DiffAnalysis analyzeChanges(Predicate<String> filter) throws IOException, GitAPIException {
         try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader, renameScore)) {
             return analyzer.analyzeChanges(filter);
+        }
+    }
+
+    /**
+     * Whether the {@code <rev>} compares a commit with the working copy ({@code a..}), so the report changes with
+     * the files on disk. An unknown revision does not; its error is reported by the analysis.
+     */
+    private boolean comparesWorkingCopy() {
+        try {
+            return new GitInspector(projectDir, renameScore).resolveRange(commit).newCommit() == null;
+        } catch (IOException | IllegalArgumentException e) {
+            return false;
         }
     }
 

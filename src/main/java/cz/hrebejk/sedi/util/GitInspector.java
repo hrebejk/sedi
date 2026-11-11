@@ -149,8 +149,9 @@ public class GitInspector {
      *   <li>{@code a..b} - the diff between commits {@code a} and {@code b}</li>
      *   <li>{@code a...b} - the diff between the merge base of {@code a} and {@code b} and commit {@code b}</li>
      * </ul>
-     * An omitted side of a range means {@code HEAD}. Each revision can be a SHA, abbreviated SHA, tag,
-     * branch, {@code HEAD~2}, ...
+     * An omitted left side of a range means {@code HEAD}, an omitted right side means the working copy (what is
+     * on disk), so {@code a..} is the diff between commit {@code a} and the working copy. Each revision can be a
+     * SHA, abbreviated SHA, tag, branch, {@code HEAD~2}, ...
      *
      * @param revision the revision expression
      * @return list of DiffEntry representing changes
@@ -160,7 +161,9 @@ public class GitInspector {
     public List<DiffEntry> getChanges(String revision) throws IOException {
         Range range = resolveRange(revision);
         try (Git git = Git.open(repositoryPath.toFile())) {
-            return diff(git.getRepository(), range.oldCommit(), range.newCommit());
+            return getChanges(git, range);
+        } catch (GitAPIException e) {
+            throw new IOException(e);
         }
     }
 
@@ -177,7 +180,7 @@ public class GitInspector {
      * Resolves a revision expression, see {@link #getChanges(String)}, to the commits it compares.
      *
      * @param revision the revision expression
-     * @return the old and the new commit
+     * @return the old and the new commit; the new one is {@code null} for the working copy
      * @throws IOException              if an I/O error occurs
      * @throws IllegalArgumentException if a revision cannot be resolved to a commit
      */
@@ -196,11 +199,13 @@ public class GitInspector {
             boolean mergeBase = threeDots >= 0;
             int at = mergeBase ? threeDots : twoDots;
             ObjectId left = resolveCommit(repo, revision.substring(0, at));
-            ObjectId right = resolveCommit(repo, revision.substring(at + (mergeBase ? 3 : 2)));
+            String rightRevision = revision.substring(at + (mergeBase ? 3 : 2));
+            boolean workingCopy = rightRevision.isEmpty();
+            ObjectId right = resolveCommit(repo, rightRevision);
             if (mergeBase) {
                 left = findMergeBase(repo, left, right);
             }
-            return new Range(left, right);
+            return new Range(left, workingCopy ? null : right);
         }
     }
 
