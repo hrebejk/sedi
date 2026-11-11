@@ -77,6 +77,17 @@ public class SignatureDiffPrinterTest extends TestCase {
                 print("void d(int a, String s) { }", "void d(long a, String s) { }"));
     }
 
+    /** A changed annotation shows only its changed arguments as changed, paired by their names. */
+    public void testAnnotationArguments() throws Exception {
+        String type = "@interface A { int x() default 0; String y() default \"\"; int z() default 0; }\n";
+        assertEquals(List.of("~ @A(x = 1, y = ~~\"old\"~~ __\"new\"__)", "  void m()"),
+                print(type + "@A(x = 1, y = \"old\") void m() {}", type + "@A(x = 1, y = \"new\") void m() {}"));
+        assertEquals(List.of("~ @A(~~x = 1~~, y = \"s\", __z = 2__)", "  void m()"),
+                print(type + "@A(x = 1, y = \"s\") void m() {}", type + "@A(y = \"s\", z = 2) void m() {}"));
+        assertEquals(List.of("~ @SuppressWarnings(~~\"a\"~~ __\"b\"__)", "  void m()"),
+                print("@SuppressWarnings(\"a\") void m() {}", "@SuppressWarnings(\"b\") void m() {}"));
+    }
+
     /**
      * Tests that the types renamed in another file are not shown as changes of the signature: only the added
      * modifier is struck through or added, the renamed types are printed once.

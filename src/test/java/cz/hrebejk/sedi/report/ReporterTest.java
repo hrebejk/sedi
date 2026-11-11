@@ -483,7 +483,7 @@ public class ReporterTest extends TestCase {
                                 "~   ├── ~~int~~ __long__ a",
                                 "~   │   ~~@Deprecated~~",
                                 "    ├── int b",
-                                "~   │   ~~@SuppressWarnings(\"x\")~~ __@SuppressWarnings(\"y\")__",
+                                "~   │   @SuppressWarnings(~~\"x\"~~ __\"y\"__)",
                                 "    ├── int c",
                                 "+   │   @Deprecated",
                                 "+   └── int d"),

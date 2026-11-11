@@ -12,7 +12,10 @@ import cz.hrebejk.sedi.analysis.ElementInfo;
 import cz.hrebejk.sedi.analysis.ElementPair;
 
 import com.sun.source.tree.AnnotationTree;
+import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.ClassTree;
+import com.sun.source.tree.ExpressionTree;
+import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.ModifiersTree;
 import com.sun.source.tree.Tree;
@@ -120,7 +123,8 @@ public final class SignatureDiffPrinter {
 
     /**
      * Formats the annotations of the pair, each on a line of its own: all of them for an added or removed element,
-     * for a changed one only the annotations which were added, removed or changed.
+     * for a changed one only the annotations which were added, removed or changed. A changed annotation shows only
+     * its changed arguments as changed.
      *
      * @param pair the pair to print
      * @return the lines, empty if there is nothing to show
@@ -134,20 +138,116 @@ public final class SignatureDiffPrinter {
         }
         List<Piece> oldAnnotations = Parts.of(pair.oldElement(), "", theme).annotations();
         List<Piece> newAnnotations = Parts.of(pair.newElement(), "", theme).annotations();
+        List<? extends AnnotationTree> oldTrees = annotationTrees(pair.oldElement());
+        List<? extends AnnotationTree> newTrees = annotationTrees(pair.newElement());
         List<String> lines = new ArrayList<>();
         for (Piece o : oldAnnotations) {
             if (newAnnotations.stream().noneMatch(n -> sameAnnotation(o, n))) {
                 lines.add(LineNumbers.number(o.line(), '~', strike(o.text())));
             }
         }
-        for (Piece n : newAnnotations) {
-            Piece o = oldAnnotations.stream().filter(a -> sameAnnotation(a, n)).findFirst().orElse(Piece.NONE);
-            if (!o.sameAs(n)) {
-                lines.add(LineNumbers.number(n.line(), '~',
-                        o.text().isEmpty() ? theme.added(n.text()) : slot(o, n)));
+        for (int j = 0; j < newAnnotations.size(); j++) {
+            Piece n = newAnnotations.get(j);
+            int i = indexOf(oldAnnotations, n);
+            if (i < 0) {
+                lines.add(LineNumbers.number(n.line(), '~', theme.added(n.text())));
+            } else if (!oldAnnotations.get(i).sameAs(n)) {
+                lines.add(LineNumbers.number(n.line(), '~', theme.code(annotation(
+                        pair.oldElement(), oldTrees.get(i), pair.newElement(), newTrees.get(j)))));
             }
         }
         return lines;
+    }
+
+    /** The index of the first old annotation of the same type as the new one, -1 if there is none. */
+    private static int indexOf(List<Piece> oldAnnotations, Piece n) {
+        for (int i = 0; i < oldAnnotations.size(); i++) {
+            if (sameAnnotation(oldAnnotations.get(i), n)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** The annotations of the element, in the order of {@link Parts#annotations()}. */
+    private static List<? extends AnnotationTree> annotationTrees(ElementInfo info) {
+        return switch (info.getOriginalTree()) {
+            case MethodTree m -> m.getModifiers().getAnnotations();
+            case VariableTree v -> v.getModifiers().getAnnotations();
+            case ClassTree c -> c.getModifiers().getAnnotations();
+            default -> List.of();
+        };
+    }
+
+    /**
+     * A changed annotation of the same type, compared argument by argument: the arguments are paired by their names
+     * ({@code value} for one without a name), only the changed values show the change, the added and removed
+     * arguments are marked as such.
+     */
+    private String annotation(ElementInfo oldInfo, AnnotationTree oldTree, ElementInfo newInfo, AnnotationTree newTree) {
+        List<? extends ExpressionTree> olds = oldTree.getArguments();
+        List<? extends ExpressionTree> news = newTree.getArguments();
+        List<String> out = new ArrayList<>();
+        boolean[] paired = new boolean[news.size()];
+        int next = 0;
+        for (ExpressionTree o : olds) {
+            int j = argumentIndex(news, argumentName(o));
+            if (j < 0) {
+                if (!cosmetic) {
+                    out.add(strike(Piece.of(oldInfo, o, theme).text()));
+                }
+                continue;
+            }
+            // The new arguments in front of this one which have no old one are added.
+            for (; next < j; next++) {
+                if (!paired[next] && argumentIndex(olds, argumentName(news.get(next))) < 0) {
+                    out.add(addedArgument(newInfo, news.get(next)));
+                    paired[next] = true;
+                }
+            }
+            paired[j] = true;
+            out.add(argument(oldInfo, o, newInfo, news.get(j)));
+        }
+        for (int j = 0; j < news.size(); j++) {
+            if (!paired[j]) {
+                out.add(addedArgument(newInfo, news.get(j)));
+            }
+        }
+        String type = Piece.of(newInfo, newTree.getAnnotationType(), theme).text();
+        return "@" + type + (out.isEmpty() ? "" : "(" + String.join(", ", out) + ")");
+    }
+
+    /** A pair of arguments of the same name: unchanged, or {@code name = } and the change of the value. */
+    private String argument(ElementInfo oldInfo, ExpressionTree o, ElementInfo newInfo, ExpressionTree n) {
+        Piece oldPiece = Piece.of(oldInfo, o, theme);
+        Piece newPiece = Piece.of(newInfo, n, theme);
+        if (oldPiece.sameAs(newPiece) || !(o instanceof AssignmentTree oa && n instanceof AssignmentTree na)) {
+            return slot(oldPiece, newPiece);
+        }
+        // javac adds the name value to an argument written without one; it has no place in the source.
+        String name = newInfo.getSource(na.getVariable());
+        return (name == null ? "" : name + " = ")
+               + slot(Piece.of(oldInfo, oa.getExpression(), theme), Piece.of(newInfo, na.getExpression(), theme));
+    }
+
+    private String addedArgument(ElementInfo info, ExpressionTree argument) {
+        String text = Piece.of(info, argument, theme).text();
+        return cosmetic ? text : theme.added(text);
+    }
+
+    /** The name of the annotation element an argument sets, {@code value} for one written without a name. */
+    private static String argumentName(ExpressionTree argument) {
+        return argument instanceof AssignmentTree a && a.getVariable() instanceof IdentifierTree id
+                ? id.getName().toString() : "value";
+    }
+
+    private static int argumentIndex(List<? extends ExpressionTree> arguments, String name) {
+        for (int i = 0; i < arguments.size(); i++) {
+            if (argumentName(arguments.get(i)).equals(name)) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /** Whether two annotations are of the same type: equal names, or equal as a whole, e.g. a renamed type. */
