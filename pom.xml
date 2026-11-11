@@ -94,7 +94,18 @@
         <configuration>
           <compilerArgs>
             <arg>--enable-preview</arg>
+            <arg>--add-exports</arg>
+            <arg>jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED</arg>
           </compilerArgs>
+        </configuration>
+      </plugin>
+      <plugin>
+        <!-- AstLoader uses javac's own task class to attribute only the changed files. -->
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.2.5</version>
+        <configuration>
+          <argLine>--add-exports jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED</argLine>
         </configuration>
       </plugin>
       <plugin>
@@ -135,6 +146,7 @@
                   <mainClass>cz.hrebejk.sedi.Main</mainClass>
                   <manifestEntries>
                     <Multi-Release>true</Multi-Release>
+                    <Add-Exports>jdk.compiler/com.sun.tools.javac.api</Add-Exports>
                   </manifestEntries>
                 </transformer>
               </transformers>

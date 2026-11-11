@@ -9,7 +9,6 @@
 package cz.hrebejk.sedi;
 
 import cz.hrebejk.sedi.analysis.ChangeLevel;
-import cz.hrebejk.sedi.analysis.DiffAnalysis;
 import cz.hrebejk.sedi.analysis.DiffAstAnalyzer;
 import cz.hrebejk.sedi.compilation.AstLoader;
 import cz.hrebejk.sedi.report.ReportOptions;
@@ -19,7 +18,6 @@ import cz.hrebejk.sedi.util.DirectoryWatcher;
 import cz.hrebejk.sedi.util.GitInspector;
 import cz.hrebejk.sedi.util.MavenClasspath;
 import cz.hrebejk.sedi.util.Terminal;
-import org.eclipse.jgit.api.errors.GitAPIException;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -32,7 +30,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.Callable;
-import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
@@ -207,12 +204,14 @@ public class Main implements Callable<Integer> {
                 return 1;
             }
         }
-        try {
+        // One analyzer for the whole session, so the old versions are compiled only once.
+        try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader, renameScore)) {
+            Session.Analysis analysis = commit == null ? analyzer::analyzeChanges
+                    : filter -> analyzer.analyzeCommit(commit, filter);
             if (commit != null && !comparesWorkingCopy()) {
-                session.run(filter -> analyzeCommit(filter), path -> path.endsWith(".java"));
+                session.run(analysis, path -> path.endsWith(".java"));
                 return 0;
             }
-            Session.Analysis analysis = commit == null ? this::analyzeChanges : this::analyzeCommit;
             try (DirectoryWatcher watcher = new DirectoryWatcher(projectDir)) {
                 session.watch(watcher, projectDir);
                 session.run(analysis, path -> path.endsWith(".java"));
@@ -226,12 +225,6 @@ public class Main implements Callable<Integer> {
         }
     }
 
-    private DiffAnalysis analyzeChanges(Predicate<String> filter) throws IOException, GitAPIException {
-        try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader, renameScore)) {
-            return analyzer.analyzeChanges(filter);
-        }
-    }
-
     /**
      * Whether the {@code <rev>} compares a commit with the working copy ({@code a..}), so the report changes with
      * the files on disk. An unknown revision does not; its error is reported by the analysis.
@@ -241,12 +234,6 @@ public class Main implements Callable<Integer> {
             return new GitInspector(projectDir, renameScore).resolveRange(commit).newCommit() == null;
         } catch (IOException | IllegalArgumentException e) {
             return false;
-        }
-    }
-
-    private DiffAnalysis analyzeCommit(Predicate<String> filter) throws IOException {
-        try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader, renameScore)) {
-            return analyzer.analyzeCommit(commit, filter);
         }
     }
 

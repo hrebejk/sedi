@@ -11,7 +11,9 @@ package cz.hrebejk.sedi.compilation;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.DocTrees;
 import com.sun.source.util.JavacTask;
+import com.sun.source.util.TaskListener;
 import com.sun.source.util.Trees;
+import com.sun.tools.javac.api.JavacTaskImpl;
 
 import javax.tools.*;
 import java.io.IOException;
@@ -28,7 +30,12 @@ import java.util.Optional;
  */
 public class AstLoader {
 
+    /** Whether javac's own classes may be used, see {@link #analyzeInputFiles}. */
+    private static final boolean INTERNAL_API_EXPORTED =
+            JavacTask.class.getModule().isExported("com.sun.tools.javac.api", AstLoader.class.getModule());
+
     private final List<Path> classpath;
+    private final TaskListener listener;
 
     /**
      * Creates a loader which resolves types only against the JDK.
@@ -43,12 +50,19 @@ public class AstLoader {
      * @param classpath jars and class directories used to resolve library types
      */
     public AstLoader(List<Path> classpath) {
+        this(classpath, null);
+    }
+
+    /** Creates a loader whose javac tasks report their progress to the listener, if not {@code null}. */
+    AstLoader(List<Path> classpath, TaskListener listener) {
         this.classpath = List.copyOf(classpath);
+        this.listener = listener;
     }
 
     /**
      * Parses and attributes the given files in a single javac task. Classes of the project which the files
-     * refer to are found in the providers, on demand.
+     * refer to are found in the providers, on demand; they are only parsed and entered, their bodies are not
+     * attributed.
      *
      * @param providers sources of the project; for a class present in several providers the first one wins.
      *                  Each path is looked up in the providers in order, the first provider having it is used.
@@ -87,11 +101,14 @@ public class AstLoader {
             );
 
             JavacTask javacTask = (JavacTask) task;
+            if (listener != null) {
+                javacTask.addTaskListener(listener);
+            }
             Map<URI, CompilationUnitTree> units = new HashMap<>();
             for (CompilationUnitTree cut : javacTask.parse()) {
                 units.put(cut.getSourceFile().toUri(), cut);
             }
-            javacTask.analyze();
+            analyzeInputFiles(javacTask);
 
             Trees trees = Trees.instance(javacTask);
             DocTrees docTrees = DocTrees.instance(javacTask);
@@ -101,6 +118,21 @@ public class AstLoader {
                 result.add(new CompilationUnitInfo(units.get(file.toUri()), trees, docTrees));
             }
             return result;
+        }
+    }
+
+    /**
+     * Attributes the files given to the task. javac also queues every class it reads from the source path for
+     * attribution, and {@link JavacTask#analyze()} would attribute those too, and transitively everything they
+     * refer to. Only their signatures are needed, and javac knows them without attributing. Attributing only the
+     * given files needs javac's own task class, exported by {@code --add-exports
+     * jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED} (see {@code pom.xml}); without it everything is attributed.
+     */
+    private static void analyzeInputFiles(JavacTask task) throws IOException {
+        if (INTERNAL_API_EXPORTED && task instanceof JavacTaskImpl impl) {
+            impl.analyze(impl.enter());
+        } else {
+            task.analyze();
         }
     }
 

@@ -102,8 +102,20 @@ The project's other classes are not passed to javac up front. `SourceFileManager
   copied to a temporary directory.
 - `SourceFileProvider.directories(base, roots)` reads the working tree. This is what is on disk, which is what builds.
 
+Only the changed files are attributed. javac also queues every class it reads from the source path for attribution,
+so `JavacTask.analyze()` would attribute their bodies too, and transitively everything they refer to. `AstLoader`
+calls `analyze(enter())` on javac's own `JavacTaskImpl` instead, which needs `--add-exports
+jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED` (set in `pom.xml` for the compiler, the tests and the manifest of
+`sedi.jar`). Without the export, it falls back to `analyze()`.
+
 The source roots are `src/main/java` and `src/test/java` if they exist, otherwise the repository root. The result is
 a `CompilationUnitInfo(compilationUnit, trees, docTrees)` per file. These stay valid until the analyzer is closed.
+
+In the interactive modes, one `DiffAstAnalyzer` serves the whole session. It caches the old versions, both their
+`CompilationUnitInfo`s and their `ElementInfo` trees, for as long as the old commit stays the same. A later analysis
+compiles only the old versions of files that were not changed before, in a small extra javac task. Units from
+different tasks can be mixed, because identity is by element id strings, never by javac objects. When the old commit
+changes (after a commit, or when a clean working copy falls back to `HEAD~1..HEAD`), the cache is dropped.
 
 ### Phase 3: Hashing, first pass
 
@@ -342,9 +354,10 @@ Tests are JUnit 4. `GitTestHelper` creates throwaway repositories with an initia
 
 ### Analysis
 
-- **Re-analysis does all the work again.** Every file change runs both javac tasks again and hashes everything twice.
-  In watch mode the old side (a fixed commit) never changes, so its ASTs, `ElementInfo`s and hashes could be cached.
-  Only the changed new files would then need recompiling.
+- **Re-analysis still redoes the new side.** The old side is cached (see Phase 2), but every file change compiles
+  and hashes all the changed new files again. Recompiling only the files that changed since the last analysis would
+  need the unchanged new units to stay consistent with the recompiled ones, which separate javac tasks don't
+  guarantee for the new side. Old-side javac tasks also stay in memory until the old commit changes.
 - **Unused or leaky categories.** `WITHOUT_RENAMES` is computed but nothing in the main code reads it. Rename undoing
   is special-cased in `ElementHashCalculator` through `undoesRenames()` and `undoesRenamedReferences()` instead of
   living in the strategies. Either the strategy interface should carry this, or the category should be removed.

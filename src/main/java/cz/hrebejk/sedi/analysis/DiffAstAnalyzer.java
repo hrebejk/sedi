@@ -13,14 +13,18 @@ import cz.hrebejk.sedi.util.GitInspector;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.diff.DiffEntry;
+import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.Repository;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Predicate;
 
@@ -33,6 +37,10 @@ import java.util.function.Predicate;
  * the new versions when analyzing the working copy, on disk, since what is on disk is what builds. The
  * working copy is compared with HEAD, whether the changes are staged or not. The ASTs stay usable until the
  * analyzer is closed.
+ * <p>
+ * One analyzer is meant to be reused for the repeated analyses of a watched directory. The old versions do not
+ * change as long as the old commit stays the same, so each is compiled and hashed only once: a later analysis
+ * compiles only the old versions of the files which were not changed before.
  */
 public class DiffAstAnalyzer implements AutoCloseable {
 
@@ -43,6 +51,12 @@ public class DiffAstAnalyzer implements AutoCloseable {
     private final AstLoader astLoader;
     private final List<String> sourceRoots;
     private Git git;
+    /** The old commit the cached old versions are from; {@code null} also when nothing is cached. */
+    private ObjectId cachedOldCommit;
+    /** The compiled old versions of the files, by their repository relative paths. */
+    private final Map<String, CompilationUnitInfo> oldUnits = new HashMap<>();
+    /** The element trees of the old versions, hashed without renames. */
+    private final Map<CompilationUnitInfo, ElementInfo> oldRoots = new IdentityHashMap<>();
 
     /**
      * Creates a new DiffAstAnalyzer for the given repository path.
@@ -178,10 +192,37 @@ public class DiffAstAnalyzer implements AutoCloseable {
             oldPaths.add(DiffEntry.DEV_NULL.equals(diff.getOldPath()) ? null : diff.getOldPath());
             newPaths.add(DiffEntry.DEV_NULL.equals(diff.getNewPath()) ? null : diff.getNewPath());
         }
-        List<CompilationUnitInfo> oldInfos = load(oldProviders, oldPaths);
+        List<CompilationUnitInfo> oldInfos = loadOld(range.oldCommit(), oldProviders, oldPaths);
         List<CompilationUnitInfo> newInfos = load(newProviders, newPaths);
 
-        return ApiDiffAnalyzer.analyze(diffs, oldInfos, newInfos);
+        return ApiDiffAnalyzer.analyze(diffs, oldInfos, newInfos,
+                unit -> oldRoots.computeIfAbsent(unit, ApiDiffAnalyzer::root));
+    }
+
+    /**
+     * Loads the old versions, compiling only those not compiled by an earlier analysis of the same old commit.
+     * The result has a {@code null} for every {@code null} path.
+     */
+    private List<CompilationUnitInfo> loadOld(ObjectId oldCommit, List<SourceFileProvider> providers,
+                                              List<String> paths) throws IOException {
+        if (!Objects.equals(oldCommit, cachedOldCommit)) {
+            oldUnits.clear();
+            oldRoots.clear();
+            cachedOldCommit = oldCommit;
+        }
+        List<String> missing = paths.stream().filter(Objects::nonNull).filter(p -> !oldUnits.containsKey(p))
+                .distinct().toList();
+        if (!missing.isEmpty()) {
+            List<CompilationUnitInfo> loaded = load(providers, missing);
+            for (int i = 0; i < missing.size(); i++) {
+                oldUnits.put(missing.get(i), loaded.get(i));
+            }
+        }
+        List<CompilationUnitInfo> result = new ArrayList<>();
+        for (String path : paths) {
+            result.add(path == null ? null : oldUnits.get(path));
+        }
+        return result;
     }
 
     /** Loads the files in a single compilation; the result has a {@code null} for every {@code null} path. */

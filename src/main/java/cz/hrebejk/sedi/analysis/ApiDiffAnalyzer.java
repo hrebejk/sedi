@@ -18,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 
 /**
  * Hashes the old and new versions of the changed files, finds the renames among them and pairs their
@@ -45,8 +46,27 @@ final class ApiDiffAnalyzer {
      */
     static DiffAnalysis analyze(List<DiffEntry> diffs, List<CompilationUnitInfo> oldUnits,
                                 List<CompilationUnitInfo> newUnits) {
-        Paired paired = pairRenames(diffs, oldUnits, newUnits);
-        return analyzePaired(paired.diffs(), paired.oldUnits(), paired.newUnits());
+        return analyze(diffs, oldUnits, newUnits, ApiDiffAnalyzer::root);
+    }
+
+    /**
+     * Analyzes the changed files, taking the element trees of the old versions from {@code oldRoot}, which may
+     * return the trees of an earlier analysis.
+     *
+     * @param diffs    the changed files
+     * @param oldUnits the old versions, a {@code null} for every added file
+     * @param newUnits the new versions, a {@code null} for every deleted file
+     * @param oldRoot  the element tree of an old version, see {@link #root(CompilationUnitInfo)}; never called
+     *                 with {@code null}
+     * @return the analysis of all the files
+     */
+    static DiffAnalysis analyze(List<DiffEntry> diffs, List<CompilationUnitInfo> oldUnits,
+                                List<CompilationUnitInfo> newUnits,
+                                Function<CompilationUnitInfo, ElementInfo> oldRoot) {
+        Function<CompilationUnitInfo, ElementInfo> roots =
+                unit -> unit == null ? root(null, Renames.EMPTY) : oldRoot.apply(unit);
+        Paired paired = pairRenames(diffs, oldUnits, newUnits, roots);
+        return analyzePaired(paired.diffs(), paired.oldUnits(), paired.newUnits(), roots);
     }
 
     /** The files after the added and deleted ones which are one renamed file were joined. */
@@ -71,7 +91,8 @@ final class ApiDiffAnalyzer {
      * has mostly the same members, compared by their kinds, names and numbers of parameters: the type was renamed, and the file with it.
      */
     private static Paired pairRenames(List<DiffEntry> diffs, List<CompilationUnitInfo> oldUnits,
-                                      List<CompilationUnitInfo> newUnits) {
+                                      List<CompilationUnitInfo> newUnits,
+                                      Function<CompilationUnitInfo, ElementInfo> oldRoot) {
         record Candidate(int deleted, int added, double similarity) {
         }
         Map<Integer, Set<String>> members = new LinkedHashMap<>();
@@ -79,7 +100,7 @@ final class ApiDiffAnalyzer {
             DiffEntry.ChangeType type = diffs.get(i).getChangeType();
             if (type == DiffEntry.ChangeType.ADD || type == DiffEntry.ChangeType.DELETE) {
                 boolean old = type == DiffEntry.ChangeType.DELETE;
-                ElementInfo root = root(old ? oldUnits.get(i) : newUnits.get(i), Renames.EMPTY);
+                ElementInfo root = old ? oldRoot.apply(oldUnits.get(i)) : root(newUnits.get(i), Renames.EMPTY);
                 ElementInfo primary = types(root).get(typeName(old ? diffs.get(i).getOldPath() : diffs.get(i).getNewPath()));
                 if (primary != null) {
                     Set<String> keys = new LinkedHashSet<>();
@@ -133,13 +154,14 @@ final class ApiDiffAnalyzer {
     }
 
     private static DiffAnalysis analyzePaired(List<DiffEntry> diffs, List<CompilationUnitInfo> oldUnits,
-                                              List<CompilationUnitInfo> newUnits) {
+                                              List<CompilationUnitInfo> newUnits,
+                                              Function<CompilationUnitInfo, ElementInfo> oldRoot) {
         List<ElementInfo> oldRoots = new ArrayList<>();
         Renames renames = new Renames();
         for (int i = 0; i < diffs.size(); i++) {
-            ElementInfo oldRoot = root(oldUnits.get(i), Renames.EMPTY);
-            oldRoots.add(oldRoot);
-            Versions v = versions(diffs.get(i), oldRoot, root(newUnits.get(i), Renames.EMPTY));
+            ElementInfo old = oldRoot.apply(oldUnits.get(i));
+            oldRoots.add(old);
+            Versions v = versions(diffs.get(i), old, root(newUnits.get(i), Renames.EMPTY));
             if (v.oldPrimary() != null) {
                 renames.add(v.oldPrimary(), v.newPrimary());
                 collectRenames(v.oldPrimary(), v.newPrimary(), renames);
@@ -356,6 +378,11 @@ final class ApiDiffAnalyzer {
     private static String packageName(CompilationUnitInfo unit) {
         return unit == null || unit.compilationUnit().getPackageName() == null
                 ? "" : unit.compilationUnit().getPackageName().toString();
+    }
+
+    /** The element tree of a version of a file, hashed without renames. */
+    static ElementInfo root(CompilationUnitInfo unit) {
+        return root(unit, Renames.EMPTY);
     }
 
     private static ElementInfo root(CompilationUnitInfo unit, Renames renames) {
