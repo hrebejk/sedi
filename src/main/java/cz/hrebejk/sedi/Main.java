@@ -80,6 +80,10 @@ public class Main implements Callable<Integer> {
             description = "Do not show the whole source of the added types and members with the implementation changes.")
     private boolean hideAdditions;
 
+    @Option(names = "--hide-tests",
+            description = "Do not show the changes of the test sources, the files under src/test/.")
+    private boolean hideTests;
+
     @Option(names = "--rename-score", paramLabel = "<percent>",
             description = "Least similarity of a deleted and an added file for git to report them as a rename, "
                     + "0 - 100 (default: " + GitInspector.DEFAULT_RENAME_SCORE + ", as in the git command line).")
@@ -186,7 +190,7 @@ public class Main implements Callable<Integer> {
             return 1;
         }
         Reporter reporter = new Reporter(theme, new ReportOptions(level, grouping, bodyContext, javadocContext, !noLineNumbers,
-                !hideAdditions, showDeletions))
+                !hideAdditions, showDeletions, !hideTests))
                 .withWidth(Terminal.width());
         boolean keepRunning = commit == null || interactive;
         if (!keepRunning || !terminal && commit != null) {

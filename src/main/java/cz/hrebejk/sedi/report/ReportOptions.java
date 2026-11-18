@@ -22,9 +22,10 @@ import cz.hrebejk.sedi.analysis.ChangeLevel;
  * @param lineNumbers    whether to show the numbers of the lines of the source on the left
  * @param showAdditions  whether the implementation changes show the whole source of the added types and members
  * @param showDeletions  whether the implementation changes show the whole source of the removed types and members
+ * @param showTests      whether the changes of the test sources, the files under {@code src/test/}, are shown
  */
 public record ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyContext, int javadocContext,
-                            boolean lineNumbers, boolean showAdditions, boolean showDeletions) {
+                            boolean lineNumbers, boolean showAdditions, boolean showDeletions, boolean showTests) {
 
     /** The {@link #bodyContext()} showing all the unchanged lines of a changed body. */
     public static final int WHOLE_BODY = -1;
@@ -42,7 +43,8 @@ public record ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyCon
     public static final int DEFAULT_JAVADOC_CONTEXT = NO_JAVADOC;
 
     /**
-     * Creates options showing the whole source of the added types and members, not of the removed ones.
+     * Creates options showing the whole source of the added types and members, not of the removed ones, and showing
+     * the tests.
      *
      * @param maxLevel       the least important level of changes to show
      * @param grouping       how the changes are grouped
@@ -52,7 +54,7 @@ public record ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyCon
      */
     public ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyContext, int javadocContext,
                          boolean lineNumbers) {
-        this(maxLevel, grouping, bodyContext, javadocContext, lineNumbers, true, false);
+        this(maxLevel, grouping, bodyContext, javadocContext, lineNumbers, true, false, true);
     }
 
     /**
@@ -74,7 +76,7 @@ public record ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyCon
      * @return the new options
      */
     public ReportOptions withMaxLevel(ChangeLevel level) {
-        return new ReportOptions(level, grouping, bodyContext, javadocContext, lineNumbers, showAdditions, showDeletions);
+        return new ReportOptions(level, grouping, bodyContext, javadocContext, lineNumbers, showAdditions, showDeletions, showTests);
     }
 
     /**
@@ -84,7 +86,7 @@ public record ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyCon
      * @return the new options
      */
     public ReportOptions withGrouping(Grouping grouping) {
-        return new ReportOptions(maxLevel, grouping, bodyContext, javadocContext, lineNumbers, showAdditions, showDeletions);
+        return new ReportOptions(maxLevel, grouping, bodyContext, javadocContext, lineNumbers, showAdditions, showDeletions, showTests);
     }
 
     /**
@@ -94,7 +96,7 @@ public record ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyCon
      * @return the new options
      */
     public ReportOptions withJavadocContext(int javadocContext) {
-        return new ReportOptions(maxLevel, grouping, bodyContext, javadocContext, lineNumbers, showAdditions, showDeletions);
+        return new ReportOptions(maxLevel, grouping, bodyContext, javadocContext, lineNumbers, showAdditions, showDeletions, showTests);
     }
 
     /**
@@ -104,7 +106,7 @@ public record ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyCon
      * @return the new options
      */
     public ReportOptions withAdditions(boolean show) {
-        return new ReportOptions(maxLevel, grouping, bodyContext, javadocContext, lineNumbers, show, showDeletions);
+        return new ReportOptions(maxLevel, grouping, bodyContext, javadocContext, lineNumbers, show, showDeletions, showTests);
     }
 
     /**
@@ -114,7 +116,17 @@ public record ReportOptions(ChangeLevel maxLevel, Grouping grouping, int bodyCon
      * @return the new options
      */
     public ReportOptions withDeletions(boolean show) {
-        return new ReportOptions(maxLevel, grouping, bodyContext, javadocContext, lineNumbers, showAdditions, show);
+        return new ReportOptions(maxLevel, grouping, bodyContext, javadocContext, lineNumbers, showAdditions, show, showTests);
+    }
+
+    /**
+     * Returns these options showing the changes of the test sources, or not.
+     *
+     * @param show whether to show them
+     * @return the new options
+     */
+    public ReportOptions withTests(boolean show) {
+        return new ReportOptions(maxLevel, grouping, bodyContext, javadocContext, lineNumbers, showAdditions, showDeletions, show);
     }
 
     /**

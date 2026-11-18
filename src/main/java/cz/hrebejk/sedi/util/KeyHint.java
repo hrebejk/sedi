@@ -33,6 +33,7 @@ public final class KeyHint {
             new Item('d', "javadoc", "doc"),
             new Item('+', "added", "add"),
             new Item('-', "removed", "rem"),
+            new Item('t', "tests", "test"),
             new Item('q', "quit", "quit"));
     private static final Item HELP = new Item('h', "help", "help");
 

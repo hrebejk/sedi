@@ -21,12 +21,12 @@ public class KeyHintTest extends TestCase {
 
     /** Tests that everything is shown when there is room. */
     public void testFull() {
-        assertEquals("[a] api  [i] impl  [c] cosmetic  [m] imports  [d] javadoc  [+] added  [-] removed  [q] quit  [h] help", KeyHint.render(200, false));
+        assertEquals("[a] api  [i] impl  [c] cosmetic  [m] imports  [d] javadoc  [+] added  [-] removed  [t] tests  [q] quit  [h] help", KeyHint.render(200, false));
     }
 
     /** Tests that labels are shortened before items are dropped. */
     public void testShortLabels() {
-        assertEquals("[a] api  [i] impl  [c] cos  [m] imp  [d] doc  [+] add  [-] rem  [q] quit  [h] help", KeyHint.render(82, false));
+        assertEquals("[a] api  [i] impl  [c] cos  [m] imp  [d] doc  [+] add  [-] rem  [t] test  [q] quit  [h] help", KeyHint.render(92, false));
     }
 
     /** Tests that items are dropped, marked with an ellipsis, and that help stays last. */
@@ -45,7 +45,7 @@ public class KeyHintTest extends TestCase {
 
     /** Tests that colored output has the same visible width and marks keys with reverse video. */
     public void testColored() {
-        for (int width : new int[] {200, 82, 40, 20}) {
+        for (int width : new int[] {200, 92, 40, 20}) {
             String colored = KeyHint.render(width, true);
             assertTrue(colored.contains("\033[7m"));
             assertEquals(KeyHint.render(width, false).length(), strip(colored).length());

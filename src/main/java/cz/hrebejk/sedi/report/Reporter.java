@@ -116,6 +116,16 @@ public final class Reporter {
     }
 
     /**
+     * Returns a reporter like this one showing the changes of the test sources, or not.
+     *
+     * @param show see {@link ReportOptions#showTests()}
+     * @return the new reporter
+     */
+    public Reporter withTests(boolean show) {
+        return new Reporter(theme, options.withTests(show), width);
+    }
+
+    /**
      * Returns what this reporter shows and how.
      *
      * @return the options
@@ -208,8 +218,10 @@ public final class Reporter {
         return numbered(section(sorted(analysis), level));
     }
 
-    private static List<FileAnalysis> sorted(DiffAnalysis analysis) {
+    /** The files to report, sorted by package and class; the tests are left out unless they are shown. */
+    private List<FileAnalysis> sorted(DiffAnalysis analysis) {
         return analysis.files().stream()
+                .filter(f -> options.showTests() || !isTest(f))
                 .sorted(Comparator.comparing(FileAnalysis::newPackage).thenComparing(FileAnalysis::newClassName))
                 .toList();
     }
@@ -591,6 +603,15 @@ public final class Reporter {
         String dir = path.contains("/") ? path.substring(0, path.lastIndexOf('/')) : "";
         String packageDir = pkg.replace('.', '/');
         return dir.endsWith("/" + packageDir) ? dir.substring(0, dir.length() - packageDir.length() - 1) : "";
+    }
+
+    /** Whether the file is a test: either of its paths is under a {@code src/test/} directory. */
+    private static boolean isTest(FileAnalysis file) {
+        return isTestPath(file.diff().getOldPath()) || isTestPath(file.diff().getNewPath());
+    }
+
+    private static boolean isTestPath(String path) {
+        return path.startsWith("src/test/") || path.contains("/src/test/");
     }
 
     private static String fileName(String path) {

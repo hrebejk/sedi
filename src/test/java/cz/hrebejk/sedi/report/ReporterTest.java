@@ -601,6 +601,38 @@ public class ReporterTest extends TestCase {
     }
 
     /**
+     * Tests that the changes of the files under {@code src/test/} are left out of every view when the tests are
+     * hidden, and shown by default.
+     */
+    public void testHideTests() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("src/main/java/p/Foo.java", "package p;\nimport java.util.List;\npublic class Foo {\n  int a;\n}\n");
+            helper.writeFile("src/test/java/p/FooTest.java", "package p;\nimport java.util.List;\npublic class FooTest {\n  int b;\n}\n");
+            helper.commit("init");
+            helper.writeFile("src/main/java/p/Foo.java", "package p;\nimport java.util.Set;\npublic class Foo {\n  long a;\n}\n");
+            helper.writeFile("src/test/java/p/FooTest.java", "package p;\nimport java.util.Set;\npublic class FooTest {\n  long b;\n}\n");
+
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                var analysis = analyzer.analyzeChanges();
+                Reporter shown = new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.IMPORTS, ReportOptions.Grouping.BY_TYPE));
+                assertTrue(shown.options().showTests());
+                assertTrue(String.join("\n", shown.report(analysis)).contains("FooTest"));
+
+                Reporter hidden = shown.withTests(false);
+                for (ReportOptions.Grouping grouping : ReportOptions.Grouping.values()) {
+                    String report = String.join("\n", hidden.withGrouping(grouping).report(analysis));
+                    assertTrue(report, report.contains("Foo.java"));
+                    assertFalse(report, report.contains("FooTest"));
+                }
+                for (ChangeLevel level : ChangeLevel.values()) {
+                    assertFalse(level.toString(), String.join("\n", hidden.reportOnly(analysis, level)).contains("FooTest"));
+                }
+                assertTrue(String.join("\n", hidden.withTests(true).report(analysis)).contains("FooTest"));
+            }
+        }
+    }
+
+    /**
      * Tests that a level without changes gives a single note.
      */
     public void testReportOnlyEmptyLevel() throws Exception {
