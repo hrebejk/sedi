@@ -8,133 +8,83 @@
  */
 package cz.hrebejk.sedi.report;
 
+import org.maraboo.fleck.html.HTML;
+
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * The line numbers of the report, shown in a column on the left of the lines, not indented with the code. Right
- * after the number comes the marker of the line, {@code +}, {@code -} or {@code ~}, and the number has the color of
- * the marker. The printers {@link #number number} the lines they make; the report puts the numbers in the column at
- * last, when the width of the column is known.
+ * after the number comes the marker of the line, {@code +}, {@code -} or {@code ~}, and the number has the class of
+ * the line, so it can be colored as the marker.
  */
 final class LineNumbers {
-
-    private static final char MARK = '\u0000';
-    private static final char UNNUMBERED = '\u0001';
-    /** No marker: the line has no column for it, like the members of an added type. */
-    static final char NONE = 0;
-    private static final Pattern NUMBERED = Pattern.compile("^([^" + MARK + UNNUMBERED + "]*)" + MARK + "(\\d+)" + MARK + "([-+~ ]?)" + MARK);
 
     private LineNumbers() {
     }
 
     /**
-     * The line of the report numbered by a line of the source, without a marker. An indentation, spaces or the
-     * lines of a tree, may be put in front of it.
-     *
-     * @param line the line of the source, {@code 0} if not known
-     */
-    static String number(long line, String text) {
-        return number(line, NONE, text);
-    }
-
-    /**
-     * The line of the report numbered by a line of the source, with its marker. An indentation, spaces or the
-     * lines of a tree, may be put in front of it.
-     *
-     * @param line   the line of the source, {@code 0} if not known
-     * @param marker {@code +} for added code, {@code -} for removed, {@code ~} for changed, a space for unchanged
-     *               code shown as the context, {@link #NONE} for no marker
-     * @param text   the line without the marker; added and removed code is not styled as such yet
-     */
-    static String number(long line, char marker, String text) {
-        return MARK + String.valueOf(Math.max(line, 0)) + MARK + (marker == NONE ? "" : String.valueOf(marker)) + MARK
-                + text;
-    }
-
-    /** The text of a numbered line, without its number and marker. */
-    static String text(String line) {
-        Matcher m = NUMBERED.matcher(line);
-        return m.find() ? m.group(1) + line.substring(m.end()) : line;
-    }
-
-    /** The marker of a numbered line, {@link #NONE} if it has none. */
-    static char marker(String line) {
-        Matcher m = NUMBERED.matcher(line);
-        return m.find() && !m.group(3).isEmpty() ? m.group(3).charAt(0) : NONE;
-    }
-
-    /** A line of the report shown left of the column of the numbers, like a heading. */
-    static String outside(String text) {
-        return UNNUMBERED + text;
-    }
-
-    /**
-     * Puts the numbers of the lines and their markers in a column on the left, or takes the numbers out and puts
-     * the markers back in front of the text.
+     * Makes the elements of the lines: puts the numbers of the lines in a column on the left, followed by their
+     * markers, or leaves the numbers out and keeps the markers.
      *
      * @param show {@code false} to show no numbers
+     * @return a {@code div.line} for every line, a {@code br} for an empty one
      */
-    static List<String> render(List<String> lines, boolean show, Theme theme) {
+    static List<HTML.Tag> render(List<Line> lines, boolean show) {
         int width = 1;
-        for (String line : lines) {
-            Matcher m = NUMBERED.matcher(line);
-            if (m.find()) {
-                width = Math.max(width, m.group(2).length());
+        for (Line line : lines) {
+            if (line.kind() == Line.Kind.NUMBERED) {
+                width = Math.max(width, String.valueOf(line.number()).length());
             }
         }
-        List<String> result = new ArrayList<>();
-        for (String line : lines) {
-            Matcher m = NUMBERED.matcher(line);
-            if (line.startsWith(String.valueOf(UNNUMBERED))) {
-                result.add(line.substring(1));
-            } else if (m.find()) {
-                String indent = m.group(1);
-                String marker = m.group(3);
-                String text = line.substring(m.end());
-                // The marker is in a column of its own, left of the indentation, blank for a line without one.
-                String code = sign(marker, theme) + " " + indent + styled(marker, text, theme);
-                if (!show) {
-                    result.add(code);
-                    continue;
-                }
-                String number = m.group(2).equals("0") ? "" : m.group(2);
-                String column = theme.style(role(marker), " ".repeat(width - number.length()) + number) + " ";
-                result.add(column + code);
-            } else {
-                result.add(show && !line.isEmpty() ? " ".repeat(width + 1) + line : line);
-            }
+        List<HTML.Tag> result = new ArrayList<>();
+        for (Line line : lines) {
+            HTML.Tag element = switch (line.kind()) {
+                case BLANK -> HTML.BR();
+                case OUTSIDE -> div(line.prefix().plus(line.content()), Css.LINE, Css.OUTSIDE);
+                case PLAIN -> div(Fragment.of(show && !line.content().isEmpty() ? " ".repeat(width + 1) : "")
+                        .plus(line.prefix()).plus(line.content()), Css.LINE);
+                case NUMBERED -> numbered(line, show, width);
+            };
+            // A line without text has nothing for the console to show: it is an empty line.
+            result.add(element.getInnerText().isBlank() ? HTML.BR() : element);
         }
         return result;
     }
 
-    private static String sign(String marker, Theme theme) {
-        return switch (marker) {
-            case "+" -> theme.sign(true);
-            case "-" -> theme.sign(false);
-            case "~" -> theme.modified();
-            default -> " ";
+    private static HTML.Tag numbered(Line line, boolean show, int width) {
+        Fragment out = Fragment.EMPTY;
+        if (show) {
+            String number = line.number() == 0 ? "" : String.valueOf(line.number());
+            out = Fragment.of(Css.LN.span(" ".repeat(width - number.length()) + number)).plus(" ");
+        }
+        // The marker is in a column of its own, left of the indentation, blank for a line without one.
+        out = out.plus(sign(line.marker())).plus(" ").plus(line.prefix());
+        if (!line.content().isEmpty()) {
+            out = out.plus(Fragment.of(Css.CODE.span(line.content())));
+        }
+        return switch (line.marker()) {
+            case '+' -> div(out, Css.LINE, Css.ADD_LINE);
+            case '-' -> div(out, Css.LINE, Css.REMOVE_LINE);
+            case '~' -> div(out, Css.LINE, Css.CHANGE_LINE);
+            default -> div(out, Css.LINE);
         };
     }
 
-    /** The text of an added or removed line in the style of such lines. */
-    private static String styled(String marker, String text, Theme theme) {
-        return switch (marker) {
-            case "+" -> theme.style(Theme.Role.ADDED, text);
-            case "-" -> theme.style(Theme.Role.REMOVED, text);
-            default -> text;
-        };
+    private static HTML.Tag div(Fragment content, Css... classes) {
+        String[] names = new String[classes.length];
+        for (int i = 0; i < classes.length; i++) {
+            names[i] = classes[i].cssClass();
+        }
+        return HTML.DIV().children(content.nodes()).clazz(names);
     }
 
-    /** The color of the number: that of the marker. */
-    private static Theme.Role role(String marker) {
+    private static Fragment sign(char marker) {
         return switch (marker) {
-            case "+" -> Theme.Role.ADDED_MARK;
-            case "-" -> Theme.Role.REMOVED_MARK;
-            case "~" -> Theme.Role.CHANGED_MARK;
-            default -> Theme.Role.LINE_NUMBER;
+            case '+' -> Markup.sign(true);
+            case '-' -> Markup.sign(false);
+            case '~' -> Markup.modified();
+            default -> Fragment.of(" ");
         };
     }
 }

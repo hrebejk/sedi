@@ -12,22 +12,21 @@ import cz.hrebejk.sedi.GitTestHelper;
 import cz.hrebejk.sedi.analysis.DiffAstAnalyzer;
 import cz.hrebejk.sedi.analysis.ElementPair;
 import junit.framework.TestCase;
+import org.maraboo.fleck.html.HTML;
 
 import java.util.List;
+
+import static cz.hrebejk.sedi.report.Expect.*;
+import static cz.hrebejk.sedi.report.HtmlAssert.*;
 
 /**
  * Unit tests for {@link SignatureDiffPrinter}.
  */
 public class SignatureDiffPrinterTest extends TestCase {
 
-    /** The line without its line number, see {@link LineNumbers}. */
-    static String unnumbered(String line) {
-        return unnumbered(line, Theme.PLAIN);
-    }
-
-    /** The line without its line number, the marker in front of it in the colors of the theme. */
-    static String unnumbered(String line, Theme theme) {
-        return LineNumbers.render(java.util.List.of(line), false, theme).getFirst();
+    /** The element of the line without its line number, see {@link LineNumbers}. */
+    static HTML.Tag unnumbered(Line line) {
+        return LineNumbers.render(List.of(line), false).getFirst();
     }
 
 
@@ -46,51 +45,70 @@ public class SignatureDiffPrinterTest extends TestCase {
         return "public class T {\n" + members + "\n}\n";
     }
 
-    private List<String> print(String oldMembers, String newMembers) throws Exception {
-        SignatureDiffPrinter printer = new SignatureDiffPrinter(Theme.PLAIN);
+    private List<HTML> print(String oldMembers, String newMembers) throws Exception {
+        SignatureDiffPrinter printer = new SignatureDiffPrinter();
         return pairs(oldMembers, newMembers).stream()
-                .flatMap(p -> java.util.stream.Stream.concat(printer.annotations(p).stream(), java.util.stream.Stream.of(printer.format(p, "T"))).map(SignatureDiffPrinterTest::unnumbered))
+                .flatMap(p -> java.util.stream.Stream.concat(printer.annotations(p).stream(),
+                        java.util.stream.Stream.of(printer.format(p, "T"))))
+                .<HTML>map(SignatureDiffPrinterTest::unnumbered)
                 .toList();
     }
 
     /** The signature is printed as it is in the source: varargs, comments and spaces left out, modifiers in order. */
     public void testSignatureAsInSource() throws Exception {
-        assertEquals(List.of("~ final static void main( String... args, __int x__ )"),
+        assertLines(List.of(
+                line('~', code("final static void ", decl("main"), "( String... args, ", added("int x"), " )"))),
                 print("final static void main(String... args) { }", "final static void main(String...  args, int x) { }"));
         // The comment is left out, the type of a C style array printed by javac.
-        assertEquals(List.of("~ void p( java.util.List< String> l, __int[] x__ )"),
+        assertLines(List.of(
+                line('~', code("void ", decl("p"), "( java.util.List< String> l, ", added("int[] x"), " )"))),
                 print("void p(java.util.List< /* c */ String> l) { }",
                         "void p(java.util.List< /* c */ String> l, int x[]) { }"));
-        assertEquals(List.of("~ void q( final @Deprecated String s, __int i__ )"),
+        assertLines(List.of(
+                line('~', code("void ", decl("q"), "( final @Deprecated String s, ", added("int i"), " )"))),
                 print("void q(final @Deprecated String s) { }", "void q(final @Deprecated String s, int i) { }"));
     }
 
     /** An added parameter is marked as added, a removed one struck through, also between the kept ones. */
     public void testAddedAndRemovedParameters() throws Exception {
-        assertEquals(List.of("~ void a( String text, __long line__ )"),
+        assertLines(List.of(
+                line('~', code("void ", decl("a"), "( String text, ", added("long line"), " )"))),
                 print("void a(String line) { }", "void a(String text, long line) { }"));
-        assertEquals(List.of("~ void b( __String s__, int a, __boolean f__ )"),
+        assertLines(List.of(
+                line('~', code("void ", decl("b"), "( ", added("String s"), ", int a, ", added("boolean f"), " )"))),
                 print("void b(int a) { }", "void b(String s, int a, boolean f) { }"));
-        assertEquals(List.of("~ void c( int a, ~~String s~~ )"),
+        assertLines(List.of(
+                line('~', code("void ", decl("c"), "( int a, ", strike("String s"), " )"))),
                 print("void c(int a, String s) { }", "void c(int a) { }"));
-        assertEquals(List.of("~ void d( ~~int~~ __long__ a, String s )"),
+        assertLines(List.of(
+                line('~', code("void ", decl("d"), "( ", strike("int"), " ", added("long"), " a, String s )"))),
                 print("void d(int a, String s) { }", "void d(long a, String s) { }"));
     }
 
     /** A changed annotation shows only its changed arguments as changed, paired by their names. */
     public void testAnnotationArguments() throws Exception {
         String type = "@interface A { int x() default 0; String y() default \"\"; int z() default 0; }\n";
-        assertEquals(List.of("~ @A(x = 1, y = ~~\"old\"~~ __\"new\"__)", "  void m()"),
+        assertLines(List.of(
+                line('~', code("@A(x = 1, y = ", strike("\"old\""), " ", added("\"new\""), ")")),
+                line(' ', code("void ", decl("m"), "()"))),
                 print(type + "@A(x = 1, y = \"old\") void m() {}", type + "@A(x = 1, y = \"new\") void m() {}"));
         // A string which did not change too much shows the changed words.
-        assertEquals(List.of("~ @A(y = \"Show the ~~old~~ __new__ diff and exit\")", "  void m()"),
+        assertLines(List.of(
+                line('~', code("@A(y = \"Show the ", strike("old"), " ", added("new"), " diff and exit\")")),
+                line(' ', code("void ", decl("m"), "()"))),
                 print(type + "@A(y = \"Show the old diff and exit\") void m() {}",
                         type + "@A(y = \"Show the new diff and exit\") void m() {}"));
-        assertEquals(List.of("~ @A(x = 1, y = ~~\"old\"~~ __\"new\"__)", "  void m()"),
+        assertLines(List.of(
+                line('~', code("@A(x = 1, y = ", strike("\"old\""), " ", added("\"new\""), ")")),
+                line(' ', code("void ", decl("m"), "()"))),
                 print(type + "@A(x = 1, y = \"old\") void m() {}", type + "@A(x = 1, y = \"new\") void m() {}"));
-        assertEquals(List.of("~ @A(~~x = 1~~, y = \"s\", __z = 2__)", "  void m()"),
+        assertLines(List.of(
+                line('~', code("@A(", strike("x = 1"), ", y = \"s\", ", added("z = 2"), ")")),
+                line(' ', code("void ", decl("m"), "()"))),
                 print(type + "@A(x = 1, y = \"s\") void m() {}", type + "@A(y = \"s\", z = 2) void m() {}"));
-        assertEquals(List.of("~ @SuppressWarnings(~~\"a\"~~ __\"b\"__)", "  void m()"),
+        assertLines(List.of(
+                line('~', code("@SuppressWarnings(", strike("\"a\""), " ", added("\"b\""), ")")),
+                line(' ', code("void ", decl("m"), "()"))),
                 print("@SuppressWarnings(\"a\") void m() {}", "@SuppressWarnings(\"b\") void m() {}"));
     }
 
@@ -117,56 +135,68 @@ public class SignatureDiffPrinterTest extends TestCase {
                 var t = analyzer.analyzeChanges().files().stream()
                         .filter(f -> f.diff().getNewPath().equals("T.java")).findFirst().orElseThrow()
                         .rootChanges().nested().get(0);
-                SignatureDiffPrinter printer = new SignatureDiffPrinter(Theme.PLAIN);
-                assertEquals("  public class T implements I2", unnumbered(printer.formatType(t.type(), "")));
-                assertEquals(List.of("~ __private__ E2 yesno( boolean p, java.util.List<E2> all ) throws Exception"),
-                        t.pairs().stream().map(p -> unnumbered(printer.format(p, "T"))).toList());
+                SignatureDiffPrinter printer = new SignatureDiffPrinter();
+                assertHtml(
+                        line(' ', code("public class ", decl("T"), " implements I2")),
+                        unnumbered(printer.formatType(t.type(), "")));
+                assertLines(List.of(
+                        line('~', code(added("private"), " E2 ", decl("yesno"),
+                                "( boolean p, java.util.List<E2> all ) throws Exception"))),
+                        t.pairs().stream().<HTML>map(p -> unnumbered(printer.format(p, "T"))).toList());
             }
         }
     }
 
     public void testParameterTypeAndNameChange() throws Exception {
-        assertEquals(List.of("~ public String method( ~~int~~ __float__ f )"),
+        assertLines(List.of(
+                line('~', code("public String ", decl("method"), "( ", strike("int"), " ", added("float"), " f )"))),
                 print("public String method(int i) { return null; }", "public String method(float f) { return null; }"));
     }
 
     public void testModifierAndReturnTypeChange() throws Exception {
-        assertEquals(List.of("~ ~~private~~ __public__ __static__ ~~int~~ __long__ m()"),
+        assertLines(List.of(
+                line('~', code(strike("private"), " ", added("public"), " ", added("static"), " ", strike("int"), " ",
+                        added("long"), " ", decl("m"), "()"))),
                 print("private int m() { return 0; }", "public static long m() { return 0; }"));
     }
 
     public void testThrowsAndAnnotation() throws Exception {
-        assertEquals(List.of("~ __@Deprecated__", "~ void m() throws __Exception__"),
+        assertLines(List.of(
+                line('~', code(added("@Deprecated"))),
+                line('~', code("void ", decl("m"), "() throws ", added("Exception")))),
                 print("void m() {}", "@Deprecated void m() throws Exception {}"));
     }
 
     public void testRename() throws Exception {
-        assertEquals(List.of("~ int ~~a~~ __b__( String s )"), print("int a(String s) { return 0; }", "int b(String s) { return 0; }"));
+        assertLines(List.of(
+                line('~', code("int ", strike("a"), " ", added(decl("b")), "( String s )"))),
+                print("int a(String s) { return 0; }", "int b(String s) { return 0; }"));
     }
 
     public void testFieldTypeChange() throws Exception {
-        assertEquals(List.of("~ private ~~int~~ __long__ f"), print("private int f;", "private long f;"));
+        assertLines(List.of(
+                line('~', code("private ", strike("int"), " ", added("long"), " ", decl("f")))),
+                print("private int f;", "private long f;"));
     }
 
     public void testAddedAndRemoved() throws Exception {
-        List<String> lines = print("int gone;", "String fresh;");
-        assertTrue(lines.contains("- ~~int gone~~"));
-        assertTrue(lines.contains("+ String fresh"));
+        List<HTML> lines = print("int gone;", "String fresh;");
+        assertContains(line('-', code(strike("int ", decl("gone")))), lines);
+        assertContains(line('+', code("String ", decl("fresh"))), lines);
     }
 
-    public void testAnsiStrike() throws Exception {
+    /** The old text is a span struck through, the new one a span marked as added; the code in it is highlighted. */
+    public void testStrike() throws Exception {
         ElementPair pair = pairs("int f;", "long f;").get(0);
-        assertEquals("~ \u001b[9mint\u001b[29m long f", unnumbered(new SignatureDiffPrinter(ThemeTest.only("strike", "strike"))
-                .format(pair, "T")));
+        assertHtmlExact(line('~', code(strike("int"), " ", added(span(Css.KEYWORD, "long")), " ", decl("f"))),
+                unnumbered(new SignatureDiffPrinter().format(pair, "T")));
     }
 
-    public void testAnsiAddedLineAndKeywords() throws Exception {
-        Theme theme = ThemeTest.only("added", "bg:#010203", "added_mark", "underline", "keyword", "bold",
-                "declaration", "strike");
-        List<String> lines = pairs("", "int fresh;").stream().map(p -> unnumbered(new SignatureDiffPrinter(theme).format(p, "T"), theme))
-                .toList();
-        // The marker is in its column, out of the style of the added code.
-        assertEquals(List.of("\u001b[4m+\u001b[24m \u001b[48;2;1;2;3m\u001b[1mint\u001b[22m \u001b[9mfresh\u001b[29m"
-                + "\u001b[49m"), lines);
+    /** The marker of an added line is in its column, out of the code of the line. */
+    public void testAddedLineAndKeywords() throws Exception {
+        List<HTML> lines = pairs("", "int fresh;").stream()
+                .<HTML>map(p -> unnumbered(new SignatureDiffPrinter().format(p, "T"))).toList();
+        assertEquals(1, lines.size());
+        assertHtmlExact(line('+', code(span(Css.KEYWORD, "int"), " ", decl("fresh"))), lines.getFirst());
     }
 }

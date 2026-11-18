@@ -24,38 +24,32 @@ import java.util.List;
  */
 final class JavadocPrinter {
 
-    /** Lines at least this similar, by the words they share, are shown as one line with the changed words. */
-
-    private final Theme theme;
     private final int context;
 
     /**
      * Creates a printer.
      *
-     * @param theme   the colors
      * @param context the unchanged lines shown around a change; {@link ReportOptions#NO_JAVADOC} for no javadoc at
      *                all, {@link ReportOptions#WHOLE_JAVADOC} for all the lines
      */
-    JavadocPrinter(Theme theme, int context) {
-        this.theme = theme;
+    JavadocPrinter(int context) {
         this.context = context;
     }
 
     /**
-     * The javadoc lines of the pair, to be shown above its declaration, numbered by the lines of the source, see
-     * {@link LineNumbers}.
+     * The javadoc lines of the pair, to be shown above its declaration, numbered by the lines of the source.
      *
      * @param pair the old and new version of the element
      * @return the lines, each starting with its mark; empty if there is nothing to show
      */
-    List<String> print(ElementPair pair) {
+    List<Line> print(ElementPair pair) {
         if (context == ReportOptions.NO_JAVADOC || pair.isRemoved()) {
             return List.of();
         }
         if (pair.isAdded()) {
             List<String> lines = pair.newElement().getJavadoc();
             long first = pair.newElement().getJavadocLine();
-            List<String> out = new ArrayList<>();
+            List<Line> out = new ArrayList<>();
             for (int i = 0; i < lines.size(); i++) {
                 out.add(added(lines.get(i), line(first, i)));
             }
@@ -76,14 +70,14 @@ final class JavadocPrinter {
      * @param element the element
      * @return the lines, empty if javadoc is not shown
      */
-    List<String> plain(ElementInfo element) {
+    List<Line> plain(ElementInfo element) {
         if (context == ReportOptions.NO_JAVADOC) {
             return List.of();
         }
         List<String> lines = element.getJavadoc();
-        List<String> out = new ArrayList<>();
+        List<Line> out = new ArrayList<>();
         for (int i = 0; i < lines.size(); i++) {
-            out.add(LineNumbers.number(line(element.getJavadocLine(), i), comment(lines.get(i))));
+            out.add(Line.number(line(element.getJavadocLine(), i), comment(lines.get(i))));
         }
         return out;
     }
@@ -95,13 +89,13 @@ final class JavadocPrinter {
      * @param element the element
      * @return the lines, empty if javadoc is not shown
      */
-    List<String> unchanged(ElementInfo element) {
-        List<String> lines = plain(element);
+    List<Line> unchanged(ElementInfo element) {
+        List<Line> lines = plain(element);
         if (context < 0 || lines.size() <= context) {
             return lines;
         }
-        List<String> out = new ArrayList<>(lines.subList(0, context));
-        out.add(LineNumbers.number(0, ' ', theme.style(Theme.Role.NOTE, "…")));
+        List<Line> out = new ArrayList<>(lines.subList(0, context));
+        out.add(ellipsis());
         return out;
     }
 
@@ -111,7 +105,7 @@ final class JavadocPrinter {
     }
 
     /** A rendered line; {@code changed} is false for the unchanged lines which may be left out. */
-    private record Line(String text, boolean changed) { }
+    private record Entry(Line line, boolean changed) { }
 
     /**
      * The diff of two versions of a javadoc. The lines are referred to by their indexes.
@@ -125,7 +119,7 @@ final class JavadocPrinter {
         private final List<String> newLines;
         private final long oldFirst;
         private final long newFirst;
-        private final List<Line> out = new ArrayList<>();
+        private final List<Entry> out = new ArrayList<>();
 
         Diff(List<String> oldLines, List<String> newLines, long oldFirst, long newFirst) {
             this.oldLines = oldLines;
@@ -134,7 +128,7 @@ final class JavadocPrinter {
             this.newFirst = newFirst;
         }
 
-        List<Line> lines() {
+        List<Entry> lines() {
             List<Integer> removed = new ArrayList<>();
             List<Integer> inserted = new ArrayList<>();
             int o = 0;
@@ -144,7 +138,7 @@ final class JavadocPrinter {
                 range(removed, o, match[0]);
                 range(inserted, n, match[1]);
                 hunk(removed, inserted);
-                out.add(new Line(LineNumbers.number(line(newFirst, match[1]), ' ',
+                out.add(new Entry(Line.number(line(newFirst, match[1]), ' ',
                         comment(newLines.get(match[1]))), false));
                 o = match[0] + 1;
                 n = match[1] + 1;
@@ -181,7 +175,7 @@ final class JavadocPrinter {
                     blockInserted.addAll(inserted.subList(next, similar));
                     block(blockRemoved, blockInserted);
                     int index = inserted.get(similar);
-                    out.add(new Line(LineNumbers.number(line(newFirst, index), '~',
+                    out.add(new Entry(Line.number(line(newFirst, index), '~',
                             comment(words(oldLines.get(old), newLines.get(index)))), true));
                     next = similar + 1;
                 } else {
@@ -196,38 +190,38 @@ final class JavadocPrinter {
 
         /** Renders the removed lines, then the inserted ones, and clears both. */
         private void block(List<Integer> removed, List<Integer> inserted) {
-            removed.forEach(i -> out.add(new Line(removed(oldLines.get(i), line(oldFirst, i)), true)));
-            inserted.forEach(i -> out.add(new Line(added(newLines.get(i), line(newFirst, i)), true)));
+            removed.forEach(i -> out.add(new Entry(removed(oldLines.get(i), line(oldFirst, i)), true)));
+            inserted.forEach(i -> out.add(new Entry(added(newLines.get(i), line(newFirst, i)), true)));
             removed.clear();
             inserted.clear();
         }
     }
 
     /** Leaves out the unchanged lines farther than {@link #context} from a change, a run of them shown as {@code …}. */
-    private List<String> withContext(List<Line> lines) {
+    private List<Line> withContext(List<Entry> lines) {
         if (context == ReportOptions.WHOLE_JAVADOC) {
-            return lines.stream().map(Line::text).toList();
+            return lines.stream().map(Entry::line).toList();
         }
-        List<String> out = new ArrayList<>();
+        List<Line> out = new ArrayList<>();
         boolean skipped = false;
         for (int i = 0; i < lines.size(); i++) {
             if (lines.get(i).changed() || nearChange(lines, i)) {
                 if (skipped) {
-                    out.add(LineNumbers.number(0, ' ', theme.style(Theme.Role.NOTE, "…")));
+                    out.add(ellipsis());
                     skipped = false;
                 }
-                out.add(lines.get(i).text());
+                out.add(lines.get(i).line());
             } else {
                 skipped = true;
             }
         }
         if (skipped) {
-            out.add(LineNumbers.number(0, ' ', theme.style(Theme.Role.NOTE, "…")));
+            out.add(ellipsis());
         }
         return out;
     }
 
-    private boolean nearChange(List<Line> lines, int index) {
+    private boolean nearChange(List<Entry> lines, int index) {
         for (int i = Math.max(0, index - context); i <= Math.min(lines.size() - 1, index + context); i++) {
             if (lines.get(i).changed()) {
                 return true;
@@ -236,24 +230,33 @@ final class JavadocPrinter {
         return false;
     }
 
-    private String added(String text, long line) {
-        return LineNumbers.number(line, '+', comment(text));
+    /** The remark of left out lines. */
+    private static Line ellipsis() {
+        return Line.number(0, ' ', Markup.style(Css.NOTE, "…"));
     }
 
-    private String removed(String text, long line) {
-        return LineNumbers.number(line, '-',
-                theme.style(Theme.Role.COMMENT, text.isEmpty() ? "*" : "* " + theme.strike(text)));
+    private static Line added(String text, long line) {
+        return Line.number(line, '+', comment(text));
+    }
+
+    private static Line removed(String text, long line) {
+        return Line.number(line, '-',
+                Markup.style(Css.COMMENT, text.isEmpty() ? Fragment.of("*") : Fragment.of("* ").plus(Markup.strike(text))));
     }
 
     /** A line of the javadoc, starting with its {@code *}. */
-    private String comment(String line) {
-        return theme.style(Theme.Role.COMMENT, line.isEmpty() ? "*" : "* " + line);
+    private static Fragment comment(String line) {
+        return comment(Fragment.of(line));
+    }
+
+    private static Fragment comment(Fragment line) {
+        return Markup.style(Css.COMMENT, line.isEmpty() ? Fragment.of("*") : Fragment.of("* ").plus(line));
     }
 
     /** The new line with the words removed from the old one struck through and the added ones underlined. */
-    private String words(String oldLine, String newLine) {
+    private static Fragment words(String oldLine, String newLine) {
         String indent = newLine.substring(0, newLine.length() - newLine.stripLeading().length());
-        return indent + theme.replaceWords(oldLine.strip(), newLine.strip());
+        return Fragment.of(indent).plus(Markup.replaceWords(oldLine.strip(), newLine.strip()));
     }
 
     /** The longest common subsequence of the lists, as pairs of the indexes of the equal items. */

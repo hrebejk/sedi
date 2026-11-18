@@ -13,7 +13,9 @@ import cz.hrebejk.sedi.analysis.DiffAstAnalyzer;
 import cz.hrebejk.sedi.compilation.AstLoader;
 import cz.hrebejk.sedi.report.ReportOptions;
 import cz.hrebejk.sedi.report.Reporter;
-import cz.hrebejk.sedi.report.Theme;
+import cz.hrebejk.sedi.report.ReportStyles;
+import org.maraboo.fleck.console.ConsoleHtmlRenderer;
+import org.maraboo.fleck.css.StyleSheet;
 import cz.hrebejk.sedi.util.DirectoryWatcher;
 import cz.hrebejk.sedi.util.GitInspector;
 import cz.hrebejk.sedi.util.MavenClasspath;
@@ -181,23 +183,24 @@ public class Main implements Callable<Integer> {
 
         Console console = System.console();
         boolean terminal = console != null && console.isTerminal();
-        Theme theme;
+        boolean colored = color == ColorMode.ALWAYS || color == ColorMode.AUTO && terminal;
+        StyleSheet styleSheet;
         try {
-            boolean colored = color == ColorMode.ALWAYS || color == ColorMode.AUTO && terminal;
-            theme = colored ? theme() : Theme.PLAIN;
+            styleSheet = colored ? styleSheet() : ReportStyles.plain();
         } catch (IOException | IllegalArgumentException e) {
             System.err.println("Cannot read the theme: " + e.getMessage());
             return 1;
         }
-        Reporter reporter = new Reporter(theme, new ReportOptions(level, grouping, bodyContext, javadocContext, !noLineNumbers,
+        ConsoleHtmlRenderer renderer = new ConsoleHtmlRenderer(
+                new org.maraboo.fleck.console.Console(System.out, System.err, null, !colored), styleSheet);
+        Reporter reporter = new Reporter(new ReportOptions(level, grouping, bodyContext, javadocContext, !noLineNumbers,
                 !hideAdditions, showDeletions, !hideTests))
                 .withWidth(Terminal.width());
         boolean keepRunning = commit == null || interactive;
         if (!keepRunning || !terminal && commit != null) {
-            return reportCommit(reporter);
+            return reportCommit(reporter, renderer);
         }
-        boolean colored = theme != Theme.PLAIN;
-        Session session = new Session(reporter, javadocContext, System.out, terminal, colored, "Watching " + projectDir + " ...");
+        Session session = new Session(reporter, renderer, javadocContext, System.out, terminal, colored, "Watching " + projectDir + " ...");
         Terminal raw = null;
         if (terminal) {
             try {
@@ -241,20 +244,21 @@ public class Main implements Callable<Integer> {
         }
     }
 
-    /** The theme of {@code --theme}, or of the default file if there is one, or the default colors. */
-    private Theme theme() throws IOException {
+    /** The style sheet of {@code --theme}, or of the default file if there is one, or of the default colors. */
+    private StyleSheet styleSheet() throws IOException {
         Path file = themeFile;
         if (file == null) {
             Path home = Path.of(System.getProperty("user.home"), ".config", "sedi", "theme.properties");
             file = Files.isRegularFile(home) ? home : null;
         }
-        return file == null ? Theme.defaults() : Theme.load(file);
+        return file == null ? ReportStyles.styleSheet(ReportStyles.palette()) : ReportStyles.load(file);
     }
 
     /** Prints the API changes of the selected commit and returns the process exit code. */
-    private int reportCommit(Reporter reporter) {
+    private int reportCommit(Reporter reporter, ConsoleHtmlRenderer renderer) {
         try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader, renameScore)) {
-            reporter.report(analyzer.analyzeCommit(commit, path -> path.endsWith(".java"))).forEach(System.out::println);
+            renderer.lines(reporter.report(analyzer.analyzeCommit(commit, path -> path.endsWith(".java"))))
+                    .forEach(System.out::println);
             return 0;
         } catch (IOException | IllegalArgumentException e) {
             System.err.println("Cannot analyze commit: " + e.getMessage());

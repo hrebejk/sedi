@@ -16,6 +16,7 @@ import cz.hrebejk.sedi.util.DirectoryWatcher;
 import cz.hrebejk.sedi.util.Pager;
 import cz.hrebejk.sedi.util.Terminal;
 import org.eclipse.jgit.api.errors.GitAPIException;
+import org.maraboo.fleck.console.ConsoleHtmlRenderer;
 
 import java.io.IOException;
 import java.io.PrintStream;
@@ -73,6 +74,7 @@ final class Session {
     private static final int JAVADOC_CONTEXT = 3;
 
     private Reporter reporter;
+    private final ConsoleHtmlRenderer renderer;
     private int javadocContext;
     private final PrintStream out;
     private final boolean interactive;
@@ -92,15 +94,18 @@ final class Session {
      * Creates a session.
      *
      * @param reporter    renders the analysis as the options of the command line say
+     * @param renderer    renders the report into the lines shown on the console
      * @param javadocContext the javadoc context the reporter was made with, see {@link ReportOptions#javadocContext()}
      * @param out         where to print
      * @param interactive whether the output is a terminal on which keys can be read
      * @param colored     whether the key hint may use colors
      * @param idleMessage printed after a report when the output is not a terminal
      */
-    Session(Reporter reporter, int javadocContext, PrintStream out, boolean interactive, boolean colored, String idleMessage) {
+    Session(Reporter reporter, ConsoleHtmlRenderer renderer, int javadocContext, PrintStream out, boolean interactive,
+            boolean colored, String idleMessage) {
         this.idleMessage = idleMessage;
         this.reporter = reporter;
+        this.renderer = renderer;
         this.javadocContext = javadocContext;
         this.out = out;
         this.interactive = interactive;
@@ -214,7 +219,7 @@ final class Session {
 
     /** Shows the last analysis in the current view. Returns {@code false} if the user quit. */
     private boolean show() {
-        List<String> lines = only == null ? reporter.report(last) : reporter.reportOnly(last, only);
+        List<String> lines = renderer.lines(only == null ? reporter.report(last) : reporter.reportOnly(last, only));
         if (lines.isEmpty()) {
             if (shown) {
                 // keep what is on the screen

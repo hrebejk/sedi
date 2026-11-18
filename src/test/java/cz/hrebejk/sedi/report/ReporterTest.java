@@ -13,8 +13,15 @@ import cz.hrebejk.sedi.analysis.ChangeLevel;
 import cz.hrebejk.sedi.analysis.DiffAstAnalyzer;
 import cz.hrebejk.sedi.analysis.FileAnalysis;
 import junit.framework.TestCase;
+import org.maraboo.fleck.css.Palette;
+import org.maraboo.fleck.css.StyleSheet;
+import org.maraboo.fleck.html.HTML;
 
+import java.util.Comparator;
 import java.util.List;
+
+import static cz.hrebejk.sedi.report.Expect.*;
+import static cz.hrebejk.sedi.report.HtmlAssert.*;
 
 /**
  * Unit tests for {@link Reporter}.
@@ -36,12 +43,12 @@ public class ReporterTest extends TestCase {
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
                 List<FileAnalysis> analyses = analyzer.analyzeChanges().files();
                 assertEquals(1, analyses.size());
-                assertEquals(List.of(
-                                "    public class Foo",
-                                "~   ├── ~~int~~ __long__ a",
-                                "    └── static class In",
-                                "+       └── void y()"),
-                        new Reporter(Theme.PLAIN).report(analyses.get(0)));
+                assertLines(List.of(
+                        line(' ', "  ", code("public class ", decl("Foo"))),
+                        line('~', "  ", tree("├── "), code(strike("int"), " ", added("long"), " ", decl("a"))),
+                        line(' ', "  ", tree("└── "), code("static class ", decl("In"))),
+                        line('+', "      ", tree("└── "), code("void ", decl("y"), "()"))),
+                        new Reporter().report(analyses.get(0)));
             }
         }
     }
@@ -64,18 +71,20 @@ public class ReporterTest extends TestCase {
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
                 ReportOptions options = new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY,
                         ReportOptions.DEFAULT_BODY_CONTEXT, ReportOptions.NO_JAVADOC, true);
-                List<String> lines = new Reporter(Theme.PLAIN, options).report(analyzer.analyzeChanges());
-                assertEquals(List.of(
-                                "# API changes",
-                                "",
-                                "~ Foo.java",
-                                " 1     public class Foo",
-                                " 3 ~   ├── ~~int~~ __long__ a",
-                                " 3 -   ├── ~~void gone()~~"),
+                List<HTML> lines = lines(new Reporter(options).report(analyzer.analyzeChanges()));
+                assertLines(List.of(
+                        heading("API changes"),
+                        blank(),
+                        fileTitle('~', name("Foo.java")),
+                        line(" 1", ' ', "  ", code("public class ", decl("Foo"))),
+                        line(" 3", '~', "  ", tree("├── "), code(strike("int"), " ", added("long"), " ", decl("a"))),
+                        line(" 3", '-', "  ", tree("├── "), code(strike("void ", decl("gone"), "()")))),
                         lines.subList(0, 6));
-                assertTrue(lines.toString(), lines.contains(" 5 +   │   │   @Deprecated"));
-                assertTrue(lines.toString(), lines.contains(" 6 +   │   └── void y()"));
-                assertTrue(lines.toString(), lines.contains("11 +   └── void ten()"));
+                assertContains(line(" 5", '+', "  ", tree("│   "), tree("│   "), code("@Deprecated")), lines);
+                assertContains(
+                        line(" 6", '+', "  ", tree("│   "), tree("└── "), code("void ", decl("y"), "()")),
+                        lines);
+                assertContains(line("11", '+', "  ", tree("└── "), code("void ", decl("ten"), "()")), lines);
             }
         }
     }
@@ -91,10 +100,10 @@ public class ReporterTest extends TestCase {
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
                 ReportOptions options = new ReportOptions(ChangeLevel.IMPORTS, ReportOptions.Grouping.BY_TYPE,
                         ReportOptions.DEFAULT_BODY_CONTEXT, ReportOptions.NO_JAVADOC, true);
-                List<String> lines = new Reporter(Theme.PLAIN, options).reportOnly(analyzer.analyzeChanges(),
-                        ChangeLevel.IMPORTS);
-                assertTrue(lines.toString(), lines.contains("1 -   ~~import java.util.List~~"));
-                assertTrue(lines.toString(), lines.contains("4 +   import java.util.Set"));
+                List<HTML> lines = lines(new Reporter(options).reportOnly(analyzer.analyzeChanges(),
+                        ChangeLevel.IMPORTS));
+                assertContains(line("1", '-', "  ", code(strike("import java.util.List"))), lines);
+                assertContains(line("4", '+', "  ", code("import java.util.Set")), lines);
             }
         }
     }
@@ -110,16 +119,16 @@ public class ReporterTest extends TestCase {
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
                 ReportOptions options = new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_TYPE,
                         ReportOptions.DEFAULT_BODY_CONTEXT, ReportOptions.WHOLE_JAVADOC, true);
-                List<String> lines = new Reporter(Theme.PLAIN, options).report(analyzer.analyzeChanges());
-                assertEquals(lines.toString(), List.of(
-                                " 1     public class Foo",
-                                " 4 ~   │   * Hello __big__ world.",
-                                " 4 -   │   * ~~Second line.~~",
-                                " 5 +   │   *",
-                                " 6 +   │   * Third.",
-                                " 8     ├── public void m()",
-                                " 9 +   │   * Added.",
-                                "10 +   └── public void n()"),
+                List<HTML> lines = lines(new Reporter(options).report(analyzer.analyzeChanges()));
+                assertLines(List.of(
+                        line(" 1", ' ', "  ", code("public class ", decl("Foo"))),
+                        line(" 4", '~', "  ", tree("│   "), code(comment("* Hello ", added("big"), " world."))),
+                        line(" 4", '-', "  ", tree("│   "), code(comment("* ", strike("Second line.")))),
+                        line(" 5", '+', "  ", tree("│   "), code(comment("*"))),
+                        line(" 6", '+', "  ", tree("│   "), code(comment("* Third."))),
+                        line(" 8", ' ', "  ", tree("├── "), code("public void ", decl("m"), "()")),
+                        line(" 9", '+', "  ", tree("│   "), code(comment("* Added."))),
+                        line("10", '+', "  ", tree("└── "), code("public void ", decl("n"), "()"))),
                         lines.subList(1, lines.size()));
             }
         }
@@ -132,21 +141,32 @@ public class ReporterTest extends TestCase {
             helper.commit("init");
             helper.writeFile("Foo.java", "public class Foo {\n  long a;\n  void added() { }\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                Theme theme = ThemeTest.only("added_mark", "#000001", "removed_mark", "#000002",
-                        "changed_mark", "#000003", "line_number", "#000004");
                 ReportOptions options = new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY,
                         ReportOptions.DEFAULT_BODY_CONTEXT, ReportOptions.NO_JAVADOC, true);
-                List<String> lines = new Reporter(theme, options).report(analyzer.analyzeChanges());
-                String e = "\u001b[38;2;0;0;";
-                assertTrue(lines.toString(), lines.stream().anyMatch(l -> l.startsWith(e + "4m1\u001b[39m ")));
-                assertTrue(lines.toString(), lines.stream().anyMatch(l -> l.startsWith(e + "3m2\u001b[39m "
-                        + e + "3m~\u001b[39m ")));
-                assertTrue(lines.toString(), lines.stream().anyMatch(l -> l.startsWith(e + "2m3\u001b[39m "
-                        + e + "2m-\u001b[39m ")));
-                assertTrue(lines.toString(), lines.stream().anyMatch(l -> l.startsWith(e + "1m3\u001b[39m "
-                        + e + "1m+\u001b[39m ")));
+                HTML.Tag report = new Reporter(options).report(analyzer.analyzeChanges());
+                Palette palette = ReportStyles.palette();
+                StyleSheet styleSheet = ReportStyles.styleSheet(palette);
+                assertEquals(palette.get("line-number"), numberColor(report, styleSheet, "1", ""));
+                assertEquals(palette.get("changed-mark"), numberColor(report, styleSheet, "2", "~"));
+                assertEquals(palette.get("removed-mark"), numberColor(report, styleSheet, "3", "-"));
+                assertEquals(palette.get("added-mark"), numberColor(report, styleSheet, "3", "+"));
             }
         }
+    }
+
+    /** The color of the number of the line with the number and the mark, as the style sheet computes it. */
+    private static org.maraboo.fleck.css.CssValues.Color numberColor(HTML.Tag report, StyleSheet styleSheet,
+                                                                      String number, String mark) {
+        org.maraboo.fleck.css.Style reportStyle = styleSheet.computeStyle(report, null);
+        for (HTML node : report.children) {
+            if (node instanceof HTML.Tag line && line.children.size() > 2
+                    && line.children.get(0) instanceof HTML.Tag ln && Css.LN.on(ln)
+                    && ln.getInnerText().equals(number) && line.children.get(2).getInnerText().strip().equals(mark)) {
+                org.maraboo.fleck.css.Style lineStyle = styleSheet.computeStyle(line, reportStyle);
+                return styleSheet.computeStyle(ln, lineStyle).foreground();
+            }
+        }
+        throw new AssertionError("No line " + number + " " + mark + " in\n" + markup(lines(report)));
     }
 
     /**
@@ -159,7 +179,7 @@ public class ReporterTest extends TestCase {
             helper.writeFile("Foo.java", "public class Foo {\n  void body() { int z = 1; }\n}\n");
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                assertTrue(new Reporter(Theme.PLAIN).report(analyzer.analyzeChanges().files().get(0)).isEmpty());
+                assertTrue(new Reporter().report(analyzer.analyzeChanges().files().get(0)).children.isEmpty());
             }
         }
     }
@@ -181,10 +201,10 @@ public class ReporterTest extends TestCase {
                 List<FileAnalysis> analyses = analyzer.analyzeCommit("HEAD", p -> p.endsWith(".java")).files();
                 assertEquals(1, analyses.size());
                 assertEquals(org.eclipse.jgit.diff.DiffEntry.ChangeType.RENAME, analyses.get(0).diff().getChangeType());
-                assertEquals(List.of(
-                                "~   public class ~~Foo~~ __Bar__",
-                                "~   └── ~~int~~ __long__ a"),
-                        new Reporter(Theme.PLAIN).report(analyses.get(0)));
+                assertLines(List.of(
+                        line('~', "  ", code("public class ", strike("Foo"), " ", added(decl("Bar")))),
+                        line('~', "  ", tree("└── "), code(strike("int"), " ", added("long"), " ", decl("a")))),
+                        new Reporter().report(analyses.get(0)));
             }
         }
     }
@@ -199,9 +219,10 @@ public class ReporterTest extends TestCase {
             helper.writeFile("Foo.java", "public class Foo {\n}\nclass New { }\n");
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                assertEquals(List.of("-   ~~class Gone~~",
-                                          "+   class New"),
-                        new Reporter(Theme.PLAIN).report(analyzer.analyzeChanges().files().get(0)));
+                assertLines(List.of(
+                        line('-', "  ", code(strike("class ", decl("Gone")))),
+                        line('+', "  ", code("class ", decl("New")))),
+                        new Reporter().report(analyzer.analyzeChanges().files().get(0)));
             }
         }
     }
@@ -223,10 +244,16 @@ public class ReporterTest extends TestCase {
             helper.commit("change");
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                Reporter reporter = new Reporter(Theme.PLAIN);
-                List<String> titles = analyzer.analyzeCommit("HEAD", p -> p.endsWith(".java")).files().stream()
-                        .map(reporter::title).sorted().toList();
-                assertEquals(List.of("+ New.java n", "- ~~Gone.java~~", "\u2192 ~~Foo.java~~ __Bar.java__ ~~a~~ __b__"), titles);
+                Reporter reporter = new Reporter();
+                List<HTML> titles = analyzer.analyzeCommit("HEAD", p -> p.endsWith(".java")).files().stream()
+                        .<HTML>map(f -> LineNumbers.render(List.of(Line.outside(reporter.title(f))), false).getFirst())
+                        .sorted(Comparator.comparing(HTML::getInnerText)).toList();
+                assertLines(List.of(
+                        fileTitle('+', name("New.java"), " ", pkg("n")),
+                        fileTitle('-', strike("Gone.java")),
+                        fileTitle('→', name(strike("Foo.java"), " ", added("Bar.java")), " ", pkg(strike("a"), " ",
+                                added("b")))),
+                        titles);
             }
         }
     }
@@ -243,18 +270,21 @@ public class ReporterTest extends TestCase {
             helper.writeFile("A.java", "public class A { public long a; }\n");
             helper.writeFile("B.java", "public class B { public long b; }\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                Reporter byType = new Reporter(Theme.PLAIN, ReportOptions.DEFAULT);
-                assertEquals(List.of("~ A.java",
-                                          "    public class A",
-                                          "~   └── public ~~int~~ __long__ a",
-                                          SEPARATOR,
-                                          "~ B.java",
-                                          "    public class B",
-                                          "~   └── public ~~int~~ __long__ b"),
+                Reporter byType = new Reporter(ReportOptions.DEFAULT);
+                assertLines(List.of(
+                        fileTitle('~', name("A.java")),
+                        line(' ', "  ", code("public class ", decl("A"))),
+                        line('~', "  ", tree("└── "), code("public ", strike("int"), " ", added("long"), " ",
+                                decl("a"))),
+                        separator(),
+                        fileTitle('~', name("B.java")),
+                        line(' ', "  ", code("public class ", decl("B"))),
+                        line('~', "  ", tree("└── "), code("public ", strike("int"), " ", added("long"), " ",
+                                decl("b")))),
                         byType.report(analyzer.analyzeChanges()));
                 Reporter byCategory = byType.withGrouping(ReportOptions.Grouping.BY_CATEGORY);
                 assertEquals(ReportOptions.Grouping.BY_CATEGORY, byCategory.grouping());
-                assertEquals("# API changes", byCategory.report(analyzer.analyzeChanges()).get(0));
+                assertHtml(heading("API changes"), lines(byCategory.report(analyzer.analyzeChanges())).getFirst());
             }
         }
     }
@@ -264,13 +294,13 @@ public class ReporterTest extends TestCase {
     private static final String AFTER = "import java.util.Set;\npublic class Foo {\n  public long a;\n  private long b;\n"
             + "  public int m() { return 2; }\n  private int n() { return 1; }\n  int o() { int y = 1; return y; }\n}\n";
 
-    private List<String> report(ReportOptions options) throws Exception {
+    private HTML.Tag report(ReportOptions options) throws Exception {
         try (GitTestHelper helper = new GitTestHelper()) {
             helper.writeFile("Foo.java", BEFORE);
             helper.commit("init");
             helper.writeFile("Foo.java", AFTER);
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                return new Reporter(Theme.PLAIN, options).report(analyzer.analyzeChanges());
+                return new Reporter(options).report(analyzer.analyzeChanges());
             }
         }
     }
@@ -279,36 +309,41 @@ public class ReporterTest extends TestCase {
      * Tests that the default options show the API changes only.
      */
     public void testDefaultShowsOnlyApi() throws Exception {
-        assertEquals(List.of("~ Foo.java",
-                                  "    public class Foo",
-                                  "~   ├── public ~~int~~ __long__ a",
-                                  "~   └── private ~~int~~ __long__ b"), report(ReportOptions.DEFAULT));
+        assertLines(List.of(
+                fileTitle('~', name("Foo.java")),
+                line(' ', "  ", code("public class ", decl("Foo"))),
+                line('~', "  ", tree("├── "), code("public ", strike("int"), " ", added("long"), " ", decl("a"))),
+                line('~', "  ", tree("└── "), code("private ", strike("int"), " ", added("long"), " ", decl("b")))),
+                report(ReportOptions.DEFAULT));
     }
 
     /**
      * Tests that a deeper level adds the less important changes, tagged, and the imports last.
      */
     public void testLevelsByType() throws Exception {
-        assertEquals(List.of("~ Foo.java",
-                                  "    public class Foo",
-                                  "~   ├── public ~~int~~ __long__ a",
-                                  "~   ├── private ~~int~~ __long__ b",
-                                  "    ├── public int m() { [impl]",
-                                  "~   │         return ~~1~~ __2__;",
-                                  "    │   }",
-                                  "    └── int o() { [cosmetic]",
-                                  "~             int ~~x~~ __y__ = 1; return ~~x~~ __y__;",
-                                  "        }",
-                                  "-   ~~import java.util.List~~ [import]",
-                                  "+   import java.util.Set [import]"),
+        assertLines(List.of(
+                fileTitle('~', name("Foo.java")),
+                line(' ', "  ", code("public class ", decl("Foo"))),
+                line('~', "  ", tree("├── "), code("public ", strike("int"), " ", added("long"), " ", decl("a"))),
+                line('~', "  ", tree("├── "), code("private ", strike("int"), " ", added("long"), " ", decl("b"))),
+                line(' ', "  ", tree("├── "), code("public int ", decl("m"), "() { ", tag("impl"))),
+                line('~', "  ", tree("│   "), "      ", code("return ", strike("1"), " ", added("2"), ";")),
+                line(' ', "  ", tree("│   "), code("}")),
+                line(' ', "  ", tree("└── "), code("int ", decl("o"), "() { ", tag("cosmetic"))),
+                line('~', "            ", code("int ", strike("x"), " ", added("y"), " = 1; return ", strike("x"), " ",
+                        added("y"), ";")),
+                line(' ', "      ", code("}")),
+                line('-', "  ", code(strike("import java.util.List"), " ", tag("import"))),
+                line('+', "  ", code("import java.util.Set ", tag("import")))),
                 report(new ReportOptions(ChangeLevel.IMPORTS, ReportOptions.Grouping.BY_TYPE)));
-        assertEquals(List.of("~ Foo.java",
-                                  "    public class Foo",
-                                  "~   ├── public ~~int~~ __long__ a",
-                                  "~   ├── private ~~int~~ __long__ b",
-                                  "    └── public int m() { [impl]",
-                                  "~             return ~~1~~ __2__;",
-                                  "        }"),
+        assertLines(List.of(
+                fileTitle('~', name("Foo.java")),
+                line(' ', "  ", code("public class ", decl("Foo"))),
+                line('~', "  ", tree("├── "), code("public ", strike("int"), " ", added("long"), " ", decl("a"))),
+                line('~', "  ", tree("├── "), code("private ", strike("int"), " ", added("long"), " ", decl("b"))),
+                line(' ', "  ", tree("└── "), code("public int ", decl("m"), "() { ", tag("impl"))),
+                line('~', "            ", code("return ", strike("1"), " ", added("2"), ";")),
+                line(' ', "      ", code("}"))),
                 report(new ReportOptions(ChangeLevel.IMPLEMENTATION, ReportOptions.Grouping.BY_TYPE)));
     }
 
@@ -316,35 +351,36 @@ public class ReporterTest extends TestCase {
      * Tests the grouping by category, with the API changes split by visibility.
      */
     public void testGroupByCategory() throws Exception {
-        assertEquals(List.of(
-                        "# API changes",
-                        "",
-                        "~ Foo.java",
-                        "    public class Foo",
-                        "~   ├── public ~~int~~ __long__ a",
-                        "~   └── private ~~int~~ __long__ b",
-                        "",
-                        "# Implementation changes",
-                        "",
-                        "~ Foo.java",
-                        "    public class Foo",
-                        "    └── public int m() {",
-                        "~             return ~~1~~ __2__;",
-                        "        }",
-                        "",
-                        "# Cosmetic changes",
-                        "",
-                        "~ Foo.java",
-                        "    public class Foo",
-                        "    └── int o() {",
-                        "~             int ~~x~~ __y__ = 1; return ~~x~~ __y__;",
-                        "        }",
-                        "",
-                        "# Imports",
-                        "",
-                        "~ Foo.java",
-                        "-   ~~import java.util.List~~",
-                        "+   import java.util.Set"),
+        assertLines(List.of(
+                heading("API changes"),
+                blank(),
+                fileTitle('~', name("Foo.java")),
+                line(' ', "  ", code("public class ", decl("Foo"))),
+                line('~', "  ", tree("├── "), code("public ", strike("int"), " ", added("long"), " ", decl("a"))),
+                line('~', "  ", tree("└── "), code("private ", strike("int"), " ", added("long"), " ", decl("b"))),
+                blank(),
+                heading("Implementation changes"),
+                blank(),
+                fileTitle('~', name("Foo.java")),
+                line(' ', "  ", code("public class ", decl("Foo"))),
+                line(' ', "  ", tree("└── "), code("public int ", decl("m"), "() {")),
+                line('~', "            ", code("return ", strike("1"), " ", added("2"), ";")),
+                line(' ', "      ", code("}")),
+                blank(),
+                heading("Cosmetic changes"),
+                blank(),
+                fileTitle('~', name("Foo.java")),
+                line(' ', "  ", code("public class ", decl("Foo"))),
+                line(' ', "  ", tree("└── "), code("int ", decl("o"), "() {")),
+                line('~', "            ", code("int ", strike("x"), " ", added("y"), " = 1; return ", strike("x"), " ",
+                        added("y"), ";")),
+                line(' ', "      ", code("}")),
+                blank(),
+                heading("Imports"),
+                blank(),
+                fileTitle('~', name("Foo.java")),
+                line('-', "  ", code(strike("import java.util.List"))),
+                line('+', "  ", code("import java.util.Set"))),
                 report(new ReportOptions(ChangeLevel.IMPORTS, ReportOptions.Grouping.BY_CATEGORY)));
     }
 
@@ -359,14 +395,16 @@ public class ReporterTest extends TestCase {
                     + "  static class In {\n    int f() { return 2; }\n  }\n"
                     + "  int m() { return 2; }\n  int z(long x) { return (int) x; }\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                List<String> lines = new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.IMPLEMENTATION,
-                        ReportOptions.Grouping.BY_CATEGORY)).report(analyzer.analyzeChanges());
-                List<String> impl = lines.subList(lines.indexOf("# Implementation changes"), lines.size()).stream()
-                        .filter(l -> l.contains("(") && !l.contains("return")).map(String::strip).toList();
-                assertEquals(List.of("├── int a() {",
-                                          "│   └── int f() {",
-                                          "├── int m() {",
-                                          "└── int z( long x ) {"), impl);
+                List<HTML> lines = lines(new Reporter(new ReportOptions(ChangeLevel.IMPLEMENTATION,
+                        ReportOptions.Grouping.BY_CATEGORY)).report(analyzer.analyzeChanges()));
+                List<HTML> impl = lines.subList(texts(lines).indexOf("# Implementation changes"), lines.size()).stream()
+                        .filter(l -> l.getInnerText().contains("(") && !l.getInnerText().contains("return")).toList();
+                assertLines(List.of(
+                        line(' ', "  ", tree("├── "), code("int ", decl("a"), "() {")),
+                        line(' ', "  ", tree("│   "), tree("└── "), code("int ", decl("f"), "() {")),
+                        line(' ', "  ", tree("├── "), code("int ", decl("m"), "() {")),
+                        line(' ', "  ", tree("└── "), code("int ", decl("z"), "( long x ) {"))),
+                        impl);
             }
         }
     }
@@ -376,30 +414,34 @@ public class ReporterTest extends TestCase {
      * source, are shown struck through, added ones to a constant without them as added, changed ones replaced.
      */
     public void testEnumConstantArguments() throws Exception {
-        assertEquals(List.of("~   ├── public static final E A~~(\"a\")~~",
-                        "~   └── public static final E B~~(\"b\")~~"),
+        assertLines(List.of(
+                line('~', "  ", tree("├── "), code("public static final E ", decl("A"), strike("(\"a\")"))),
+                line('~', "  ", tree("└── "), code("public static final E ", decl("B"), strike("(\"b\")")))),
                 enumImplementation("public enum E {\n  A(\"a\"),\n  B(\"b\");\n  E(String s) { }\n}\n",
                         "public enum E {\n  A,\n  B;\n  E(String s) { }\n}\n"));
-        assertEquals(List.of("~   ├── public static final E A__(\"a\")__",
-                        "~   └── public static final E B__{ }__"),
+        assertLines(List.of(
+                line('~', "  ", tree("├── "), code("public static final E ", decl("A"), added("(\"a\")"))),
+                line('~', "  ", tree("└── "), code("public static final E ", decl("B"), added("{ }")))),
                 enumImplementation("public enum E {\n  A,\n  B;\n  E() { }\n}\n",
                         "public enum E {\n  A(\"a\"),\n  B { };\n  E() { }\n}\n"));
-        assertEquals(List.of("~   └── public static final E A~~(\"a\")~~ __(\"x\")__"),
+        assertLines(List.of(
+                line('~', "  ", tree("└── "), code("public static final E ", decl("A"), strike("(\"a\")"), " ",
+                        added("(\"x\")")))),
                 enumImplementation("public enum E {\n  A(\"a\"),\n  B(\"b\");\n  E(String s) { }\n}\n",
                         "public enum E {\n  A(\"x\"),\n  B(\"b\");\n  E(String s) { }\n}\n"));
     }
 
     /** The lines of the constants of the enum in the implementation changes. */
-    private static List<String> enumImplementation(String oldSource, String newSource) throws Exception {
+    private static List<HTML> enumImplementation(String oldSource, String newSource) throws Exception {
         try (GitTestHelper helper = new GitTestHelper()) {
             helper.writeFile("E.java", oldSource);
             helper.commit("init");
             helper.writeFile("E.java", newSource);
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                List<String> lines = new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.IMPLEMENTATION,
-                        ReportOptions.Grouping.BY_CATEGORY)).report(analyzer.analyzeChanges());
-                return lines.subList(lines.indexOf("# Implementation changes"), lines.size()).stream()
-                        .filter(l -> l.contains("static final E")).toList();
+                List<HTML> lines = lines(new Reporter(new ReportOptions(ChangeLevel.IMPLEMENTATION,
+                        ReportOptions.Grouping.BY_CATEGORY)).report(analyzer.analyzeChanges()));
+                return lines.subList(texts(lines).indexOf("# Implementation changes"), lines.size()).stream()
+                        .filter(l -> l.getInnerText().contains("static final E")).toList();
             }
         }
     }
@@ -419,21 +461,22 @@ public class ReporterTest extends TestCase {
             helper.writeFile("Bar.java", "public class Bar {\n  public int a;\n  public Bar() { }\n}\n");
             helper.writeFile("R.java", "public record R(int a, long c, String b) { }\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                assertEquals(List.of(
-                                "# API changes",
-                                "",
-                                "~ Bar.java",
-                                "    public class Bar",
-                                "+   └── public Bar()",
-                                SEPARATOR,
-                                "~ Foo.java",
-                                "    public class Foo",
-                                "~   └── public ~~int~~ __long__ a",
-                                SEPARATOR,
-                                "~ R.java",
-                                "~   public record R( int a, __long c__, String b )"),
-                        new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY))
-                                .report(analyzer.analyzeChanges()).stream().map(String::stripTrailing).toList());
+                assertLines(List.of(
+                        heading("API changes"),
+                        blank(),
+                        fileTitle('~', name("Bar.java")),
+                        line(' ', "  ", code("public class ", decl("Bar"))),
+                        line('+', "  ", tree("└── "), code("public ", decl("Bar"), "()")),
+                        separator(),
+                        fileTitle('~', name("Foo.java")),
+                        line(' ', "  ", code("public class ", decl("Foo"))),
+                        line('~', "  ", tree("└── "), code("public ", strike("int"), " ", added("long"), " ",
+                                decl("a"))),
+                        separator(),
+                        fileTitle('~', name("R.java")),
+                        line('~', "  ", code("public record ", decl("R"), "( int a, ", added("long c"), ", String b )"))),
+                        new Reporter(new ReportOptions(ChangeLevel.API,
+                                ReportOptions.Grouping.BY_CATEGORY)).report(analyzer.analyzeChanges()));
             }
         }
     }
@@ -453,24 +496,24 @@ public class ReporterTest extends TestCase {
             helper.writeFile("b/New.java", "package b;\npublic class New {\n  public New(int i) { }\n"
                     + "  private int hidden;\n  public void m() { }\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                assertEquals(List.of(
-                                "# API changes",
-                                "",
-                                "+ New.java b",
-                                "    public class New",
-                                "    ├── public New( int i )",
-                                "    └── public void m()",
-                                SEPARATOR,
-                                "- ~~Old.java~~ ~~a~~",
-                                SEPARATOR,
-                                "~ Foo.java a",
-                                "    public class Foo",
-                                "~   ├── ~~int~~ __long__ a",
-                                "-   ├── ~~class Gone~~",
-                                "+   └── public static class Fresh",
-                                "        ├── public int x",
-                                "        └── protected void m()"),
-                        new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY))
+                assertLines(List.of(
+                        heading("API changes"),
+                        blank(),
+                        fileTitle('+', name("New.java"), " ", pkg("b")),
+                        line(' ', "  ", code("public class ", decl("New"))),
+                        line(' ', "  ", tree("├── "), code("public ", decl("New"), "( int i )")),
+                        line(' ', "  ", tree("└── "), code("public void ", decl("m"), "()")),
+                        separator(),
+                        fileTitle('-', strike("Old.java"), " ", strike("a")),
+                        separator(),
+                        fileTitle('~', name("Foo.java"), " ", pkg("a")),
+                        line(' ', "  ", code("public class ", decl("Foo"))),
+                        line('~', "  ", tree("├── "), code(strike("int"), " ", added("long"), " ", decl("a"))),
+                        line('-', "  ", tree("├── "), code(strike("class ", decl("Gone")))),
+                        line('+', "  ", tree("└── "), code("public static class ", decl("Fresh"))),
+                        line(' ', "      ", tree("├── "), code("public int ", decl("x"))),
+                        line(' ', "      ", tree("└── "), code("protected void ", decl("m"), "()"))),
+                        new Reporter(new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY))
                                 .report(analyzer.analyzeChanges()));
             }
         }
@@ -488,12 +531,15 @@ public class ReporterTest extends TestCase {
             helper.writeFile("p/Foo.java", "package p;\npublic abstract class Foo<T, U> extends Number implements Runnable, Cloneable {\n"
                     + "  public void run() { }\n  static final class In implements Runnable { public void run() { } }\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                assertEquals(List.of(
-                                "~ Foo.java p",
-                                "~   public __abstract__ class Foo<T, __U__> extends ~~Object~~ __Number__ implements Runnable, __Cloneable__",
-                                "~   └── static __final__ class In implements __Runnable__",
-                                "+       └── public void run()"),
-                        new Reporter(Theme.PLAIN).report(analyzer.analyzeChanges()));
+                assertLines(List.of(
+                        fileTitle('~', name("Foo.java"), " ", pkg("p")),
+                        line('~', "  ", code("public ", added("abstract"), " class ", decl("Foo"), "<T, ", added("U"),
+                                "> extends ", strike("Object"), " ", added("Number"), " implements Runnable, ",
+                                added("Cloneable"))),
+                        line('~', "  ", tree("└── "), code("static ", added("final"), " class ", decl("In"),
+                                " implements ", added("Runnable"))),
+                        line('+', "      ", tree("└── "), code("public void ", decl("run"), "()"))),
+                        new Reporter().report(analyzer.analyzeChanges()));
             }
         }
     }
@@ -510,17 +556,18 @@ public class ReporterTest extends TestCase {
             helper.writeFile("Foo.java", "@SuppressWarnings(\"all\")\npublic class Foo {\n  @Deprecated long a;\n"
                     + "  int b;\n  @SuppressWarnings(\"y\") int c;\n  @Deprecated int d;\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                assertEquals(List.of(
-                                "~   __@SuppressWarnings(\"all\")__",
-                                "    public class Foo",
-                                "~   ├── ~~int~~ __long__ a",
-                                "~   │   ~~@Deprecated~~",
-                                "    ├── int b",
-                                "~   │   @SuppressWarnings(~~\"x\"~~ __\"y\"__)",
-                                "    ├── int c",
-                                "+   │   @Deprecated",
-                                "+   └── int d"),
-                        new Reporter(Theme.PLAIN).report(analyzer.analyzeChanges().files().get(0)));
+                assertLines(List.of(
+                        line('~', "  ", code(added("@SuppressWarnings(\"all\")"))),
+                        line(' ', "  ", code("public class ", decl("Foo"))),
+                        line('~', "  ", tree("├── "), code(strike("int"), " ", added("long"), " ", decl("a"))),
+                        line('~', "  ", tree("│   "), code(strike("@Deprecated"))),
+                        line(' ', "  ", tree("├── "), code("int ", decl("b"))),
+                        line('~', "  ", tree("│   "), code("@SuppressWarnings(", strike("\"x\""), " ", added("\"y\""),
+                                ")")),
+                        line(' ', "  ", tree("├── "), code("int ", decl("c"))),
+                        line('+', "  ", tree("│   "), code("@Deprecated")),
+                        line('+', "  ", tree("└── "), code("int ", decl("d")))),
+                        new Reporter().report(analyzer.analyzeChanges().files().get(0)));
             }
         }
     }
@@ -534,16 +581,17 @@ public class ReporterTest extends TestCase {
             helper.writeFile("A.java", "class A {\n  long a;\n}\n");
             helper.writeFile("B.java", "class B {\n  long b;\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                assertEquals(List.of("# API changes",
-                                          "",
-                                          "~ A.java",
-                                          "    class A",
-                                          "~   └── ~~int~~ __long__ a",
-                                          SEPARATOR,
-                                          "~ B.java",
-                                          "    class B",
-                                          "~   └── ~~int~~ __long__ b"),
-                        new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY))
+                assertLines(List.of(
+                        heading("API changes"),
+                        blank(),
+                        fileTitle('~', name("A.java")),
+                        line(' ', "  ", code("class ", decl("A"))),
+                        line('~', "  ", tree("└── "), code(strike("int"), " ", added("long"), " ", decl("a"))),
+                        separator(),
+                        fileTitle('~', name("B.java")),
+                        line(' ', "  ", code("class ", decl("B"))),
+                        line('~', "  ", tree("└── "), code(strike("int"), " ", added("long"), " ", decl("b")))),
+                        new Reporter(new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY))
                                 .report(analyzer.analyzeChanges()));
             }
         }
@@ -565,18 +613,20 @@ public class ReporterTest extends TestCase {
                     + "  public int y = 8;\n  public void run() { }\n}\n");
             helper.writeFile("Fresh.java", "interface Fresh { void m(); void n(); }\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                assertEquals(List.of("# API changes",
-                                          "",
-                                          "+ Fresh.java",
-                                          "    interface Fresh",
-                                          "    ├── void m()",
-                                          "    └── void n()",
-                                          SEPARATOR,
-                                          "- ~~Gone.java~~",
-                                          SEPARATOR,
-                                          "→ ~~Foo.java~~ __Bar.java__ ~~a~~ __b__",
-                                          "~   public class ~~Foo~~ __Bar__"),
-                        new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY))
+                assertLines(List.of(
+                        heading("API changes"),
+                        blank(),
+                        fileTitle('+', name("Fresh.java")),
+                        line(' ', "  ", code("interface ", decl("Fresh"))),
+                        line(' ', "  ", tree("├── "), code("void ", decl("m"), "()")),
+                        line(' ', "  ", tree("└── "), code("void ", decl("n"), "()")),
+                        separator(),
+                        fileTitle('-', strike("Gone.java")),
+                        separator(),
+                        fileTitle('→', name(strike("Foo.java"), " ", added("Bar.java")), " ", pkg(strike("a"), " ",
+                                added("b"))),
+                        line('~', "  ", code("public class ", strike("Foo"), " ", added(decl("Bar"))))),
+                        new Reporter(new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY))
                                 .report(analyzer.analyzeChanges()));
             }
         }
@@ -593,8 +643,9 @@ public class ReporterTest extends TestCase {
             java.nio.file.Files.delete(helper.getRepositoryPath().resolve("a/Foo.java"));
             helper.writeFile("b/Foo.java", "package b;\n" + body);
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                assertEquals(List.of("\u2192 Foo.java ~~a~~ __b__"),
-                        new Reporter(Theme.PLAIN).report(analyzer.analyzeChanges()));
+                assertLines(List.of(
+                        fileTitle('→', name("Foo.java"), " ", pkg(strike("a"), " ", added("b")))),
+                        new Reporter().report(analyzer.analyzeChanges()));
             }
         }
     }
@@ -613,22 +664,21 @@ public class ReporterTest extends TestCase {
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
                 var analysis = analyzer.analyzeChanges();
-                Reporter reporter = new Reporter(Theme.PLAIN,
-                        new ReportOptions(ChangeLevel.IMPORTS, ReportOptions.Grouping.BY_TYPE));
-                List<String> api = reporter.reportOnly(analysis, ChangeLevel.API);
-                assertEquals("# API changes", api.get(0));
-                assertTrue(api.toString(), api.stream().anyMatch(l -> l.contains("__long__ a")));
-                assertFalse(api.toString(), api.stream().anyMatch(l -> l.contains("Cosmetic") || l.contains("Imports")));
+                Reporter reporter = new Reporter(new ReportOptions(ChangeLevel.IMPORTS, ReportOptions.Grouping.BY_TYPE));
+                List<HTML> api = lines(reporter.reportOnly(analysis, ChangeLevel.API));
+                assertHtml(heading("API changes"), api.getFirst());
+                assertTrue(markup(api), hasSpan(api, Css.ADDED, "long"));
+                assertFalse(markup(api), texts(api).stream().anyMatch(l -> l.contains("Cosmetic") || l.contains("Imports")));
 
-                List<String> imports = reporter.reportOnly(analysis, ChangeLevel.IMPORTS);
-                assertEquals("# Imports", imports.get(0));
-                assertTrue(imports.toString(), imports.stream().anyMatch(l -> l.contains("java.util.Set")));
-                assertFalse(imports.toString(), imports.stream().anyMatch(l -> l.contains("__long__ a")));
+                List<HTML> imports = lines(reporter.reportOnly(analysis, ChangeLevel.IMPORTS));
+                assertHtml(heading("Imports"), imports.getFirst());
+                assertTrue(markup(imports), texts(imports).stream().anyMatch(l -> l.contains("java.util.Set")));
+                assertFalse(markup(imports), hasSpan(imports, Css.ADDED, "long"));
 
                 // The API section is the same as in the report grouped by category.
-                List<String> grouped = new Reporter(Theme.PLAIN,
-                        new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY)).report(analysis);
-                assertEquals(grouped, api);
+                HTML.Tag grouped = new Reporter(new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY))
+                        .report(analysis);
+                assertLines(lines(grouped), api);
             }
         }
     }
@@ -647,20 +697,20 @@ public class ReporterTest extends TestCase {
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
                 var analysis = analyzer.analyzeChanges();
-                Reporter shown = new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.IMPORTS, ReportOptions.Grouping.BY_TYPE));
+                Reporter shown = new Reporter(new ReportOptions(ChangeLevel.IMPORTS, ReportOptions.Grouping.BY_TYPE));
                 assertTrue(shown.options().showTests());
-                assertTrue(String.join("\n", shown.report(analysis)).contains("FooTest"));
+                assertTrue(text(shown.report(analysis)).contains("FooTest"));
 
                 Reporter hidden = shown.withTests(false);
                 for (ReportOptions.Grouping grouping : ReportOptions.Grouping.values()) {
-                    String report = String.join("\n", hidden.withGrouping(grouping).report(analysis));
+                    String report = text(hidden.withGrouping(grouping).report(analysis));
                     assertTrue(report, report.contains("Foo.java"));
                     assertFalse(report, report.contains("FooTest"));
                 }
                 for (ChangeLevel level : ChangeLevel.values()) {
-                    assertFalse(level.toString(), String.join("\n", hidden.reportOnly(analysis, level)).contains("FooTest"));
+                    assertFalse(level.toString(), text(hidden.reportOnly(analysis, level)).contains("FooTest"));
                 }
-                assertTrue(String.join("\n", hidden.withTests(true).report(analysis)).contains("FooTest"));
+                assertTrue(text(hidden.withTests(true).report(analysis)).contains("FooTest"));
             }
         }
     }
@@ -675,8 +725,12 @@ public class ReporterTest extends TestCase {
             helper.writeFile("Foo.java", "public class Foo {\n  long a;\n}\n");
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                assertEquals(List.of("# Imports", "", "  NO CHANGES", ""),
-                        new Reporter(Theme.PLAIN).reportOnly(analyzer.analyzeChanges(), ChangeLevel.IMPORTS));
+                assertLines(List.of(
+                        heading("Imports"),
+                        blank(),
+                        noChanges(),
+                        blank()),
+                        new Reporter().reportOnly(analyzer.analyzeChanges(), ChangeLevel.IMPORTS));
             }
         }
     }
@@ -691,9 +745,16 @@ public class ReporterTest extends TestCase {
             helper.writeFile("Foo.java", "import java.util.Set;\npublic class Foo {\n}\n");
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                assertEquals(List.of("# API changes", "", "  NO CHANGES", "",
-                                "# Implementation changes", "", "  NO CHANGES", ""),
-                        new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.IMPLEMENTATION,
+                assertLines(List.of(
+                        heading("API changes"),
+                        blank(),
+                        noChanges(),
+                        blank(),
+                        heading("Implementation changes"),
+                        blank(),
+                        noChanges(),
+                        blank()),
+                        new Reporter(new ReportOptions(ChangeLevel.IMPLEMENTATION,
                                 ReportOptions.Grouping.BY_TYPE)).report(analyzer.analyzeChanges()));
             }
         }
@@ -709,26 +770,36 @@ public class ReporterTest extends TestCase {
             helper.writeFile("Foo.java", "import java.util.Set;\npublic class Foo {\n}\n");
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                List<String> lines = new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.IMPORTS,
-                        ReportOptions.Grouping.BY_TYPE)).report(analyzer.analyzeChanges());
-                assertEquals(List.of("# API changes", "", "  NO CHANGES", "",
-                                "# Implementation changes", "", "  NO CHANGES", "",
-                                "# Cosmetic changes", "", "  NO CHANGES", ""),
+                List<HTML> lines = lines(new Reporter(new ReportOptions(ChangeLevel.IMPORTS,
+                        ReportOptions.Grouping.BY_TYPE)).report(analyzer.analyzeChanges()));
+                assertLines(List.of(
+                        heading("API changes"),
+                        blank(),
+                        noChanges(),
+                        blank(),
+                        heading("Implementation changes"),
+                        blank(),
+                        noChanges(),
+                        blank(),
+                        heading("Cosmetic changes"),
+                        blank(),
+                        noChanges(),
+                        blank()),
                         lines.subList(0, 12));
-                assertEquals("# Imports", lines.get(12));
-                assertTrue(lines.toString(), lines.stream().anyMatch(l -> l.contains("java.util.Set")));
+                assertHtml(heading("Imports"), lines.get(12));
+                assertTrue(markup(lines), texts(lines).stream().anyMatch(l -> l.contains("java.util.Set")));
             }
         }
     }
 
     /** Reports the change of Foo.java from one content to the other, with the given javadoc context. */
-    private static List<String> javadocReport(String oldSource, String newSource, int context) throws Exception {
+    private static HTML.Tag javadocReport(String oldSource, String newSource, int context) throws Exception {
         try (GitTestHelper helper = new GitTestHelper()) {
             helper.writeFile("Foo.java", oldSource);
             helper.commit("init");
             helper.writeFile("Foo.java", newSource);
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                return new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_TYPE,
+                return new Reporter(new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_TYPE,
                         ReportOptions.DEFAULT_BODY_CONTEXT, context)).report(analyzer.analyzeChanges().files().get(0));
             }
         }
@@ -745,75 +816,74 @@ public class ReporterTest extends TestCase {
      */
     public void testJavadocChange() throws Exception {
         String changed = DOC_OLD.replace("first", "last").replace("@throws IOException never", "@since 2.0");
-        assertEquals(List.of(
-                        "    public class Foo",
-                        "~   │   * Returns the ~~first~~ __last__ element.",
-                        "    │   *",
-                        "    │   …",
-                        "    │   * @return the element",
-                        "-   │   * ~~@throws IOException never~~",
-                        "+   │   * @since 2.0",
-                        "    └── public String get( int i )"),
+        assertLines(List.of(
+                line(' ', "  ", code("public class ", decl("Foo"))),
+                line('~', "  ", tree("│   "), code(comment("* Returns the ", strike("first"), " ", added("last"),
+                        " element."))),
+                line(' ', "  ", tree("│   "), code(comment("*"))),
+                line(' ', "  ", tree("│   "), code(note("…"))),
+                line(' ', "  ", tree("│   "), code(comment("* @return the element"))),
+                line('-', "  ", tree("│   "), code(comment("* ", strike("@throws IOException never")))),
+                line('+', "  ", tree("│   "), code(comment("* @since 2.0"))),
+                line(' ', "  ", tree("└── "), code("public String ", decl("get"), "( int i )"))),
                 javadocReport(DOC_OLD, changed, 1));
     }
 
     /** Tests that a change of the javadoc alone is not reported when the javadoc is not shown. */
     public void testJavadocOnlyChangeHidden() throws Exception {
-        assertEquals(List.of(),
-                javadocReport(DOC_OLD, DOC_OLD.replace("first", "last"), ReportOptions.NO_JAVADOC));
+        assertLines(List.of(), javadocReport(DOC_OLD, DOC_OLD.replace("first", "last"), ReportOptions.NO_JAVADOC));
         String nested = "public class Foo {\n  /** Inner one. */\n  public static class In { }\n}\n";
-        assertEquals(List.of(),
-                javadocReport(nested, nested.replace("one.", "two."), ReportOptions.NO_JAVADOC));
+        assertLines(List.of(), javadocReport(nested, nested.replace("one.", "two."), ReportOptions.NO_JAVADOC));
     }
 
     /** Tests that a block of completely changed lines shows all the removed lines first, then the new ones. */
     public void testJavadocChangedBlock() throws Exception {
         String changed = DOC_OLD.replace("@return the element", "Nothing here matches")
                 .replace("@throws IOException never", "@since 2.0");
-        assertEquals(List.of(
-                        "    public class Foo",
-                        "    │   …",
-                        "    │   * @param i the index",
-                        "-   │   * ~~@return the element~~",
-                        "-   │   * ~~@throws IOException never~~",
-                        "+   │   * Nothing here matches",
-                        "+   │   * @since 2.0",
-                        "    └── public String get( int i )"),
+        assertLines(List.of(
+                line(' ', "  ", code("public class ", decl("Foo"))),
+                line(' ', "  ", tree("│   "), code(note("…"))),
+                line(' ', "  ", tree("│   "), code(comment("* @param i the index"))),
+                line('-', "  ", tree("│   "), code(comment("* ", strike("@return the element")))),
+                line('-', "  ", tree("│   "), code(comment("* ", strike("@throws IOException never")))),
+                line('+', "  ", tree("│   "), code(comment("* Nothing here matches"))),
+                line('+', "  ", tree("│   "), code(comment("* @since 2.0"))),
+                line(' ', "  ", tree("└── "), code("public String ", decl("get"), "( int i )"))),
                 javadocReport(DOC_OLD, changed, 1));
     }
 
     /** Tests the context of a javadoc change: none, the whole javadoc and no javadoc at all. */
     public void testJavadocContext() throws Exception {
         String changed = DOC_OLD.replace("   * @return the element\n", "");
-        assertEquals(List.of(
-                        "    public class Foo",
-                        "    │   …",
-                        "-   │   * ~~@return the element~~",
-                        "    │   …",
-                        "    └── public String get( int i )"),
+        assertLines(List.of(
+                line(' ', "  ", code("public class ", decl("Foo"))),
+                line(' ', "  ", tree("│   "), code(note("…"))),
+                line('-', "  ", tree("│   "), code(comment("* ", strike("@return the element")))),
+                line(' ', "  ", tree("│   "), code(note("…"))),
+                line(' ', "  ", tree("└── "), code("public String ", decl("get"), "( int i )"))),
                 javadocReport(DOC_OLD, changed, 0));
-        assertEquals(List.of(
-                        "    public class Foo",
-                        "    │   * Returns the first element.",
-                        "    │   *",
-                        "    │   * @param i the index",
-                        "-   │   * ~~@return the element~~",
-                        "    │   * @throws IOException never",
-                        "    └── public String get( int i )"),
+        assertLines(List.of(
+                line(' ', "  ", code("public class ", decl("Foo"))),
+                line(' ', "  ", tree("│   "), code(comment("* Returns the first element."))),
+                line(' ', "  ", tree("│   "), code(comment("*"))),
+                line(' ', "  ", tree("│   "), code(comment("* @param i the index"))),
+                line('-', "  ", tree("│   "), code(comment("* ", strike("@return the element")))),
+                line(' ', "  ", tree("│   "), code(comment("* @throws IOException never"))),
+                line(' ', "  ", tree("└── "), code("public String ", decl("get"), "( int i )"))),
                 javadocReport(DOC_OLD, changed, ReportOptions.WHOLE_JAVADOC));
-        assertEquals(List.of(), javadocReport(DOC_OLD, changed, ReportOptions.NO_JAVADOC));
+        assertLines(List.of(), javadocReport(DOC_OLD, changed, ReportOptions.NO_JAVADOC));
     }
 
     /** Tests that an added member shows its javadoc, a removed one does not. */
     public void testJavadocOfAddedAndRemoved() throws Exception {
         String old = "public class Foo {\n  /** Gone. */\n  public int gone(String s) { return 0; }\n}\n";
         String added = "public class Foo {\n  /**\n   * Fresh.\n   * Really.\n   */\n  public void fresh() { }\n}\n";
-        assertEquals(List.of(
-                        "    public class Foo",
-                        "-   ├── ~~public int gone( String s )~~",
-                        "+   │   * Fresh.",
-                        "+   │   * Really.",
-                        "+   └── public void fresh()"),
+        assertLines(List.of(
+                line(' ', "  ", code("public class ", decl("Foo"))),
+                line('-', "  ", tree("├── "), code(strike("public int ", decl("gone"), "( String s )"))),
+                line('+', "  ", tree("│   "), code(comment("* Fresh."))),
+                line('+', "  ", tree("│   "), code(comment("* Really."))),
+                line('+', "  ", tree("└── "), code("public void ", decl("fresh"), "()"))),
                 javadocReport(old, added, 1));
     }
 
@@ -821,22 +891,22 @@ public class ReporterTest extends TestCase {
     public void testJavadocOfRenamed() throws Exception {
         String old = "public class Foo {\n  /** Gone. */\n  public void gone() { }\n}\n";
         String added = "public class Foo {\n  /**\n   * Fresh.\n   * Really.\n   */\n  public void fresh() { }\n}\n";
-        assertEquals(List.of(
-                        "    public class Foo",
-                        "-   │   * ~~Gone.~~",
-                        "+   │   * Fresh.",
-                        "+   │   * Really.",
-                        "~   └── public void ~~gone~~ __fresh__()"),
+        assertLines(List.of(
+                line(' ', "  ", code("public class ", decl("Foo"))),
+                line('-', "  ", tree("│   "), code(comment("* ", strike("Gone.")))),
+                line('+', "  ", tree("│   "), code(comment("* Fresh."))),
+                line('+', "  ", tree("│   "), code(comment("* Really."))),
+                line('~', "  ", tree("└── "), code("public void ", strike("gone"), " ", added(decl("fresh")), "()"))),
                 javadocReport(old, added, 1));
     }
 
     /** Tests that a changed javadoc of a nested type is shown above its heading. */
     public void testJavadocOfType() throws Exception {
         String old = "public class Foo {\n  /** Inner one. */\n  public static class In { }\n}\n";
-        assertEquals(List.of(
-                        "    public class Foo",
-                        "~   │   * Inner ~~one~~ __two__.",
-                        "    └── public static class In"),
+        assertLines(List.of(
+                line(' ', "  ", code("public class ", decl("Foo"))),
+                line('~', "  ", tree("│   "), code(comment("* Inner ", strike("one"), " ", added("two"), "."))),
+                line(' ', "  ", tree("└── "), code("public static class ", decl("In")))),
                 javadocReport(old, old.replace("one.", "two."), 1));
     }
 
@@ -847,9 +917,9 @@ public class ReporterTest extends TestCase {
             helper.commit("init");
             helper.writeFile("Foo.java", newSource);
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                return new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_TYPE,
+                return texts(lines(new Reporter(new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_TYPE,
                         ReportOptions.DEFAULT_BODY_CONTEXT, context))
-                        .reportOnly(analyzer.analyzeChanges(), ChangeLevel.IMPLEMENTATION);
+                        .reportOnly(analyzer.analyzeChanges(), ChangeLevel.IMPLEMENTATION)));
             }
         }
     }
@@ -872,13 +942,13 @@ public class ReporterTest extends TestCase {
             + "    /* two\n       lines */\n    run();\n  }\n  static class In {\n\tint f;\n  }\n}\n";
 
     /** Reports the changes of Foo.java from {@link #WHOLE_OLD} to {@link #WHOLE_NEW} with the options. */
-    private static List<String> wholeReport(ReportOptions options, boolean implOnly) throws Exception {
+    private static HTML.Tag wholeReport(ReportOptions options, boolean implOnly) throws Exception {
         try (GitTestHelper helper = new GitTestHelper()) {
             helper.writeFile("Foo.java", WHOLE_OLD);
             helper.commit("init");
             helper.writeFile("Foo.java", WHOLE_NEW);
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                Reporter reporter = new Reporter(Theme.PLAIN, options);
+                Reporter reporter = new Reporter(options);
                 return implOnly ? reporter.reportOnly(analyzer.analyzeChanges(), ChangeLevel.IMPLEMENTATION)
                         : reporter.report(analyzer.analyzeChanges());
             }
@@ -890,19 +960,19 @@ public class ReporterTest extends TestCase {
      * indentation and comments kept and tabs expanded, and not that of the removed ones by default.
      */
     public void testAddedShownWhole() throws Exception {
-        assertEquals(List.of(
-                        "# Implementation changes",
-                        "",
-                        "~ Foo.java",
-                        "    public class Foo",
-                        "+   ├── void added() {",
-                        "+   │     /* two",
-                        "+   │        lines */",
-                        "+   │     run();",
-                        "+   │   }",
-                        "+   └── static class In {",
-                        "+         int f;",
-                        "+       }"),
+        assertLines(List.of(
+                heading("Implementation changes"),
+                blank(),
+                fileTitle('~', name("Foo.java")),
+                line(' ', "  ", code("public class ", decl("Foo"))),
+                line('+', "  ", tree("├── "), code("void added() {")),
+                line('+', "  ", tree("│   "), code("  ", comment("/* two"))),
+                line('+', "  ", tree("│   "), code(comment("     lines */"))),
+                line('+', "  ", tree("│   "), code("  run();")),
+                line('+', "  ", tree("│   "), code("}")),
+                line('+', "  ", tree("└── "), code("static class In {")),
+                line('+', "      ", code("  int f;")),
+                line('+', "      ", code("}"))),
                 wholeReport(new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY), true));
     }
 
@@ -910,26 +980,27 @@ public class ReporterTest extends TestCase {
     public void testDeletionsShownWhole() throws Exception {
         ReportOptions options = new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY)
                 .withAdditions(false).withDeletions(true);
-        assertEquals(List.of(
-                        "# Implementation changes",
-                        "",
-                        "~ Foo.java",
-                        "    public class Foo",
-                        "-   └── int gone() {",
-                        "-         return 1;",
-                        "-       }"),
+        assertLines(List.of(
+                heading("Implementation changes"),
+                blank(),
+                fileTitle('~', name("Foo.java")),
+                line(' ', "  ", code("public class ", decl("Foo"))),
+                line('-', "  ", tree("└── "), code("int gone() {")),
+                line('-', "      ", code("  return 1;")),
+                line('-', "      ", code("}"))),
                 wholeReport(options, true));
     }
 
     /** Tests that grouped by type, the whole source replaces the signature of an added member. */
     public void testWholeByType() throws Exception {
-        List<String> lines = wholeReport(new ReportOptions(ChangeLevel.IMPLEMENTATION, ReportOptions.Grouping.BY_TYPE),
-                false);
-        assertTrue(lines.toString(), lines.contains("+   ├── void added() {"));
-        assertTrue(lines.toString(), lines.contains("+   │     run();"));
-        assertTrue(lines.toString(), lines.contains("-   ├── ~~int gone()~~"));
-        assertEquals(lines.toString(), 1, lines.stream().filter(l -> l.contains("added()")).count());
-        List<String> api = wholeReport(new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_TYPE), false);
+        List<HTML> lines = lines(wholeReport(new ReportOptions(ChangeLevel.IMPLEMENTATION,
+                ReportOptions.Grouping.BY_TYPE), false));
+        assertContains(line('+', "  ", tree("├── "), code("void added() {")), lines);
+        assertContains(line('+', "  ", tree("│   "), code("  run();")), lines);
+        assertContains(line('-', "  ", tree("├── "), code(strike("int ", decl("gone"), "()"))), lines);
+        assertEquals(markup(lines), 1, texts(lines).stream().filter(l -> l.contains("added()")).count());
+        List<String> api = texts(lines(wholeReport(new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_TYPE),
+                false)));
         assertFalse(api.toString(), api.stream().anyMatch(l -> l.contains("run();")));
     }
 }

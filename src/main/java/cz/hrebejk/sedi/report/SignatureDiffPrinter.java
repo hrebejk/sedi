@@ -33,27 +33,23 @@ import java.util.stream.Collectors;
  * {@code public String method( ~~int~~ __float__ f )}. Renamed parameters show only the new name: the rename is cosmetic.
  * A {@link #cosmetic() cosmetic} printer shows the cosmetic changes instead: renamed parameters and the parts which
  * differ only by a renamed type or a name qualified differently.
- * Added elements are prefixed with {@code +}, removed elements with {@code -}. The line is colored by a
- * {@link Theme}. The lines are numbered by the lines of the source, for the report to show the numbers, see
+ * Added elements are prefixed with {@code +}, removed elements with {@code -}. The parts are marked up with their
+ * {@link Css} classes. The lines are numbered by the lines of the source, for the report to show the numbers, see
  * {@link LineNumbers}.
  */
-public final class SignatureDiffPrinter {
+final class SignatureDiffPrinter {
 
-    private final Theme theme;
     /** Whether the parts equal but for renames and qualification are shown changed, see {@link #cosmetic()}. */
     private final boolean cosmetic;
 
     /**
      * Creates a printer.
-     *
-     * @param theme the colors of the code; {@link Theme#PLAIN} strikes through with {@code ~~old~~}
      */
-    public SignatureDiffPrinter(Theme theme) {
-        this(theme, false);
+    SignatureDiffPrinter() {
+        this(false);
     }
 
-    private SignatureDiffPrinter(Theme theme, boolean cosmetic) {
-        this.theme = theme;
+    private SignatureDiffPrinter(boolean cosmetic) {
         this.cosmetic = cosmetic;
     }
 
@@ -64,8 +60,8 @@ public final class SignatureDiffPrinter {
      *
      * @return the printer
      */
-    public SignatureDiffPrinter cosmetic() {
-        return new SignatureDiffPrinter(theme, true);
+    SignatureDiffPrinter cosmetic() {
+        return new SignatureDiffPrinter(true);
     }
 
     /**
@@ -76,7 +72,7 @@ public final class SignatureDiffPrinter {
      * @param typeName simple name of the enclosing type, used to display constructors
      * @return a one line description
      */
-    public String format(ElementPair pair, String typeName) {
+    Line format(ElementPair pair, String typeName) {
         return formatSignature(pair, typeName, false);
     }
 
@@ -89,7 +85,7 @@ public final class SignatureDiffPrinter {
      * @param changedLine whether something else on the line of the signature changed, like the initializer of a field
      * @return a one line description
      */
-    public String format(ElementPair pair, String typeName, boolean changedLine) {
+    Line format(ElementPair pair, String typeName, boolean changedLine) {
         return formatSignature(pair, typeName, changedLine);
     }
 
@@ -101,24 +97,25 @@ public final class SignatureDiffPrinter {
      * @param typeName simple name of the enclosing type
      * @return a one line description
      */
-    public String formatType(ElementPair pair, String typeName) {
+    Line formatType(ElementPair pair, String typeName) {
         return formatSignature(pair, typeName, false);
     }
 
-    private String formatSignature(ElementPair pair, String typeName, boolean changedLine) {
+    private Line formatSignature(ElementPair pair, String typeName, boolean changedLine) {
         if (pair.isAdded()) {
-            Parts parts = Parts.of(pair.newElement(), typeName, theme);
-            return LineNumbers.number(pair.newElement().getLine(), '+', theme.code(render(parts, parts)));
+            Parts parts = Parts.of(pair.newElement(), typeName);
+            return Line.number(pair.newElement().getLine(), '+', Highlighter.code(render(parts, parts)));
         }
         if (pair.isRemoved()) {
-            Parts parts = Parts.of(pair.oldElement(), typeName, theme);
-            return LineNumbers.number(pair.oldElement().getLine(), '-', strike(render(parts, parts)));
+            Parts parts = Parts.of(pair.oldElement(), typeName);
+            return Line.number(pair.oldElement().getLine(), '-', strike(render(parts, parts)));
         }
-        Parts o = Parts.of(pair.oldElement(), typeName, theme);
-        Parts n = Parts.of(pair.newElement(), typeName, theme);
-        String signature = render(o, n);
-        boolean changed = changedLine || !signature.equals(render(n, n));
-        return LineNumbers.number(pair.newElement().getLine(), changed ? '~' : ' ', theme.code(signature));
+        Parts o = Parts.of(pair.oldElement(), typeName);
+        Parts n = Parts.of(pair.newElement(), typeName);
+        Fragment signature = render(o, n);
+        // The parts are compared by their keys while rendering; the signature shows a change if some part differs.
+        boolean changed = changedLine || signature.changed();
+        return Line.number(pair.newElement().getLine(), changed ? '~' : ' ', Highlighter.code(signature));
     }
 
     /**
@@ -129,30 +126,30 @@ public final class SignatureDiffPrinter {
      * @param pair the pair to print
      * @return the lines, empty if there is nothing to show
      */
-    public List<String> annotations(ElementPair pair) {
+    List<Line> annotations(ElementPair pair) {
         if (pair.isAdded() || pair.isRemoved()) {
             boolean added = pair.isAdded();
-            return Parts.of(added ? pair.newElement() : pair.oldElement(), "", theme).annotations().stream()
-                    .map(a -> LineNumbers.number(a.line(), added ? '+' : '-',
-                            added ? theme.code(a.text()) : strike(a.text()))).toList();
+            return Parts.of(added ? pair.newElement() : pair.oldElement(), "").annotations().stream()
+                    .map(a -> Line.number(a.line(), added ? '+' : '-',
+                            added ? Highlighter.code(a.html()) : strike(a.html()))).toList();
         }
-        List<Piece> oldAnnotations = Parts.of(pair.oldElement(), "", theme).annotations();
-        List<Piece> newAnnotations = Parts.of(pair.newElement(), "", theme).annotations();
+        List<Piece> oldAnnotations = Parts.of(pair.oldElement(), "").annotations();
+        List<Piece> newAnnotations = Parts.of(pair.newElement(), "").annotations();
         List<? extends AnnotationTree> oldTrees = annotationTrees(pair.oldElement());
         List<? extends AnnotationTree> newTrees = annotationTrees(pair.newElement());
-        List<String> lines = new ArrayList<>();
+        List<Line> lines = new ArrayList<>();
         for (Piece o : oldAnnotations) {
             if (newAnnotations.stream().noneMatch(n -> sameAnnotation(o, n))) {
-                lines.add(LineNumbers.number(o.line(), '~', strike(o.text())));
+                lines.add(Line.number(o.line(), '~', strike(o.html())));
             }
         }
         for (int j = 0; j < newAnnotations.size(); j++) {
             Piece n = newAnnotations.get(j);
             int i = indexOf(oldAnnotations, n);
             if (i < 0) {
-                lines.add(LineNumbers.number(n.line(), '~', theme.added(n.text())));
+                lines.add(Line.number(n.line(), '~', Highlighter.code(Markup.added(n.html()))));
             } else if (!oldAnnotations.get(i).sameAs(n)) {
-                lines.add(LineNumbers.number(n.line(), '~', theme.code(annotation(
+                lines.add(Line.number(n.line(), '~', Highlighter.code(annotation(
                         pair.oldElement(), oldTrees.get(i), pair.newElement(), newTrees.get(j)))));
             }
         }
@@ -184,17 +181,18 @@ public final class SignatureDiffPrinter {
      * ({@code value} for one without a name), only the changed values show the change, the added and removed
      * arguments are marked as such.
      */
-    private String annotation(ElementInfo oldInfo, AnnotationTree oldTree, ElementInfo newInfo, AnnotationTree newTree) {
+    private Fragment annotation(ElementInfo oldInfo, AnnotationTree oldTree, ElementInfo newInfo,
+                                AnnotationTree newTree) {
         List<? extends ExpressionTree> olds = oldTree.getArguments();
         List<? extends ExpressionTree> news = newTree.getArguments();
-        List<String> out = new ArrayList<>();
+        List<Fragment> out = new ArrayList<>();
         boolean[] paired = new boolean[news.size()];
         int next = 0;
         for (ExpressionTree o : olds) {
             int j = argumentIndex(news, argumentName(o));
             if (j < 0) {
                 if (!cosmetic) {
-                    out.add(strike(Piece.of(oldInfo, o, theme).text()));
+                    out.add(strike(Piece.of(oldInfo, o).html()));
                 }
                 continue;
             }
@@ -213,26 +211,27 @@ public final class SignatureDiffPrinter {
                 out.add(addedArgument(newInfo, news.get(j)));
             }
         }
-        String type = Piece.of(newInfo, newTree.getAnnotationType(), theme).text();
-        return "@" + type + (out.isEmpty() ? "" : "(" + String.join(", ", out) + ")");
+        Fragment type = Piece.of(newInfo, newTree.getAnnotationType()).html();
+        Fragment annotation = Fragment.of("@").plus(type);
+        return out.isEmpty() ? annotation : annotation.plus("(").plus(Fragment.join(out, ", ")).plus(")");
     }
 
     /** A pair of arguments of the same name: unchanged, or {@code name = } and the change of the value. */
-    private String argument(ElementInfo oldInfo, ExpressionTree o, ElementInfo newInfo, ExpressionTree n) {
-        Piece oldPiece = Piece.of(oldInfo, o, theme);
-        Piece newPiece = Piece.of(newInfo, n, theme);
+    private Fragment argument(ElementInfo oldInfo, ExpressionTree o, ElementInfo newInfo, ExpressionTree n) {
+        Piece oldPiece = Piece.of(oldInfo, o);
+        Piece newPiece = Piece.of(newInfo, n);
         if (oldPiece.sameAs(newPiece) || !(o instanceof AssignmentTree oa && n instanceof AssignmentTree na)) {
             return slot(oldPiece, newPiece);
         }
         // javac adds the name value to an argument written without one; it has no place in the source.
         String name = newInfo.getSource(na.getVariable());
-        return (name == null ? "" : name + " = ")
-               + slot(Piece.of(oldInfo, oa.getExpression(), theme), Piece.of(newInfo, na.getExpression(), theme));
+        return Fragment.of(name == null ? "" : name + " = ")
+                .plus(slot(Piece.of(oldInfo, oa.getExpression()), Piece.of(newInfo, na.getExpression())));
     }
 
-    private String addedArgument(ElementInfo info, ExpressionTree argument) {
-        String text = Piece.of(info, argument, theme).text();
-        return cosmetic ? text : theme.added(text);
+    private Fragment addedArgument(ElementInfo info, ExpressionTree argument) {
+        Fragment text = Piece.of(info, argument).html();
+        return cosmetic ? text : Markup.added(text);
     }
 
     /** The name of the annotation element an argument sets, {@code value} for one written without a name. */
@@ -267,11 +266,11 @@ public final class SignatureDiffPrinter {
      * @param typeName simple name of the enclosing type, used to display constructors
      * @return the lines of the annotations, then the line of the signature
      */
-    public List<String> declaration(ElementInfo element, String typeName) {
-        Parts parts = Parts.of(element, typeName, theme);
-        List<String> lines = new ArrayList<>(parts.annotations().stream()
-                .map(a -> LineNumbers.number(a.line(), theme.code(a.text()))).toList());
-        lines.add(LineNumbers.number(element.getLine(), theme.code(render(parts, parts))));
+    List<Line> declaration(ElementInfo element, String typeName) {
+        Parts parts = Parts.of(element, typeName);
+        List<Line> lines = new ArrayList<>(parts.annotations().stream()
+                .map(a -> Line.number(a.line(), Highlighter.code(a.html()))).toList());
+        lines.add(Line.number(element.getLine(), Highlighter.code(render(parts, parts))));
         return lines;
     }
 
@@ -279,15 +278,16 @@ public final class SignatureDiffPrinter {
      * A part of a signature: the text shown and the keys it is compared by. The key of a tree is its hash, in which
      * references to renamed elements are undone, so a part which only refers to a renamed type is unchanged. The full
      * key is its {@link cz.hrebejk.sedi.analysis.ChangeCategory#FULL full} hash, of the tree as it is written: parts
-     * with equal keys but different full keys differ cosmetically.
+     * with equal keys but different full keys differ cosmetically. The html is the text marked up, like a part
+     * javac could not resolve marked as an error.
      */
-    private record Piece(String text, String key, long line, String full) {
+    private record Piece(String text, Fragment html, String key, long line, String full) {
 
-        static final Piece NONE = new Piece("", "", 0, "");
+        static final Piece NONE = new Piece("", Fragment.EMPTY, "", 0, "");
 
         /** A part compared by its text, like a modifier or a name. */
         static Piece text(String text) {
-            return new Piece(text, text, 0, text);
+            return new Piece(text, Fragment.of(text), text, 0, text);
         }
 
         /**
@@ -297,7 +297,7 @@ public final class SignatureDiffPrinter {
         static Piece name(ElementInfo info, VariableTree parameter) {
             String name = parameter.getName().toString();
             String full = info.getSignatureFullOwnSha(parameter);
-            return new Piece(name, name, 0, full == null ? name : full);
+            return new Piece(name, Fragment.of(name), name, 0, full == null ? name : full);
         }
 
         /**
@@ -305,33 +305,33 @@ public final class SignatureDiffPrinter {
          * that of the source, on one line; javac prints the trees without a place in the source. A part with a name
          * javac could not resolve is shown as an error.
          */
-        static Piece of(ElementInfo info, Tree tree, Theme theme) {
+        static Piece of(ElementInfo info, Tree tree) {
             if (tree == null) {
                 return NONE;
             }
             String source = info.getSource(tree);
-            return of(info, tree, source == null ? tree.toString() : source, theme);
+            return of(info, tree, source == null ? tree.toString() : source);
         }
 
         /**
          * The type of a parameter with its modifiers and annotations, as in the source. The type of a C style array
          * parameter, like {@code int x[]}, has the name inside it in the source: javac prints it then.
          */
-        static Piece type(ElementInfo info, VariableTree parameter, Theme theme) {
+        static Piece type(ElementInfo info, VariableTree parameter) {
             String source = info.getSource(parameter);
             String name = parameter.getName().toString();
             boolean plain = source != null && source.endsWith(name)
                     && (source.length() == name.length() || !Character.isJavaIdentifierPart(
                     source.charAt(source.length() - name.length() - 1)));
             return of(info, parameter.getType(), plain ? source.substring(0, source.length() - name.length()).strip()
-                    : parameter.getType().toString(), theme);
+                    : parameter.getType().toString());
         }
 
-        private static Piece of(ElementInfo info, Tree tree, String text, Theme theme) {
+        private static Piece of(ElementInfo info, Tree tree, String text) {
             String sha = info.getSignatureSha(tree);
             String full = info.getSignatureFullSha(tree);
-            return new Piece(hasUnresolved(info, tree) ? theme.error(text) : text, sha == null ? text : sha,
-                    info.getLine(tree), full == null ? text : full);
+            return new Piece(text, hasUnresolved(info, tree) ? Markup.error(text) : Fragment.of(text),
+                    sha == null ? text : sha, info.getLine(tree), full == null ? text : full);
         }
 
         /** Whether the tree is, or contains, a name javac could not resolve. */
@@ -360,26 +360,26 @@ public final class SignatureDiffPrinter {
                          List<Piece> typeParams, Piece type, String name, List<Piece[]> params, List<Piece> throwsList,
                          List<Piece> extendsList, List<Piece> implementsList, List<Piece> permitsList) {
 
-        static Parts of(ElementInfo info, String typeName, Theme theme) {
+        static Parts of(ElementInfo info, String typeName) {
             Tree tree = info.getOriginalTree();
             if (tree instanceof MethodTree m) {
                 String name = m.getName().contentEquals("<init>") ? typeName : m.getName().toString();
                 List<Piece[]> params = new ArrayList<>();
                 for (VariableTree p : m.getParameters()) {
-                    params.add(new Piece[]{Piece.type(info, p, theme), Piece.name(info, p)});
+                    params.add(new Piece[]{Piece.type(info, p), Piece.name(info, p)});
                 }
-                return new Parts(info.getNodeType(), annotations(info, m.getModifiers(), theme), modifiers(info, m.getModifiers()),
-                        pieces(info, m.getTypeParameters(), theme), Piece.of(info, m.getReturnType(), theme), name, params,
-                        pieces(info, m.getThrows(), theme), List.of(), List.of(), List.of());
+                return new Parts(info.getNodeType(), annotations(info, m.getModifiers()), modifiers(info, m.getModifiers()),
+                        pieces(info, m.getTypeParameters()), Piece.of(info, m.getReturnType()), name, params,
+                        pieces(info, m.getThrows()), List.of(), List.of(), List.of());
             }
             if (tree instanceof VariableTree v) {
-                Piece type = Piece.of(info, v.getType(), theme);
+                Piece type = Piece.of(info, v.getType());
                 if (info.getSignatureSha(v.getType()) == null) {
                     // A type javac added, as to an enum constant: compared by the type itself, renames undone.
-                    type = new Piece(type.text(), info.getFacetSha(cz.hrebejk.sedi.analysis.Facet.RETURN_TYPE),
-                            type.line(), type.full());
+                    type = new Piece(type.text(), type.html(),
+                            info.getFacetSha(cz.hrebejk.sedi.analysis.Facet.RETURN_TYPE), type.line(), type.full());
                 }
-                return new Parts(info.getNodeType(), annotations(info, v.getModifiers(), theme), modifiers(info, v.getModifiers()),
+                return new Parts(info.getNodeType(), annotations(info, v.getModifiers()), modifiers(info, v.getModifiers()),
                         List.of(), type, v.getName().toString(), List.of(), List.of(), List.of(), List.of(), List.of());
             }
             if (tree instanceof ClassTree c) {
@@ -387,27 +387,27 @@ public final class SignatureDiffPrinter {
                 List<Piece> extended = new ArrayList<>();
                 List<Piece> implemented = new ArrayList<>();
                 if (c.getExtendsClause() != null) {
-                    extended.add(Piece.of(info, c.getExtendsClause(), theme));
+                    extended.add(Piece.of(info, c.getExtendsClause()));
                 }
                 (c.getKind() == Tree.Kind.INTERFACE ? extended : implemented)
-                        .addAll(pieces(info, c.getImplementsClause(), theme));
+                        .addAll(pieces(info, c.getImplementsClause()));
                 List<Piece[]> components = new ArrayList<>();
                 for (Tree member : c.getMembers()) {
                     if (member instanceof VariableTree v && ElementInfo.isRecordComponent(c, v)) {
-                        components.add(new Piece[]{Piece.type(info, v, theme), Piece.text(v.getName().toString())});
+                        components.add(new Piece[]{Piece.type(info, v), Piece.text(v.getName().toString())});
                     }
                 }
-                return new Parts(info.getNodeType(), annotations(info, c.getModifiers(), theme), modifiers(info, c.getModifiers()),
-                        pieces(info, c.getTypeParameters(), theme), Piece.text(keyword(c.getKind())),
+                return new Parts(info.getNodeType(), annotations(info, c.getModifiers()), modifiers(info, c.getModifiers()),
+                        pieces(info, c.getTypeParameters()), Piece.text(keyword(c.getKind())),
                         c.getSimpleName().toString(), components, List.of(), extended, implemented,
-                        pieces(info, c.getPermitsClause(), theme));
+                        pieces(info, c.getPermitsClause()));
             }
             return new Parts(info.getNodeType(), List.of(), List.of(), List.of(), Piece.NONE, info.getName(), List.of(),
                     List.of(), List.of(), List.of(), List.of());
         }
 
-        private static List<Piece> annotations(ElementInfo info, ModifiersTree modifiers, Theme theme) {
-            return pieces(info, modifiers.getAnnotations(), theme);
+        private static List<Piece> annotations(ElementInfo info, ModifiersTree modifiers) {
+            return pieces(info, modifiers.getAnnotations());
         }
 
         /** The modifiers in the order of the source, if it is known. */
@@ -419,8 +419,8 @@ public final class SignatureDiffPrinter {
                     .map(Piece::text).toList();
         }
 
-        private static List<Piece> pieces(ElementInfo info, List<? extends Tree> trees, Theme theme) {
-            return trees.stream().map(t -> Piece.of(info, t, theme)).toList();
+        private static List<Piece> pieces(ElementInfo info, List<? extends Tree> trees) {
+            return trees.stream().map(t -> Piece.of(info, t)).toList();
         }
 
         private static String keyword(Tree.Kind kind) {
@@ -431,14 +431,14 @@ public final class SignatureDiffPrinter {
         }
     }
 
-    private String render(Parts o, Parts n) {
-        List<String> out = new ArrayList<>();
+    private Fragment render(Parts o, Parts n) {
+        List<Fragment> out = new ArrayList<>();
         out.add(tokens(o.modifiers(), n.modifiers()));
         switch (n.nodeType()) {
             case METHOD -> {
                 out.add(typeParams(o, n));
                 out.add(slot(o.type(), n.type()));
-                out.add(declared(o.name(), n.name()) + "(" + params(o, n) + ")");
+                out.add(declared(o.name(), n.name()).plus("(").plus(params(o, n)).plus(")"));
                 addClause(out, "throws", o.throwsList(), n.throwsList());
             }
             case FIELD -> {
@@ -447,28 +447,28 @@ public final class SignatureDiffPrinter {
             }
             default -> {
                 out.add(slot(o.type(), n.type()));
-                out.add(declared(o.name(), n.name()) + typeParams(o, n)
-                        + (n.type().text().equals("record") ? "(" + params(o, n) + ")" : ""));
+                Fragment name = declared(o.name(), n.name()).plus(typeParams(o, n));
+                out.add(n.type().text().equals("record") ? name.plus("(").plus(params(o, n)).plus(")") : name);
                 addClause(out, "extends", o.extendsList(), n.extendsList());
                 addClause(out, "implements", o.implementsList(), n.implementsList());
                 addClause(out, "permits", o.permitsList(), n.permitsList());
             }
         }
-        return join(out, " ");
+        return Fragment.join(out, " ");
     }
 
     /** Adds the clause with its keyword, if the old or the new version has it; the changed items show the change. */
-    private void addClause(List<String> out, String keyword, List<Piece> oldItems, List<Piece> newItems) {
-        String items = tokens(oldItems, newItems, ", ");
+    private void addClause(List<Fragment> out, String keyword, List<Piece> oldItems, List<Piece> newItems) {
+        Fragment items = tokens(oldItems, newItems, ", ");
         if (!items.isEmpty()) {
-            out.add(keyword + " " + items);
+            out.add(Fragment.of(keyword + " ").plus(items));
         }
     }
 
     /** The type parameters in angle brackets, the removed ones struck through and the added ones underlined. */
-    private String typeParams(Parts o, Parts n) {
-        String params = tokens(o.typeParams(), n.typeParams(), ", ");
-        return params.isEmpty() ? "" : "<" + params + ">";
+    private Fragment typeParams(Parts o, Parts n) {
+        Fragment params = tokens(o.typeParams(), n.typeParams(), ", ");
+        return params.isEmpty() ? params : Fragment.of("<").plus(params).plus(">");
     }
 
     /**
@@ -477,7 +477,7 @@ public final class SignatureDiffPrinter {
      * parameter added in front of others does not show them all changed; between the aligned ones, the parameters
      * are paired by their positions.
      */
-    private String params(Parts o, Parts n) {
+    private Fragment params(Parts o, Parts n) {
         List<Piece[]> olds = o.params();
         List<Piece[]> news = n.params();
         List<int[]> anchors = new ArrayList<>();
@@ -485,7 +485,7 @@ public final class SignatureDiffPrinter {
             anchors.addAll(lcs(olds, news));
         }
         anchors.add(new int[]{olds.size(), news.size()});
-        List<String> out = new ArrayList<>();
+        List<Fragment> out = new ArrayList<>();
         int i = 0;
         int j = 0;
         for (int[] anchor : anchors) {
@@ -500,23 +500,24 @@ public final class SignatureDiffPrinter {
             i = anchor[0] + 1;
             j = anchor[1] + 1;
         }
-        return out.isEmpty() ? "" : " " + join(out, ", ") + " ";
+        Fragment params = Fragment.join(out, ", ");
+        return params.isEmpty() ? params : Fragment.of(" ").plus(params).plus(" ");
     }
 
     /** A parameter, its type and name; {@code null} for the old one if it was added, for the new if removed. */
-    private String param(Piece[] op, Piece[] np) {
+    private Fragment param(Piece[] op, Piece[] np) {
         if (cosmetic && (op == null || np == null)) {
             // An added or removed parameter is a change of the API: the new parameter is shown as it is.
-            return np == null ? "" : join(List.of(np[0].text(), np[1].text()), " ");
+            return np == null ? Fragment.EMPTY : Fragment.join(List.of(np[0].html(), np[1].html()), " ");
         }
         if (op == null) {
-            return theme.added(join(List.of(np[0].text(), np[1].text()), " "));
+            return Markup.added(Fragment.join(List.of(np[0].html(), np[1].html()), " "));
         }
         if (np == null) {
-            return strike(join(List.of(op[0].text(), op[1].text()), " "));
+            return strike(Fragment.join(List.of(op[0].html(), op[1].html()), " "));
         }
         // A renamed parameter is a cosmetic change, not one of the signature: only the new name is shown.
-        return join(List.of(slot(op[0], np[0]), same(op[1], np[1])), " ");
+        return Fragment.join(List.of(slot(op[0], np[0]), same(op[1], np[1])), " ");
     }
 
     /** The longest common subsequence of the parameters of the same types, as pairs of old and new index. */
@@ -544,15 +545,15 @@ public final class SignatureDiffPrinter {
     }
 
     /** Like {@link #slot(String, String)}, the parts compared by their keys. */
-    private String slot(Piece oldPiece, Piece newPiece) {
+    private Fragment slot(Piece oldPiece, Piece newPiece) {
         if (oldPiece.sameAs(newPiece)) {
             return same(oldPiece, newPiece);
         }
         if (cosmetic || oldPiece.text().isEmpty()) {
             // A change of the API is not shown by a cosmetic printer.
-            return newPiece.text();
+            return newPiece.html();
         }
-        return newPiece.text().isEmpty() ? strike(oldPiece.text()) : replace(oldPiece.text(), newPiece.text());
+        return newPiece.text().isEmpty() ? strike(oldPiece.html()) : replace(oldPiece, newPiece);
     }
 
     /**
@@ -563,60 +564,64 @@ public final class SignatureDiffPrinter {
      * @param newValue the new value, may be empty
      * @return the formatted text
      */
-    String slot(String oldValue, String newValue) {
+    Fragment slot(String oldValue, String newValue) {
         if (oldValue.equals(newValue) || oldValue.isEmpty()) {
-            return newValue;
+            return Fragment.of(newValue);
         }
-        return newValue.isEmpty() ? strike(oldValue) : replace(oldValue, newValue);
+        return newValue.isEmpty() ? Markup.strike(oldValue) : replace(oldValue, newValue);
     }
 
     /** A changed value; string literals, and expressions starting with one, show the changed words. */
-    private String replace(String oldValue, String newValue) {
+    private static Fragment replace(String oldValue, String newValue) {
         return oldValue.startsWith("\"") && newValue.startsWith("\"")
-                ? theme.replaceWords(oldValue, newValue) : theme.replace(oldValue, newValue);
+                ? Markup.replaceWords(oldValue, newValue) : Markup.replace(oldValue, newValue);
+    }
+
+    /** A changed part; the marked up parts, like the parts javac could not resolve, keep their markup. */
+    private static Fragment replace(Piece oldPiece, Piece newPiece) {
+        if (oldPiece.text().startsWith("\"") && newPiece.text().startsWith("\"")) {
+            return Markup.replaceWords(oldPiece.text(), newPiece.text());
+        }
+        return Markup.strike(oldPiece.html()).plus(" ").plus(Markup.added(newPiece.html()));
     }
 
     /** Like {@link #slot}, the new name shown as a declaration. */
-    private String declared(String oldName, String newName) {
-        String name = theme.style(Theme.Role.DECLARATION, newName);
-        return cosmetic || oldName.equals(newName) || oldName.isEmpty() ? name : theme.replace(oldName, name);
+    private Fragment declared(String oldName, String newName) {
+        Fragment name = Markup.style(Css.DECLARATION, newName);
+        return cosmetic || oldName.equals(newName) || oldName.isEmpty() ? name : Markup.replace(oldName, name);
     }
 
     /** Removed tokens struck through, followed by all tokens of the new version, the added ones underlined. */
-    private String tokens(List<Piece> oldTokens, List<Piece> newTokens) {
+    private Fragment tokens(List<Piece> oldTokens, List<Piece> newTokens) {
         return tokens(oldTokens, newTokens, " ");
     }
 
-    private String tokens(List<Piece> oldTokens, List<Piece> newTokens, String separator) {
-        List<String> removed = new ArrayList<>();
+    private Fragment tokens(List<Piece> oldTokens, List<Piece> newTokens, String separator) {
+        List<Fragment> removed = new ArrayList<>();
         for (Piece t : oldTokens) {
             if (!cosmetic && newTokens.stream().noneMatch(t::sameAs)) {
-                removed.add(strike(t.text()));
+                removed.add(strike(t.html()));
             }
         }
-        List<String> current = new ArrayList<>();
+        List<Fragment> current = new ArrayList<>();
         for (Piece t : newTokens) {
             current.add(oldTokens.stream().filter(t::sameAs).findFirst().map(o -> same(o, t))
-                    .orElseGet(() -> cosmetic ? t.text() : theme.added(t.text())));
+                    .orElseGet(() -> cosmetic ? t.html() : Markup.added(t.html())));
         }
-        return join(List.of(join(removed, separator), join(current, separator)), " ");
+        return Fragment.join(List.of(Fragment.join(removed, separator), Fragment.join(current, separator)), " ");
     }
 
     /**
      * A part which did not change but cosmetically: the new text, or for a cosmetic printer the change if the full
      * keys differ.
      */
-    private String same(Piece oldPiece, Piece newPiece) {
+    private Fragment same(Piece oldPiece, Piece newPiece) {
         return cosmetic && !oldPiece.full().equals(newPiece.full())
-                ? theme.replace(oldPiece.text(), newPiece.text()) : newPiece.text();
+                ? replace(oldPiece, newPiece) : newPiece.html();
     }
 
-    /** The text struck through. */
-    String strike(String text) {
-        return theme.strike(text);
-    }
-
-    private static String join(List<String> parts, String separator) {
-        return parts.stream().filter(s -> !s.isEmpty()).collect(Collectors.joining(separator));
+    /** The content struck through. */
+    private static Fragment strike(Fragment content) {
+        return Markup.strike(content);
     }
 }

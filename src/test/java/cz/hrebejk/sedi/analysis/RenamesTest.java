@@ -10,7 +10,6 @@ package cz.hrebejk.sedi.analysis;
 
 import cz.hrebejk.sedi.GitTestHelper;
 import cz.hrebejk.sedi.report.Reporter;
-import cz.hrebejk.sedi.report.Theme;
 import junit.framework.TestCase;
 
 import java.nio.file.Files;
@@ -72,7 +71,7 @@ public class RenamesTest extends TestCase {
                 assertFalse(sha(oldUse, ChangeCategory.WITHOUT_RENAMES).equals(
                         sha(use(b, false, Renames.EMPTY), ChangeCategory.WITHOUT_RENAMES)));
                 // Nothing to report in B: the API did not change.
-                assertTrue(new Reporter(Theme.PLAIN).report(b).isEmpty());
+                assertTrue(new Reporter().report(b).children.isEmpty());
             }
         }
     }

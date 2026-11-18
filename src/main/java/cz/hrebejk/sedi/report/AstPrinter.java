@@ -42,8 +42,8 @@ import java.util.TreeSet;
  * The changes are put on the lines of the new version: added code is underlined, old code which was replaced or
  * removed is struck through in front of it. Statements added or removed on lines of their own are printed as such
  * lines, the removed ones from the old version. Every line is numbered by its line in its version and marked by
- * {@code +} if it was added, {@code -} if removed, {@code ~} if changed, see {@link LineNumbers}. The lines are colored
- * by a {@link Theme}.
+ * {@code +} if it was added, {@code -} if removed, {@code ~} if changed, see {@link Line}. The code is highlighted by
+ * the {@link Highlighter}.
  */
 final class AstPrinter {
 
@@ -65,7 +65,7 @@ final class AstPrinter {
         final BitSet added = new BitSet();
         final BitSet errors = new BitSet();
         /** Text put in front of the character at a position, like old code struck through. */
-        final Map<Integer, List<String>> inserts = new TreeMap<>();
+        final Map<Integer, List<Fragment>> inserts = new TreeMap<>();
 
         Source(CompilationUnitInfo info, Tree root) {
             unit = info.compilationUnit();
@@ -182,7 +182,7 @@ final class AstPrinter {
             return oneLine(start(tree), end(tree));
         }
 
-        void insert(int position, String text) {
+        void insert(int position, Fragment text) {
             inserts.computeIfAbsent(position, p -> new ArrayList<>()).add(text);
         }
 
@@ -237,7 +237,6 @@ final class AstPrinter {
     private final BodyChanges changes;
     private final Source oldSource;
     private final Source newSource;
-    private final Theme theme;
     /** The most unchanged lines shown in a row, a negative number for any number of them. */
     private final int context;
     /** The statement, or the outermost expression in the header of a compound statement, each new tree is part of. */
@@ -256,16 +255,14 @@ final class AstPrinter {
      * Creates a printer of one body.
      *
      * @param changes the changes of the body
-     * @param theme   the colors of the code and of the struck through old text
      * @param context the most unchanged lines shown in a row, a longer run of them is shown as a note with its number
      *                of lines; a negative number to show them all
      */
-    AstPrinter(BodyChanges changes, Theme theme, int context) {
+    AstPrinter(BodyChanges changes, int context) {
         this.changes = changes;
         this.context = context;
         this.oldSource = new Source(changes.oldUnit(), changes.oldRoot());
         this.newSource = new Source(changes.newUnit(), changes.newRoot());
-        this.theme = theme;
         for (Tree tree : changes.unresolved()) {
             if (newSource.isPresent(tree) && newSource.start(tree) >= newSource.from
                     && newSource.end(tree) <= newSource.to) {
@@ -277,10 +274,9 @@ final class AstPrinter {
     /**
      * Prints the changes.
      *
-     * @return the lines, numbered (see {@link LineNumbers}), indented by the source relative to the least indented
-     *         of them
+     * @return the numbered lines, indented by the source relative to the least indented of them
      */
-    List<String> print() {
+    List<Line> print() {
         if (!newSource.isPresent(changes.newRoot())) {
             // An enum constant whose arguments and class body were all removed: nothing of the new version is in
             // the source but its name, the old version is shown struck through.
@@ -288,14 +284,14 @@ final class AstPrinter {
                 return List.of();
             }
             int start = newSource.start(changes.newRoot());
-            return List.of(LineNumbers.number(start < 0 ? 0 : newSource.line(start), '~',
-                    theme.code(theme.strike(oldSource.oneLine(changes.oldRoot())))));
+            return List.of(Line.number(start < 0 ? 0 : newSource.line(start), '~',
+                    Highlighter.code(Markup.strike(oldSource.oneLine(changes.oldRoot())))));
         }
         if (!oldSource.isPresent(changes.oldRoot())
                 && newSource.firstLine(changes.newRoot()) == newSource.lastLine(changes.newRoot())) {
             // Arguments or a class body added to an enum constant without them, on its line: all of it is added.
-            return List.of(LineNumbers.number(newSource.firstLine(changes.newRoot()), '~',
-                    theme.code(theme.added(newSource.oneLine(changes.newRoot())))));
+            return List.of(Line.number(newSource.firstLine(changes.newRoot()), '~',
+                    Highlighter.code(Markup.added(newSource.oneLine(changes.newRoot())))));
         }
         findUnits(changes.newRoot(), null);
         decorate(changes.newRoot(), true);
@@ -375,10 +371,10 @@ final class AstPrinter {
                 String before = oldSource.oneLine(oldSource.start(old), oldSource.start(kept));
                 String after = oldSource.oneLine(oldSource.end(kept), oldSource.end(old));
                 if (!before.isEmpty()) {
-                    newSource.insert(start, theme.strike(before));
+                    newSource.insert(start, Markup.strike(before));
                 }
                 if (!after.isEmpty()) {
-                    newSource.insert(end, theme.strike(after));
+                    newSource.insert(end, Markup.strike(after));
                 }
                 showUnit(tree);
             }
@@ -394,7 +390,7 @@ final class AstPrinter {
             }
             case BodyChanges.Renamed renamed -> {
                 // The old name struck through in front of the new one, which is marked as added.
-                newSource.insert(renamed.nameStart(), theme.strike(renamed.oldName()) + " ");
+                newSource.insert(renamed.nameStart(), Markup.strike(renamed.oldName()).plus(" "));
                 newSource.added.set(renamed.nameStart(), renamed.nameEnd());
                 showUnit(tree);
                 for (Tree child : children(tree, newSource)) {
@@ -413,7 +409,7 @@ final class AstPrinter {
             if (comment.isChanged()) {
                 String oldText = oldSource.text.substring(comment.oldStart(), comment.oldEnd());
                 if (!words(oldText, comment.newStart(), comment.newEnd())) {
-                    newSource.insert(comment.newStart(), theme.strike(oldText.replaceAll("\\s+", " ")) + " ");
+                    newSource.insert(comment.newStart(), Markup.strike(oldText.replaceAll("\\s+", " ")).plus(" "));
                     newSource.added.set(comment.newStart(), comment.newEnd());
                 }
                 for (long l = newSource.line(comment.newStart()); l <= newSource.line(comment.newEnd() - 1); l++) {
@@ -436,10 +432,10 @@ final class AstPrinter {
                 }
                 block(newSource.line(at), entries);
             } else {
-                String text = theme.strike(oldSource.text.substring(comment.oldStart(), comment.oldEnd())
+                Fragment text = Markup.strike(oldSource.text.substring(comment.oldStart(), comment.oldEnd())
                         .replaceAll("\\s+", " "));
                 boolean leading = at > 0 && Character.isWhitespace(newSource.text.charAt(at - 1));
-                newSource.insert(at, leading ? text + " " : " " + text);
+                newSource.insert(at, leading ? text.plus(" ") : Fragment.of(" ").plus(text));
                 shown.add(newSource.line(at));
             }
         }
@@ -470,7 +466,7 @@ final class AstPrinter {
             showUnit(tree);
             return;
         }
-        newSource.insert(newSource.start(tree), theme.strike(oldSource.oneLine(old)) + " ");
+        newSource.insert(newSource.start(tree), Markup.strike(oldSource.oneLine(old)).plus(" "));
         newSource.added.set(newSource.start(tree), newSource.end(tree));
         showUnit(tree);
     }
@@ -487,7 +483,7 @@ final class AstPrinter {
             return false;
         }
         for (WordDiff.Change change : words) {
-            String removed = theme.removed(change);
+            Fragment removed = Markup.removed(change);
             if (!removed.isEmpty()) {
                 newSource.insert(start + change.start(), removed);
             }
@@ -542,7 +538,7 @@ final class AstPrinter {
                 } else {
                     // A removed argument is struck through with its comma.
                     String comma = !isStatement(old) && oldSource.commaAfter(oldSource.end(old)) >= 0 ? "," : "";
-                    newSource.insert(newSource.start(before), theme.strike(oldSource.oneLine(old) + comma) + " ");
+                    newSource.insert(newSource.start(before), Markup.strike(oldSource.oneLine(old) + comma).plus(" "));
                     showUnit(before);
                 }
             }
@@ -555,10 +551,10 @@ final class AstPrinter {
                     block(newSource.line(Math.min(newSource.end(parent) - 1, newSource.to)), oldLines(old));
                 } else if (!isStatement(old) && oldSource.commaBefore(oldSource.start(old)) >= 0) {
                     // A removed last argument is struck through with its comma.
-                    newSource.insert(position, theme.strike(", " + oldSource.oneLine(old)));
+                    newSource.insert(position, Markup.strike(", " + oldSource.oneLine(old)));
                     showUnit(parent);
                 } else {
-                    newSource.insert(position, " " + theme.strike(oldSource.oneLine(old)));
+                    newSource.insert(position, Fragment.of(" ").plus(Markup.strike(oldSource.oneLine(old))));
                     if (parent == changes.newRoot()) {
                         shown.add(newSource.line(position));
                     } else {
@@ -727,7 +723,7 @@ final class AstPrinter {
                 && newSource.added.nextSetBit(newSource.lineStart(line)) < newSource.lineEnd(line);
     }
 
-    private java.util.stream.Stream<String> inserts(Source source, long line) {
+    private java.util.stream.Stream<Fragment> inserts(Source source, long line) {
         int from = source.lineStart(line);
         int to = source.lineEnd(line);
         return source.inserts.entrySet().stream().filter(e -> e.getKey() >= from && e.getKey() <= to)
@@ -757,7 +753,7 @@ final class AstPrinter {
     }
 
     /** The lines of the entries, indented relative to the least indented of them. */
-    private List<String> render(List<Entry> entries) {
+    private List<Line> render(List<Entry> entries) {
         int indent = Integer.MAX_VALUE;
         for (Entry e : entries) {
             if (e.note() == null && !e.source().clipped(e.line())) {
@@ -765,14 +761,14 @@ final class AstPrinter {
             }
         }
         indent = indent == Integer.MAX_VALUE ? 0 : indent;
-        List<String> lines = new ArrayList<>();
+        List<Line> lines = new ArrayList<>();
         for (Entry e : entries) {
             if (e.note() != null) {
-                lines.add(LineNumbers.number(0, e.marker(), theme.style(Theme.Role.NOTE, e.note())));
+                lines.add(Line.number(0, e.marker(), Markup.style(Css.NOTE, e.note())));
             } else {
                 // A line of added code is marked by its +, the code itself is not.
-                String text = text(e.source(), e.line(), indent, e.marker() != '+');
-                lines.add(LineNumbers.number(e.line(), e.marker(), theme.code(text)));
+                Fragment text = text(e.source(), e.line(), indent, e.marker() != '+');
+                lines.add(Line.number(e.line(), e.marker(), Highlighter.code(text)));
             }
         }
         return lines;
@@ -795,10 +791,10 @@ final class AstPrinter {
     }
 
     /** The line with its marks, without the given indentation, tabs expanded. */
-    private String text(Source source, long line, int indent, boolean markAdded) {
+    private Fragment text(Source source, long line, int indent, boolean markAdded) {
         int from = source.lineStart(line);
         int to = source.lineEnd(line);
-        StringBuilder out = new StringBuilder();
+        Fragment out = Fragment.EMPTY;
         StringBuilder run = new StringBuilder();
         int runFlags = -1;
         int column = 0;
@@ -812,14 +808,16 @@ final class AstPrinter {
             if (leading) {
                 leading = false;
                 int spaces = source.clipped(line) ? 0 : Math.max(0, column - indent);
-                out.append(" ".repeat(spaces));
+                out = out.plus(" ".repeat(spaces));
             }
-            List<String> inserted = source.inserts.get(i);
+            List<Fragment> inserted = source.inserts.get(i);
             if (inserted != null) {
-                out.append(style(run.toString(), runFlags));
+                out = out.plus(style(run.toString(), runFlags));
                 run.setLength(0);
                 runFlags = -1;
-                inserted.forEach(out::append);
+                for (Fragment f : inserted) {
+                    out = out.plus(f);
+                }
             }
             if (i == to) {
                 break;
@@ -827,7 +825,7 @@ final class AstPrinter {
             int flags = (source.comments.get(i) ? 1 : 0) | (markAdded && source.added.get(i) ? 2 : 0)
                     | (source.errors.get(i) ? 4 : 0);
             if (flags != runFlags) {
-                out.append(style(run.toString(), runFlags));
+                out = out.plus(style(run.toString(), runFlags));
                 run.setLength(0);
                 runFlags = flags;
             }
@@ -839,27 +837,25 @@ final class AstPrinter {
                 column++;
             }
         }
-        out.append(style(run.toString(), runFlags));
-        return out.toString().stripTrailing();
+        out = out.plus(style(run.toString(), runFlags));
+        return out.stripTrailing();
     }
 
     /** A run of characters in the styles of its flags: 1 a comment, 2 added, 4 an error. */
-    private String style(String text, int flags) {
+    private static Fragment style(String text, int flags) {
         if (text.isEmpty() || flags <= 0) {
-            return text;
+            return Fragment.of(text);
         }
-        String styled = (flags & 1) != 0 ? theme.style(Theme.Role.COMMENT, text) : text;
-        styled = (flags & 4) != 0 ? theme.error(styled) : styled;
-        if ((flags & 2) != 0) {
-            // The spaces around added code are not marked.
-            String stripped = styled.strip();
-            if (stripped.isEmpty()) {
-                return styled;
-            }
-            int start = styled.indexOf(stripped);
-            return styled.substring(0, start) + theme.added(stripped) + styled.substring(start + stripped.length());
+        // The spaces around added code are not marked.
+        String stripped = (flags & 2) != 0 ? text.strip() : text;
+        if (stripped.isEmpty()) {
+            return Fragment.of(text);
         }
-        return styled;
+        int start = text.indexOf(stripped);
+        Fragment styled = (flags & 1) != 0 ? Markup.style(Css.COMMENT, stripped) : Fragment.of(stripped);
+        styled = (flags & 4) != 0 ? Markup.style(Css.ERROR, styled) : styled;
+        styled = (flags & 2) != 0 ? Markup.added(styled) : styled;
+        return Fragment.of(text.substring(0, start)).plus(styled).plus(text.substring(start + stripped.length()));
     }
 
     private static boolean isStatement(Tree tree) {
