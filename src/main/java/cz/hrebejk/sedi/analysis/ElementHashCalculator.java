@@ -434,6 +434,7 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
             }
 
             if (el != null && el.getKind() == ElementKind.ENUM_CONSTANT) {
+                varNode.setEnumConstant(true);
                 synthesized.add(node.getType());
                 if (node.getInitializer() instanceof NewClassTree newClass) {
                     synthesized.add(newClass.getIdentifier());

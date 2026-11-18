@@ -372,6 +372,39 @@ public class ReporterTest extends TestCase {
     }
 
     /**
+     * The arguments of an enum constant follow its name: removed ones, leaving nothing of the new version in the
+     * source, are shown struck through, added ones to a constant without them as added, changed ones replaced.
+     */
+    public void testEnumConstantArguments() throws Exception {
+        assertEquals(List.of("~   ├── public static final E A~~(\"a\")~~",
+                        "~   └── public static final E B~~(\"b\")~~"),
+                enumImplementation("public enum E {\n  A(\"a\"),\n  B(\"b\");\n  E(String s) { }\n}\n",
+                        "public enum E {\n  A,\n  B;\n  E(String s) { }\n}\n"));
+        assertEquals(List.of("~   ├── public static final E A__(\"a\")__",
+                        "~   └── public static final E B__{ }__"),
+                enumImplementation("public enum E {\n  A,\n  B;\n  E() { }\n}\n",
+                        "public enum E {\n  A(\"a\"),\n  B { };\n  E() { }\n}\n"));
+        assertEquals(List.of("~   └── public static final E A~~(\"a\")~~ __(\"x\")__"),
+                enumImplementation("public enum E {\n  A(\"a\"),\n  B(\"b\");\n  E(String s) { }\n}\n",
+                        "public enum E {\n  A(\"x\"),\n  B(\"b\");\n  E(String s) { }\n}\n"));
+    }
+
+    /** The lines of the constants of the enum in the implementation changes. */
+    private static List<String> enumImplementation(String oldSource, String newSource) throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("E.java", oldSource);
+            helper.commit("init");
+            helper.writeFile("E.java", newSource);
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                List<String> lines = new Reporter(Theme.PLAIN, new ReportOptions(ChangeLevel.IMPLEMENTATION,
+                        ReportOptions.Grouping.BY_CATEGORY)).report(analyzer.analyzeChanges());
+                return lines.subList(lines.indexOf("# Implementation changes"), lines.size()).stream()
+                        .filter(l -> l.contains("static final E")).toList();
+            }
+        }
+    }
+
+    /**
      * Tests that the members javac adds are not reported: the default constructor and the fields of the components
      * of a record. A constructor written in place of the default one is reported as added, and a change of the
      * components shows in the header of the record.

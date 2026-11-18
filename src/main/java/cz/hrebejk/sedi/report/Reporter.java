@@ -472,7 +472,10 @@ public final class Reporter {
         above.addAll(printer.annotations(unchanged));
         boolean changedLine = initializer != null && LineNumbers.marker(initializer) != ' '
                 && LineNumbers.marker(initializer) != LineNumbers.NONE;
-        String rest = initializer == null ? "" : " = " + LineNumbers.text(initializer).strip();
+        // The arguments and the class body of an enum constant follow its name, an initializer follows =.
+        ElementInfo element = pair.isRemoved() ? pair.oldElement() : pair.newElement();
+        String rest = initializer == null ? ""
+                : (element.isEnumConstant() ? "" : " = ") + LineNumbers.text(initializer).strip();
         String head = (cosmetic ? cosmeticPrinter : printer).format(pair, typeName, changedLine);
         return new Node(above, head + rest + suffix, below, children);
     }

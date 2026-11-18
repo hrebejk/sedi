@@ -56,6 +56,7 @@ public class ElementInfo {
     /** The source the element is in, {@code null} if it is not known. */
     private SourceText source;
     private long line;
+    private boolean enumConstant;
 
     /**
      * Enum defining the type of reduced AST node.
@@ -464,6 +465,20 @@ public class ElementInfo {
      */
     public NodeType getNodeType() {
         return nodeType;
+    }
+
+    /**
+     * Returns whether the element is a constant of an enum. Its body, if any, is the arguments and the class body
+     * following its name, like {@code ("a")} in {@code A("a")}, not an initializer after {@code =}.
+     *
+     * @return {@code true} for an enum constant
+     */
+    public boolean isEnumConstant() {
+        return enumConstant;
+    }
+
+    void setEnumConstant(boolean enumConstant) {
+        this.enumConstant = enumConstant;
     }
 
     /**

@@ -281,6 +281,22 @@ final class AstPrinter {
      *         of them
      */
     List<String> print() {
+        if (!newSource.isPresent(changes.newRoot())) {
+            // An enum constant whose arguments and class body were all removed: nothing of the new version is in
+            // the source but its name, the old version is shown struck through.
+            if (!oldSource.isPresent(changes.oldRoot())) {
+                return List.of();
+            }
+            int start = newSource.start(changes.newRoot());
+            return List.of(LineNumbers.number(start < 0 ? 0 : newSource.line(start), '~',
+                    theme.code(theme.strike(oldSource.oneLine(changes.oldRoot())))));
+        }
+        if (!oldSource.isPresent(changes.oldRoot())
+                && newSource.firstLine(changes.newRoot()) == newSource.lastLine(changes.newRoot())) {
+            // Arguments or a class body added to an enum constant without them, on its line: all of it is added.
+            return List.of(LineNumbers.number(newSource.firstLine(changes.newRoot()), '~',
+                    theme.code(theme.added(newSource.oneLine(changes.newRoot())))));
+        }
         findUnits(changes.newRoot(), null);
         decorate(changes.newRoot(), true);
         removed();
@@ -442,6 +458,12 @@ final class AstPrinter {
      * changed string literal shows only the changed words, if it did not change too much.
      */
     private void replace(Tree tree, Tree old) {
+        if (!oldSource.isPresent(old)) {
+            // Nothing of the old version in the source, like the arguments added to an enum constant without them.
+            newSource.added.set(newSource.start(tree), newSource.end(tree));
+            showUnit(tree);
+            return;
+        }
         if (tree.getKind() == Tree.Kind.STRING_LITERAL && old.getKind() == Tree.Kind.STRING_LITERAL
                 && words(oldSource.text.substring(oldSource.start(old), oldSource.end(old)),
                 newSource.start(tree), newSource.end(tree))) {
