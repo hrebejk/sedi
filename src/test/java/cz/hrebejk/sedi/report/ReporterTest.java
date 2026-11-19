@@ -311,6 +311,25 @@ public class ReporterTest extends TestCase {
         }
     }
 
+    /** A file moved to another package of the same source root: only the package is shown changed. */
+    public void testTitleOfMovedPackageKeepsSourceRoot() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            java.nio.file.Path old = helper.writeFile("src/main/java/a/Foo.java",
+                    "package a;\npublic class Foo {\n  void m() { }\n}\n");
+            helper.commit("init");
+            java.nio.file.Files.delete(old);
+            helper.writeFile("src/main/java/b/Foo.java", "package b;\npublic class Foo {\n  void m() { }\n}\n");
+            helper.commit("change");
+
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                FileAnalysis file = analyzer.analyzeCommit("HEAD", p -> true).files().getFirst();
+                assertLines(List.of(fileTitle('→', name("Foo.java"), " ", pkg(strike("a"), " ", added("b")), " ",
+                                pkg("src/main/java"))),
+                        LineNumbers.render(List.of(Line.outside(new Reporter().title(file))), false));
+            }
+        }
+    }
+
     /**
      * Tests the file headings for renamed, added and deleted files.
      */

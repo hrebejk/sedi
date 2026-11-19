@@ -773,15 +773,24 @@ public final class Reporter {
         DiffEntry.ChangeType type = file.diff().getChangeType();
         String oldName = type == DiffEntry.ChangeType.ADD ? "" : fileName(file.diff().getOldPath());
         String newName = type == DiffEntry.ChangeType.DELETE ? "" : fileName(file.diff().getNewPath());
-        String oldPackage = type == DiffEntry.ChangeType.ADD ? ""
-                : withSourceRoot(file.diff().getOldPath(), file.oldPackage());
-        String newPackage = type == DiffEntry.ChangeType.DELETE ? ""
-                : withSourceRoot(file.diff().getNewPath(), file.newPackage());
         boolean deleted = type == DiffEntry.ChangeType.DELETE;
         Fragment name = deleted ? Markup.strike(oldName) : Markup.style(Css.TITLE, printer.slot(oldName, newName));
-        Fragment pkg = deleted ? Markup.strike(oldPackage)
-                : Markup.style(Css.PACKAGE, printer.slot(oldPackage, newPackage));
-        Fragment title = pkg.isEmpty() ? name : name.plus(" ").plus(pkg);
+        Fragment title = name;
+        String deletedPackage = deleted ? withSourceRoot(file.diff().getOldPath(), file.oldPackage()) : "";
+        if (!deletedPackage.isEmpty()) {
+            title = title.plus(" ").plus(Markup.strike(deletedPackage));
+        } else if (!deleted) {
+            // The package and the source root are compared apart: an unchanged one is shown once.
+            boolean added = type == DiffEntry.ChangeType.ADD;
+            String oldPackage = added ? "" : file.oldPackage();
+            String oldRoot = added ? "" : sourceRoot(file.diff().getOldPath(), file.oldPackage());
+            String newRoot = sourceRoot(file.diff().getNewPath(), file.newPackage());
+            for (Fragment part : List.of(printer.slot(oldPackage, file.newPackage()), printer.slot(oldRoot, newRoot))) {
+                if (!part.isEmpty()) {
+                    title = title.plus(" ").plus(Markup.style(Css.PACKAGE, part));
+                }
+            }
+        }
         Fragment mark = switch (type) {
             case ADD -> Markup.sign(true);
             case DELETE -> Markup.sign(false);
