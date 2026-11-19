@@ -214,7 +214,26 @@ public class ReporterTest extends TestCase {
                 assertTrue(markup(fold), Css.FOLD.on(fold));
                 assertEquals("Foo.java", fold.attrs.get("data-name"));
                 assertEquals(List.of("~ Foo.java", "    public class Foo", "~   \u2514\u2500\u2500 int long a"),
-                        texts(fold.children));
+                        texts(lines(fold)));
+                // The type with its changed members is folded too, under its signature.
+                HTML.Tag type = (HTML.Tag) fold.children.getLast();
+                assertTrue(markup(type), Css.FOLD.on(type));
+                assertEquals("public class Foo", type.attrs.get("data-name"));
+            }
+        }
+    }
+
+    /** An element with nothing under its signature is no fold. */
+    public void testLeafIsNotFolded() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", "public class Foo {\n  int a;\n}\n");
+            helper.commit("init");
+            helper.writeFile("Foo.java", "public class Foo {\n  long a;\n}\n");
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                HTML.Tag type = (HTML.Tag) ((HTML.Tag) new Reporter().report(analyzer.analyzeChanges())
+                        .children.getLast()).children.getLast();
+                assertEquals(markup(type), 2, type.children.size());
+                assertFalse(markup(type), Css.FOLD.on((HTML.Tag) type.children.getLast()));
             }
         }
     }

@@ -451,9 +451,28 @@ public final class Reporter {
     /** Adds a top level element, its signature indented by {@code indent}, with the tree of the elements in it. */
     private void addTree(List<Line> lines, String indent, Node node) {
         node.above().forEach(l -> lines.add(l.withPrefix(indent)));
+        foldStart(lines, node);
         lines.add(node.head().withPrefix(indent));
         node.below().forEach(l -> lines.add(l.withPrefix(indent)));
         addBranches(lines, Fragment.of(indent), node.children());
+        foldEnd(lines, node);
+    }
+
+    /**
+     * Starts the fold of an element with something under its signature, its lines or the elements in it, so the
+     * signature can collapse them; the javadoc and the annotations above it stay out of the fold.
+     */
+    private static void foldStart(List<Line> lines, Node node) {
+        if (!node.below().isEmpty() || !node.children().isEmpty()) {
+            lines.add(Line.fold(node.head().content().text()));
+        }
+    }
+
+    /** Ends the fold {@link #foldStart} started, if any. */
+    private static void foldEnd(List<Line> lines, Node node) {
+        if (!node.below().isEmpty() || !node.children().isEmpty()) {
+            lines.add(Line.end());
+        }
     }
 
     /** Adds the elements below their parent, each on a branch starting under the signature of the parent. */
@@ -464,9 +483,11 @@ public final class Reporter {
             Fragment through = prefix.plus(branch("\u2502   "));
             Fragment below = prefix.plus(branch(last ? "    " : "\u2502   "));
             node.above().forEach(l -> lines.add(l.withPrefix(through)));
+            foldStart(lines, node);
             lines.add(node.head().withPrefix(prefix.plus(branch(last ? "\u2514\u2500\u2500 " : "\u251c\u2500\u2500 "))));
             node.below().forEach(l -> lines.add(l.withPrefix(below)));
             addBranches(lines, below, node.children());
+            foldEnd(lines, node);
         }
     }
 

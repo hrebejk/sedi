@@ -138,17 +138,20 @@ final class WebReport {
     }
 
     private static final String HEADING_CLASS = "heading";
+    /** The class of a line left of the column of the numbers, like the line between the files. */
+    private static final String OUTSIDE_CLASS = "outside";
     private static final String HEADING_MARK_CLASS = "heading-mark";
 
     /**
-     * The report with headings for the page instead of the console: the {@code #} of a heading is left blank, so
+     * The report for the page instead of the console. The lines between the files are left out, the style sheet
+     * sets the files apart. The {@code #} of a heading is left blank, so
      * the mark of a fold shows there under the mouse (see {@code sedi.css}), the indentation in front of it is left
      * out, as the style sheet places the heading, and the heading of the only level shown
      * is left out with the blank line after it, as its button in the tool bar says which level it is.
      *
      * @param withoutHeading whether the heading of the level is left out
      */
-    private static HTML.Tag withWebHeadings(HTML.Tag tag, boolean withoutHeading) {
+    private static HTML.Tag forPage(HTML.Tag tag, boolean withoutHeading) {
         HTML.Tag copy = new HTML.Tag(tag.tagName).attributes(tag.attrs);
         if (hasClass(tag, HEADING_MARK_CLASS)) {
             return copy.children(HTML.Text(" "));
@@ -167,8 +170,10 @@ final class WebReport {
             boolean heading = child instanceof HTML.Tag line && line.children.stream()
                     .anyMatch(c -> c instanceof HTML.Tag span && hasClass(span, HEADING_CLASS));
             boolean blank = child instanceof HTML.Tag br && br.tagName.equals("br");
-            if (!(withoutHeading && (heading || afterHeading && blank))) {
-                children.add(child instanceof HTML.Tag childTag ? withWebHeadings(childTag, withoutHeading) : child);
+            boolean separator = child instanceof HTML.Tag line && hasClass(line, OUTSIDE_CLASS)
+                    && line.getInnerText().matches("\u2500+");
+            if (!separator && !(withoutHeading && (heading || afterHeading && blank))) {
+                children.add(child instanceof HTML.Tag childTag ? forPage(childTag, withoutHeading) : child);
             }
             afterHeading = heading;
         }
@@ -256,8 +261,9 @@ final class WebReport {
                 } else {
                     HTML.Tag report = view.report(last);
                     content.add(report.children.isEmpty() ? HTML.DIV("No changes.").clazz("message")
-                            : withFoldComponents(withWebHeadings(report, view.only() != null), "",
-                                    new HashMap<>()));
+                            // The report as wide as its longest line, so are the files in it, scrolled sideways.
+                            : HTML.DIV(withFoldComponents(forPage(report, view.only() != null), "",
+                                    new HashMap<>())).clazz("scroller"));
                 }
             }
             return HTML.DIV().children(content).clazz("sedi");

@@ -43,6 +43,7 @@
 :root {
   color-scheme: dark;
   --page: #1e2127;
+  --file: #262a32;
   --bar: #16181d;
   --text: #c8ccd4;
   --dim: #8a93a5;
@@ -118,15 +119,38 @@ body {
   color: var(--dim);
 }
 
-/* As on the console: one line of text for every line of the report, spaces kept. */
+/* The report scrolls sideways, not the page with the tool bar. */
+.scroller {
+  overflow-x: auto;
+}
+
+/* As on the console: one line of text for every line of the report, spaces kept. As wide as the page or as its
+   longest line, so is each file in it. */
 .report {
-  padding: 12px 16px;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: 100%;
+  padding: 12px 0;
   font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
   /* The code as it is written: no != drawn as ≠ or -> as an arrow. */
   font-variant-ligatures: none;
   white-space: pre;
   line-height: 1.2;
-  overflow-x: auto;
+}
+
+/* What is not in a file, like the note of no changes, as indented as the files. */
+.report > :not(.fold) {
+  padding: 0 16px;
+}
+
+/* Each file on a lighter background across the whole width, apart from the one above it. */
+.report > .fold {
+  padding: 6px 16px;
+  background: var(--file);
+}
+
+.report > .fold + .fold {
+  margin-top: 16px;
 }
 
 /* The name of a level of a file in the report by file reads as a title, not as code. */
@@ -149,7 +173,7 @@ body {
 }
 
 @media (max-width: 600px) {
-  .toolbar, .report, .message {
+  .toolbar, .message, .report > .fold, .report > :not(.fold) {
     padding-left: 8px;
     padding-right: 8px;
   }
@@ -159,25 +183,25 @@ body {
   }
 }
 
-/* A file collapsible to its title, see sedi.js. Over the title its mark turns into what a click does:
-   ▾ collapses, ▸ expands. */
+/* A file, a level of it or an element with something under its signature collapsible to its first line, see
+   sedi.js. Over the line its mark or number turns into what a click does: ▾ collapses, ▸ expands. */
 .fold-head {
   cursor: pointer;
 }
 
-.fold-head:hover > .line > :first-child {
+.fold-head:hover > .line > :first-child:is(.ln, .add-mark, .remove-mark, .change-mark, .heading-mark) {
   position: relative;
   color: transparent;
 }
 
-.fold-head:hover > .line > :first-child::before {
+.fold-head:hover > .line > :first-child:is(.ln, .add-mark, .remove-mark, .change-mark, .heading-mark)::before {
   position: absolute;
   left: 0;
   content: "▾";
   color: var(--active-border);
 }
 
-.fold.closed > .fold-head:hover > .line > :first-child::before {
+.fold.closed > .fold-head:hover > .line > :first-child:is(.ln, .add-mark, .remove-mark, .change-mark, .heading-mark)::before {
   content: "▸";
 }
 
