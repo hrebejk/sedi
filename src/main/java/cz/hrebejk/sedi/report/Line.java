@@ -34,7 +34,13 @@ record Line(Kind kind, long number, char marker, Fragment prefix, Fragment conte
         /** A line left of the column of the numbers, like a heading. */
         OUTSIDE,
         /** An empty line. */
-        BLANK
+        BLANK,
+        /** Not a line: the start of a {@link Css#FOLD fold}, named by the text of the content. */
+        FOLD,
+        /** Not a line: the start of a fold collapsed at first, else as {@link #FOLD}. */
+        FOLDED,
+        /** Not a line: the end of the fold started last. */
+        END
     }
 
     /** A line numbered by a line of the source, without a marker. */
@@ -62,14 +68,38 @@ record Line(Kind kind, long number, char marker, Fragment prefix, Fragment conte
         return new Line(Kind.BLANK, 0, NONE, Fragment.EMPTY, Fragment.EMPTY);
     }
 
+    /**
+     * The start of a part of the report which can be collapsed to its first line; the lines up to the
+     * {@link #end()} are in it.
+     *
+     * @param name names the part, e.g. the path of a file
+     */
+    static Line fold(String name) {
+        return fold(name, true);
+    }
+
+    /**
+     * The start of a fold, see {@link #fold(String)}.
+     *
+     * @param open whether the part is shown expanded at first, where it can be collapsed
+     */
+    static Line fold(String name, boolean open) {
+        return new Line(open ? Kind.FOLD : Kind.FOLDED, 0, NONE, Fragment.EMPTY, Fragment.of(name));
+    }
+
+    /** The end of the fold started last. */
+    static Line end() {
+        return new Line(Kind.END, 0, NONE, Fragment.EMPTY, Fragment.EMPTY);
+    }
+
     /** The line with the text put in front of its prefix; a blank line stays blank. */
     Line withPrefix(String text) {
         return withPrefix(Fragment.of(text));
     }
 
-    /** The line with the fragment put in front of its prefix; a blank line stays blank. */
+    /** The line with the fragment put in front of its prefix; a blank line and the bounds of a fold stay as they are. */
     Line withPrefix(Fragment fragment) {
-        return kind == Kind.BLANK || fragment.isEmpty() ? this
+        return kind == Kind.BLANK || kind == Kind.FOLD || kind == Kind.FOLDED || kind == Kind.END || fragment.isEmpty() ? this
                 : new Line(kind, number, marker, fragment.plus(prefix), content);
     }
 

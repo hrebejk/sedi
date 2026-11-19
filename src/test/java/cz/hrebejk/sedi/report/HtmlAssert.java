@@ -26,9 +26,21 @@ final class HtmlAssert {
     private HtmlAssert() {
     }
 
-    /** The lines of the report: its {@code div.line} and {@code br} elements. */
+    /** The lines of the report: its {@code div.line} and {@code br} elements, also those in the folds. */
     static List<HTML> lines(HTML.Tag report) {
-        return new ArrayList<>(report.children);
+        List<HTML> lines = new ArrayList<>();
+        addLines(report.children, lines);
+        return lines;
+    }
+
+    private static void addLines(List<HTML> nodes, List<HTML> lines) {
+        for (HTML node : nodes) {
+            if (node instanceof HTML.Tag tag && Css.FOLD.on(tag)) {
+                addLines(tag.children, lines);
+            } else {
+                lines.add(node);
+            }
+        }
     }
 
     /** The report has exactly the lines. */

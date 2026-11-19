@@ -31,6 +31,12 @@
   font-weight: 500;
   font-display: swap;
 }
+@font-face {
+  font-family: "Roboto";
+  src: url("fonts/roboto-latin-700-normal.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
 
 /* The page around the report. The colors of the report come from the style sheet of sedi (style.css), made for
    a dark terminal, so the page is dark too. */
@@ -116,9 +122,21 @@ body {
 .report {
   padding: 12px 16px;
   font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  /* The code as it is written: no != drawn as ≠ or -> as an arrow. */
+  font-variant-ligatures: none;
   white-space: pre;
   line-height: 1.2;
   overflow-x: auto;
+}
+
+/* The name of a level of a file in the report by file reads as a title, not as code. */
+.report .level {
+  font-family: "Roboto", system-ui, sans-serif;
+  font-weight: 700;
+}
+
+.report .line:has(> .level) {
+  margin: 8px 0 4px;
 }
 
 .message {
@@ -139,4 +157,32 @@ body {
     margin-left: 0;
     width: 100%;
   }
+}
+
+/* A file collapsible to its title, see sedi.js. Over the title its mark turns into what a click does:
+   ▾ collapses, ▸ expands. */
+.fold-head {
+  cursor: pointer;
+}
+
+.fold-head:hover > .line > :first-child {
+  position: relative;
+  color: transparent;
+}
+
+.fold-head:hover > .line > :first-child::before {
+  position: absolute;
+  left: 0;
+  content: "▾";
+  color: var(--active-border);
+}
+
+.fold.closed > .fold-head:hover > .line > :first-child::before {
+  content: "▸";
+}
+
+/* A collapsed file says that there is more under its title. */
+.fold.closed > .fold-head > .line::after {
+  content: " …";
+  color: var(--dim);
 }

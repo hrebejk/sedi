@@ -72,7 +72,9 @@ public final class ReportStyles {
         LINE_NUMBER(".ln"),
         TREE(".tree"),
         NOTE(".note"),
-        NO_CHANGES(".no-changes");
+        NO_CHANGES(".no-changes"),
+        /** The name of a level of the changes of a file. */
+        LEVEL(".level");
 
         final String selectors;
 
@@ -218,6 +220,7 @@ public final class ReportStyles {
             case TREE -> fg("tree");
             case NOTE -> fg("note");
             case NO_CHANGES -> bold("no-changes");
+            case LEVEL -> (s, p) -> s.fontStyle(CssValues.FontStyle.BOLD);
         };
     }
 

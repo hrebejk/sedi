@@ -78,7 +78,14 @@ enum Css {
     /** Remarks of the report, like collapsed or left out code. */
     NOTE,
     /** The remark of a section without changes. */
-    NO_CHANGES;
+    NO_CHANGES,
+    /** The name of a level of the changes of a file, see {@link Reporter#reportByFile}. */
+    LEVEL,
+    /**
+     * A part of the report which can be collapsed to its first line, like a file under its title. Its
+     * {@code data-name} names it, e.g. by the path of the file.
+     */
+    FOLD;
 
     private final String cssClass = name().toLowerCase(Locale.ROOT).replace('_', '-');
 

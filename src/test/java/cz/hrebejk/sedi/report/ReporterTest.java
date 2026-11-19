@@ -69,7 +69,7 @@ public class ReporterTest extends TestCase {
                     + "  void n7() { } void n8() { } void n9() { }\n\n\n void ten() { }\n}\n");
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                ReportOptions options = new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY,
+                ReportOptions options = new ReportOptions(ChangeLevel.API,
                         ReportOptions.DEFAULT_BODY_CONTEXT, ReportOptions.NO_JAVADOC, true);
                 List<HTML> lines = lines(new Reporter(options).report(analyzer.analyzeChanges()));
                 assertLines(List.of(
@@ -98,7 +98,7 @@ public class ReporterTest extends TestCase {
             helper.writeFile("Foo.java", "\nimport static java.lang.Math.max;\n\nimport java.util.Set;\n"
                     + "public class Foo {\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                ReportOptions options = new ReportOptions(ChangeLevel.IMPORTS, ReportOptions.Grouping.BY_TYPE,
+                ReportOptions options = new ReportOptions(ChangeLevel.IMPORTS,
                         ReportOptions.DEFAULT_BODY_CONTEXT, ReportOptions.NO_JAVADOC, true);
                 List<HTML> lines = lines(new Reporter(options).reportOnly(analyzer.analyzeChanges(),
                         ChangeLevel.IMPORTS));
@@ -117,9 +117,9 @@ public class ReporterTest extends TestCase {
             helper.writeFile("Foo.java", "public class Foo {\n\n  /**\n   * Hello big world.\n   *\n   * Third.\n   */\n"
                     + "  public void m() { }\n  /** Added. */\n  public void n() { }\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                ReportOptions options = new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_TYPE,
+                ReportOptions options = new ReportOptions(ChangeLevel.API,
                         ReportOptions.DEFAULT_BODY_CONTEXT, ReportOptions.WHOLE_JAVADOC, true);
-                List<HTML> lines = lines(new Reporter(options).report(analyzer.analyzeChanges()));
+                List<HTML> lines = lines(new Reporter(options).report(analyzer.analyzeChanges().files().getFirst()));
                 assertLines(List.of(
                         line(" 1", ' ', "  ", code("public class ", decl("Foo"))),
                         line(" 4", '~', "  ", tree("│   "), code(comment("* Hello ", added("big"), " world."))),
@@ -129,7 +129,7 @@ public class ReporterTest extends TestCase {
                         line(" 8", ' ', "  ", tree("├── "), code("public void ", decl("m"), "()")),
                         line(" 9", '+', "  ", tree("│   "), code(comment("* Added."))),
                         line("10", '+', "  ", tree("└── "), code("public void ", decl("n"), "()"))),
-                        lines.subList(1, lines.size()));
+                        lines);
             }
         }
     }
@@ -141,7 +141,7 @@ public class ReporterTest extends TestCase {
             helper.commit("init");
             helper.writeFile("Foo.java", "public class Foo {\n  long a;\n  void added() { }\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                ReportOptions options = new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY,
+                ReportOptions options = new ReportOptions(ChangeLevel.API,
                         ReportOptions.DEFAULT_BODY_CONTEXT, ReportOptions.NO_JAVADOC, true);
                 HTML.Tag report = new Reporter(options).report(analyzer.analyzeChanges());
                 Palette palette = ReportStyles.palette();
@@ -154,11 +154,76 @@ public class ReporterTest extends TestCase {
         }
     }
 
+    /**
+     * The report by file shows every level, whatever the options say: under each file the levels with changes, each
+     * under its name. The file and the levels are folds, all but the API collapsed at first.
+     */
+    public void testReportByFile() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", "import java.util.List;\npublic class Foo {\n  int a;\n"
+                    + "  int b() { return 1; }\n}\n");
+            helper.writeFile("Bar.java", "import java.util.List;\npublic class Bar {\n}\n");
+            helper.commit("init");
+            helper.writeFile("Foo.java", "import java.util.Set;\npublic class Foo {\n  long a;\n"
+                    + "  int b() { return 2; }\n}\n");
+            helper.writeFile("Bar.java", "import java.util.Set;\npublic class Bar {\n}\n");
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                HTML.Tag report = new Reporter(new ReportOptions(ChangeLevel.API))
+                        .reportByFile(analyzer.analyzeChanges());
+                assertEquals(List.of(
+                                "~ Bar.java",
+                                "  # Imports",
+                                "-   import java.util.List",
+                                "+   import java.util.Set",
+                                "\u2500".repeat(Reporter.DEFAULT_WIDTH),
+                                "~ Foo.java",
+                                "  # API",
+                                "    public class Foo",
+                                "~   \u2514\u2500\u2500 int long a",
+                                "  # Implementation",
+                                "    public class Foo",
+                                "    \u2514\u2500\u2500 int b() {",
+                                "~             return 1 2;",
+                                "        }",
+                                "  # Imports",
+                                "-   import java.util.List",
+                                "+   import java.util.Set"),
+                        texts(lines(report)));
+                HTML.Tag foo = (HTML.Tag) report.children.get(2);
+                assertEquals("Foo.java", foo.attrs.get("data-name"));
+                List<HTML.Tag> levels = foo.children.stream().skip(1).map(HTML.Tag.class::cast).toList();
+                assertEquals(List.of("API", "Implementation", "Imports"),
+                        levels.stream().map(l -> l.attrs.get("data-name")).toList());
+                assertEquals(java.util.Arrays.asList(null, "false", "false"),
+                        levels.stream().map(l -> l.attrs.get("data-open")).toList());
+            }
+        }
+    }
+
+    /** The lines of a file are in a fold, its title first, so the file can be collapsed to its title. */
+    public void testFileIsFolded() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", "public class Foo {\n  int a;\n}\n");
+            helper.commit("init");
+            helper.writeFile("Foo.java", "public class Foo {\n  long a;\n}\n");
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                HTML.Tag report = new Reporter().report(analyzer.analyzeChanges());
+                // The heading of the API changes, an empty line and the file.
+                assertEquals(markup(report.children), 3, report.children.size());
+                HTML.Tag fold = (HTML.Tag) report.children.getLast();
+                assertTrue(markup(fold), Css.FOLD.on(fold));
+                assertEquals("Foo.java", fold.attrs.get("data-name"));
+                assertEquals(List.of("~ Foo.java", "    public class Foo", "~   \u2514\u2500\u2500 int long a"),
+                        texts(fold.children));
+            }
+        }
+    }
+
     /** The color of the number of the line with the number and the mark, as the style sheet computes it. */
     private static org.maraboo.fleck.css.CssValues.Color numberColor(HTML.Tag report, StyleSheet styleSheet,
                                                                       String number, String mark) {
         org.maraboo.fleck.css.Style reportStyle = styleSheet.computeStyle(report, null);
-        for (HTML node : report.children) {
+        for (HTML node : lines(report)) {
             if (node instanceof HTML.Tag line && line.children.size() > 2
                     && line.children.get(0) instanceof HTML.Tag ln && Css.LN.on(ln)
                     && ln.getInnerText().equals(number) && line.children.get(2).getInnerText().strip().equals(mark)) {
@@ -258,41 +323,22 @@ public class ReporterTest extends TestCase {
         }
     }
 
-    /**
-     * Tests that the files grouped by type are separated by an empty line, as in the grouping by category, and that
-     * {@link Reporter#withGrouping} switches the grouping.
-     */
-    public void testFilesGroupedByTypeAreSeparated() throws Exception {
-        try (GitTestHelper helper = new GitTestHelper()) {
-            helper.writeFile("A.java", "public class A { public int a; }\n");
-            helper.writeFile("B.java", "public class B { public int b; }\n");
-            helper.commit("init");
-            helper.writeFile("A.java", "public class A { public long a; }\n");
-            helper.writeFile("B.java", "public class B { public long b; }\n");
-            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                Reporter byType = new Reporter(ReportOptions.DEFAULT);
-                assertLines(List.of(
-                        fileTitle('~', name("A.java")),
-                        line(' ', "  ", code("public class ", decl("A"))),
-                        line('~', "  ", tree("└── "), code("public ", strike("int"), " ", added("long"), " ",
-                                decl("a"))),
-                        separator(),
-                        fileTitle('~', name("B.java")),
-                        line(' ', "  ", code("public class ", decl("B"))),
-                        line('~', "  ", tree("└── "), code("public ", strike("int"), " ", added("long"), " ",
-                                decl("b")))),
-                        byType.report(analyzer.analyzeChanges()));
-                Reporter byCategory = byType.withGrouping(ReportOptions.Grouping.BY_CATEGORY);
-                assertEquals(ReportOptions.Grouping.BY_CATEGORY, byCategory.grouping());
-                assertHtml(heading("API changes"), lines(byCategory.report(analyzer.analyzeChanges())).getFirst());
-            }
-        }
-    }
-
     private static final String BEFORE = "import java.util.List;\npublic class Foo {\n  public int a;\n  private int b;\n"
             + "  public int m() { return 1; }\n  private int n() { return 1; }\n  int o() { int x = 1; return x; }\n}\n";
     private static final String AFTER = "import java.util.Set;\npublic class Foo {\n  public long a;\n  private long b;\n"
             + "  public int m() { return 2; }\n  private int n() { return 1; }\n  int o() { int y = 1; return y; }\n}\n";
+
+    /** The report of the changes of {@code BEFORE} to {@code AFTER} in {@code Foo.java}. */
+    private HTML.Tag fileReport(ReportOptions options) throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", BEFORE);
+            helper.commit("init");
+            helper.writeFile("Foo.java", AFTER);
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                return new Reporter(options).report(analyzer.analyzeChanges().files().getFirst());
+            }
+        }
+    }
 
     private HTML.Tag report(ReportOptions options) throws Exception {
         try (GitTestHelper helper = new GitTestHelper()) {
@@ -310,6 +356,8 @@ public class ReporterTest extends TestCase {
      */
     public void testDefaultShowsOnlyApi() throws Exception {
         assertLines(List.of(
+                heading("API changes"),
+                blank(),
                 fileTitle('~', name("Foo.java")),
                 line(' ', "  ", code("public class ", decl("Foo"))),
                 line('~', "  ", tree("├── "), code("public ", strike("int"), " ", added("long"), " ", decl("a"))),
@@ -318,11 +366,11 @@ public class ReporterTest extends TestCase {
     }
 
     /**
-     * Tests that a deeper level adds the less important changes, tagged, and the imports last.
+     * Tests that in the report of a file a deeper level adds the less important changes, tagged, and the imports
+     * last.
      */
-    public void testLevelsByType() throws Exception {
+    public void testLevelsOfFile() throws Exception {
         assertLines(List.of(
-                fileTitle('~', name("Foo.java")),
                 line(' ', "  ", code("public class ", decl("Foo"))),
                 line('~', "  ", tree("├── "), code("public ", strike("int"), " ", added("long"), " ", decl("a"))),
                 line('~', "  ", tree("├── "), code("private ", strike("int"), " ", added("long"), " ", decl("b"))),
@@ -335,16 +383,15 @@ public class ReporterTest extends TestCase {
                 line(' ', "      ", code("}")),
                 line('-', "  ", code(strike("import java.util.List"), " ", tag("import"))),
                 line('+', "  ", code("import java.util.Set ", tag("import")))),
-                report(new ReportOptions(ChangeLevel.IMPORTS, ReportOptions.Grouping.BY_TYPE)));
+                fileReport(new ReportOptions(ChangeLevel.IMPORTS)));
         assertLines(List.of(
-                fileTitle('~', name("Foo.java")),
                 line(' ', "  ", code("public class ", decl("Foo"))),
                 line('~', "  ", tree("├── "), code("public ", strike("int"), " ", added("long"), " ", decl("a"))),
                 line('~', "  ", tree("├── "), code("private ", strike("int"), " ", added("long"), " ", decl("b"))),
                 line(' ', "  ", tree("└── "), code("public int ", decl("m"), "() { ", tag("impl"))),
                 line('~', "            ", code("return ", strike("1"), " ", added("2"), ";")),
                 line(' ', "      ", code("}"))),
-                report(new ReportOptions(ChangeLevel.IMPLEMENTATION, ReportOptions.Grouping.BY_TYPE)));
+                fileReport(new ReportOptions(ChangeLevel.IMPLEMENTATION)));
     }
 
     /**
@@ -381,7 +428,7 @@ public class ReporterTest extends TestCase {
                 fileTitle('~', name("Foo.java")),
                 line('-', "  ", code(strike("import java.util.List"))),
                 line('+', "  ", code("import java.util.Set"))),
-                report(new ReportOptions(ChangeLevel.IMPORTS, ReportOptions.Grouping.BY_CATEGORY)));
+                report(new ReportOptions(ChangeLevel.IMPORTS)));
     }
 
     /** The implementation changes are in the order of the new source, nested types among the members. */
@@ -395,8 +442,7 @@ public class ReporterTest extends TestCase {
                     + "  static class In {\n    int f() { return 2; }\n  }\n"
                     + "  int m() { return 2; }\n  int z(long x) { return (int) x; }\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                List<HTML> lines = lines(new Reporter(new ReportOptions(ChangeLevel.IMPLEMENTATION,
-                        ReportOptions.Grouping.BY_CATEGORY)).report(analyzer.analyzeChanges()));
+                List<HTML> lines = lines(new Reporter(new ReportOptions(ChangeLevel.IMPLEMENTATION)).report(analyzer.analyzeChanges()));
                 List<HTML> impl = lines.subList(texts(lines).indexOf("# Implementation changes"), lines.size()).stream()
                         .filter(l -> l.getInnerText().contains("(") && !l.getInnerText().contains("return")).toList();
                 assertLines(List.of(
@@ -438,8 +484,7 @@ public class ReporterTest extends TestCase {
             helper.commit("init");
             helper.writeFile("E.java", newSource);
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                List<HTML> lines = lines(new Reporter(new ReportOptions(ChangeLevel.IMPLEMENTATION,
-                        ReportOptions.Grouping.BY_CATEGORY)).report(analyzer.analyzeChanges()));
+                List<HTML> lines = lines(new Reporter(new ReportOptions(ChangeLevel.IMPLEMENTATION)).report(analyzer.analyzeChanges()));
                 return lines.subList(texts(lines).indexOf("# Implementation changes"), lines.size()).stream()
                         .filter(l -> l.getInnerText().contains("static final E")).toList();
             }
@@ -475,8 +520,7 @@ public class ReporterTest extends TestCase {
                         separator(),
                         fileTitle('~', name("R.java")),
                         line('~', "  ", code("public record ", decl("R"), "( int a, ", added("long c"), ", String b )"))),
-                        new Reporter(new ReportOptions(ChangeLevel.API,
-                                ReportOptions.Grouping.BY_CATEGORY)).report(analyzer.analyzeChanges()));
+                        new Reporter(new ReportOptions(ChangeLevel.API)).report(analyzer.analyzeChanges()));
             }
         }
     }
@@ -513,7 +557,7 @@ public class ReporterTest extends TestCase {
                         line('+', "  ", tree("└── "), code("public static class ", decl("Fresh"))),
                         line(' ', "      ", tree("├── "), code("public int ", decl("x"))),
                         line(' ', "      ", tree("└── "), code("protected void ", decl("m"), "()"))),
-                        new Reporter(new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY))
+                        new Reporter(new ReportOptions(ChangeLevel.API))
                                 .report(analyzer.analyzeChanges()));
             }
         }
@@ -532,6 +576,8 @@ public class ReporterTest extends TestCase {
                     + "  public void run() { }\n  static final class In implements Runnable { public void run() { } }\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
                 assertLines(List.of(
+                        heading("API changes"),
+                        blank(),
                         fileTitle('~', name("Foo.java"), " ", pkg("p")),
                         line('~', "  ", code("public ", added("abstract"), " class ", decl("Foo"), "<T, ", added("U"),
                                 "> extends ", strike("Object"), " ", added("Number"), " implements Runnable, ",
@@ -591,7 +637,7 @@ public class ReporterTest extends TestCase {
                         fileTitle('~', name("B.java")),
                         line(' ', "  ", code("class ", decl("B"))),
                         line('~', "  ", tree("└── "), code(strike("int"), " ", added("long"), " ", decl("b")))),
-                        new Reporter(new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY))
+                        new Reporter(new ReportOptions(ChangeLevel.API))
                                 .report(analyzer.analyzeChanges()));
             }
         }
@@ -626,7 +672,7 @@ public class ReporterTest extends TestCase {
                         fileTitle('→', name(strike("Foo.java"), " ", added("Bar.java")), " ", pkg(strike("a"), " ",
                                 added("b"))),
                         line('~', "  ", code("public class ", strike("Foo"), " ", added(decl("Bar"))))),
-                        new Reporter(new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY))
+                        new Reporter(new ReportOptions(ChangeLevel.API))
                                 .report(analyzer.analyzeChanges()));
             }
         }
@@ -644,6 +690,8 @@ public class ReporterTest extends TestCase {
             helper.writeFile("b/Foo.java", "package b;\n" + body);
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
                 assertLines(List.of(
+                        heading("API changes"),
+                        blank(),
                         fileTitle('→', name("Foo.java"), " ", pkg(strike("a"), " ", added("b")))),
                         new Reporter().report(analyzer.analyzeChanges()));
             }
@@ -664,7 +712,7 @@ public class ReporterTest extends TestCase {
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
                 var analysis = analyzer.analyzeChanges();
-                Reporter reporter = new Reporter(new ReportOptions(ChangeLevel.IMPORTS, ReportOptions.Grouping.BY_TYPE));
+                Reporter reporter = new Reporter(new ReportOptions(ChangeLevel.IMPORTS));
                 List<HTML> api = lines(reporter.reportOnly(analysis, ChangeLevel.API));
                 assertHtml(heading("API changes"), api.getFirst());
                 assertTrue(markup(api), hasSpan(api, Css.ADDED, "long"));
@@ -675,8 +723,8 @@ public class ReporterTest extends TestCase {
                 assertTrue(markup(imports), texts(imports).stream().anyMatch(l -> l.contains("java.util.Set")));
                 assertFalse(markup(imports), hasSpan(imports, Css.ADDED, "long"));
 
-                // The API section is the same as in the report grouped by category.
-                HTML.Tag grouped = new Reporter(new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY))
+                // The API section is the same as in the report of all the levels.
+                HTML.Tag grouped = new Reporter(new ReportOptions(ChangeLevel.API))
                         .report(analysis);
                 assertLines(lines(grouped), api);
             }
@@ -697,13 +745,13 @@ public class ReporterTest extends TestCase {
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
                 var analysis = analyzer.analyzeChanges();
-                Reporter shown = new Reporter(new ReportOptions(ChangeLevel.IMPORTS, ReportOptions.Grouping.BY_TYPE));
+                Reporter shown = new Reporter(new ReportOptions(ChangeLevel.IMPORTS));
                 assertTrue(shown.options().showTests());
                 assertTrue(text(shown.report(analysis)).contains("FooTest"));
 
                 Reporter hidden = shown.withTests(false);
-                for (ReportOptions.Grouping grouping : ReportOptions.Grouping.values()) {
-                    String report = text(hidden.withGrouping(grouping).report(analysis));
+                for (HTML.Tag tag : List.of(hidden.report(analysis), hidden.reportByFile(analysis))) {
+                    String report = text(tag);
                     assertTrue(report, report.contains("Foo.java"));
                     assertFalse(report, report.contains("FooTest"));
                 }
@@ -736,9 +784,9 @@ public class ReporterTest extends TestCase {
     }
 
     /**
-     * Tests that a report by type with nothing to show lists every shown level with NO CHANGES.
+     * Tests that a report with nothing to show but imports lists every shown level, the empty ones with NO CHANGES.
      */
-    public void testNothingToShowByType() throws Exception {
+    public void testNothingToShowButImports() throws Exception {
         try (GitTestHelper helper = new GitTestHelper()) {
             helper.writeFile("Foo.java", "import java.util.List;\npublic class Foo {\n}\n");
             helper.commit("init");
@@ -754,8 +802,7 @@ public class ReporterTest extends TestCase {
                         blank(),
                         noChanges(),
                         blank()),
-                        new Reporter(new ReportOptions(ChangeLevel.IMPLEMENTATION,
-                                ReportOptions.Grouping.BY_TYPE)).report(analyzer.analyzeChanges()));
+                        new Reporter(new ReportOptions(ChangeLevel.IMPLEMENTATION)).report(analyzer.analyzeChanges()));
             }
         }
     }
@@ -770,8 +817,7 @@ public class ReporterTest extends TestCase {
             helper.writeFile("Foo.java", "import java.util.Set;\npublic class Foo {\n}\n");
 
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                List<HTML> lines = lines(new Reporter(new ReportOptions(ChangeLevel.IMPORTS,
-                        ReportOptions.Grouping.BY_TYPE)).report(analyzer.analyzeChanges()));
+                List<HTML> lines = lines(new Reporter(new ReportOptions(ChangeLevel.IMPORTS)).report(analyzer.analyzeChanges()));
                 assertLines(List.of(
                         heading("API changes"),
                         blank(),
@@ -799,7 +845,7 @@ public class ReporterTest extends TestCase {
             helper.commit("init");
             helper.writeFile("Foo.java", newSource);
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                return new Reporter(new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_TYPE,
+                return new Reporter(new ReportOptions(ChangeLevel.API,
                         ReportOptions.DEFAULT_BODY_CONTEXT, context)).report(analyzer.analyzeChanges().files().get(0));
             }
         }
@@ -917,7 +963,7 @@ public class ReporterTest extends TestCase {
             helper.commit("init");
             helper.writeFile("Foo.java", newSource);
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                return texts(lines(new Reporter(new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_TYPE,
+                return texts(lines(new Reporter(new ReportOptions(ChangeLevel.API,
                         ReportOptions.DEFAULT_BODY_CONTEXT, context))
                         .reportOnly(analyzer.analyzeChanges(), ChangeLevel.IMPLEMENTATION)));
             }
@@ -950,7 +996,7 @@ public class ReporterTest extends TestCase {
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
                 Reporter reporter = new Reporter(options);
                 return implOnly ? reporter.reportOnly(analyzer.analyzeChanges(), ChangeLevel.IMPLEMENTATION)
-                        : reporter.report(analyzer.analyzeChanges());
+                        : reporter.report(analyzer.analyzeChanges().files().getFirst());
             }
         }
     }
@@ -973,12 +1019,12 @@ public class ReporterTest extends TestCase {
                 line('+', "  ", tree("└── "), code("static class In {")),
                 line('+', "      ", code("  int f;")),
                 line('+', "      ", code("}"))),
-                wholeReport(new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY), true));
+                wholeReport(new ReportOptions(ChangeLevel.API), true));
     }
 
     /** Tests that the removed members are shown whole with the deletions on, and the added ones not with them off. */
     public void testDeletionsShownWhole() throws Exception {
-        ReportOptions options = new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_CATEGORY)
+        ReportOptions options = new ReportOptions(ChangeLevel.API)
                 .withAdditions(false).withDeletions(true);
         assertLines(List.of(
                 heading("Implementation changes"),
@@ -991,15 +1037,14 @@ public class ReporterTest extends TestCase {
                 wholeReport(options, true));
     }
 
-    /** Tests that grouped by type, the whole source replaces the signature of an added member. */
-    public void testWholeByType() throws Exception {
-        List<HTML> lines = lines(wholeReport(new ReportOptions(ChangeLevel.IMPLEMENTATION,
-                ReportOptions.Grouping.BY_TYPE), false));
+    /** Tests that in the report of a file the whole source replaces the signature of an added member. */
+    public void testWholeInFileReport() throws Exception {
+        List<HTML> lines = lines(wholeReport(new ReportOptions(ChangeLevel.IMPLEMENTATION), false));
         assertContains(line('+', "  ", tree("├── "), code("void added() {")), lines);
         assertContains(line('+', "  ", tree("│   "), code("  run();")), lines);
         assertContains(line('-', "  ", tree("├── "), code(strike("int ", decl("gone"), "()"))), lines);
         assertEquals(markup(lines), 1, texts(lines).stream().filter(l -> l.contains("added()")).count());
-        List<String> api = texts(lines(wholeReport(new ReportOptions(ChangeLevel.API, ReportOptions.Grouping.BY_TYPE),
+        List<String> api = texts(lines(wholeReport(new ReportOptions(ChangeLevel.API),
                 false)));
         assertFalse(api.toString(), api.stream().anyMatch(l -> l.contains("run();")));
     }

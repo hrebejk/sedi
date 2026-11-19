@@ -32,8 +32,7 @@ public class CosmeticReportTest extends TestCase {
             helper.commit("init");
             helper.writeFile("Foo.java", after);
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                List<HTML> lines = lines(new Reporter(new ReportOptions(ChangeLevel.IMPORTS,
-                        ReportOptions.Grouping.BY_CATEGORY)).reportOnly(analyzer.analyzeChanges(), level));
+                List<HTML> lines = lines(new Reporter(new ReportOptions(ChangeLevel.IMPORTS)).reportOnly(analyzer.analyzeChanges(), level));
                 // Without the heading of the section and the title of the file.
                 return lines.subList(lines.size() > 4 ? 3 : 2, lines.size());
             }

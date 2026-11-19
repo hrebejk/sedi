@@ -41,7 +41,7 @@ public class ConsoleOutputTest extends TestCase {
             helper.writeFile("Foo.java", "import java.util.Set;\npublic class Foo {\n\n  long a;\n"
                     + "  static class In { void x() {}\n  void y() {} }\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                ReportOptions options = new ReportOptions(ChangeLevel.IMPORTS, ReportOptions.Grouping.BY_CATEGORY,
+                ReportOptions options = new ReportOptions(ChangeLevel.IMPORTS,
                         ReportOptions.DEFAULT_BODY_CONTEXT, ReportOptions.NO_JAVADOC, true);
                 assertEquals(List.of(
                                 "# API changes",
@@ -83,6 +83,8 @@ public class ConsoleOutputTest extends TestCase {
             helper.writeFile("Foo.java", "public class Foo {\n  long a;\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
                 assertEquals(List.of(
+                                "# API changes",
+                                "",
                                 "~ Foo.java",
                                 "    public class Foo",
                                 "~   └── ~~int~~ __long__ a"),

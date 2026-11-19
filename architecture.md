@@ -54,7 +54,7 @@ different front end, such as the planned web UI, can reuse the analysis unchange
 
 1. Resolves the project classpath from `pom.xml` with `MavenClasspath`. This uses the Maven model builder and Maven
    Resolver as libraries, so `mvn` is never started. Without a `pom.xml` only the JDK is on the classpath.
-2. Builds a `Reporter` from the options: `--level`, `--group`, `--body-context`, `--javadoc-context`,
+2. Builds a `Reporter` from the options: `--level`, `--body-context`, `--javadoc-context`,
    `--no-line-numbers`, `--color` and `--theme`.
 3. Picks a mode:
    - **`sedi <rev>`**: analyzes a commit or a range (`a..b`, `a...b`), prints the report and exits.
@@ -248,12 +248,15 @@ accepted by the caller's filter.
 
 ## 4. Reporting
 
-`Reporter` turns a `DiffAnalysis` into a `List<String>` with ANSI styling and line numbers. There are two groupings:
+`Reporter` turns a `DiffAnalysis` into fleck HTML, a `div.report` of lines with line numbers, styled by `ReportStyles`. There are two layouts:
 
-- **By category** (the default): one `# API changes`, `# Implementation changes`, `# Cosmetic changes`, `# Imports`
-  section per level up to `--level`. An empty section says `NO CHANGES`. The API section lists new top-level types
-  with their public API, then removed types, renamed types, and changed types, with their members in a tree.
-- **By type**: one block per file with all its levels.
+- **By category** (`report`, the default): one `# API changes`, `# Implementation changes`, `# Cosmetic changes`,
+  `# Imports` section per level up to `--level`. An empty section says `NO CHANGES`. The API section lists new
+  top-level types with their public API, then removed types, renamed types, and changed types, with their members in
+  a tree. `reportOnly` shows one of the sections.
+- **By file** (`reportByFile`, the key `l`, All in the browser): every level whatever `--level` says, file by file,
+  under each file the levels with changes as `# API`, `# Implementation`, `# Cosmetic`, `# Imports`. The files and
+  their levels are folds the browser collapses; the levels other than the API start collapsed.
 
 The printers:
 

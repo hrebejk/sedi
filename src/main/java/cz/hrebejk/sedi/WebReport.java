@@ -22,9 +22,12 @@ import org.maraboo.fleck.web.WebSession;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.function.Predicate;
@@ -98,13 +101,83 @@ final class WebReport {
         open.forEach(WebSession::refresh);
     }
 
+    /** The client component of a fold of the report, see {@code sedi.js}. */
+    private static final String FOLD_COMPONENT = "sedi-fold";
+    /** The class of a fold of the report, see {@code Css.FOLD}. */
+    private static final String FOLD_CLASS = "fold";
+
+    /**
+     * The tree with its folds made the client component which collapses and expands them. Each gets a key of the
+     * key of the fold it is in, its name and how many folds of the same key come before it, so the browser keeps the
+     * state of a fold when the report is rendered again, also in another view of the same changes.
+     *
+     * @param outer the key of the fold the tag is in, empty for none
+     * @param seen  the folds of each key seen so far
+     */
+    private static HTML.Tag withFoldComponents(HTML.Tag tag, String outer, Map<String, Integer> seen) {
+        boolean fold = hasClass(tag, FOLD_CLASS);
+        HTML.Tag copy = new HTML.Tag(fold ? FOLD_COMPONENT : tag.tagName).attributes(tag.attrs);
+        String key = outer;
+        if (fold) {
+            String name = outer + "/" + tag.attrs.getOrDefault("data-name", "");
+            key = name + "#" + seen.merge(name, 1, Integer::sum);
+            copy.attr("key", key);
+        }
+        List<HTML> children = new ArrayList<>();
+        for (HTML child : tag.children) {
+            children.add(child instanceof HTML.Tag childTag ? withFoldComponents(childTag, key, seen) : child);
+        }
+        return copy.children(children);
+    }
+
+    private static final String HEADING_CLASS = "heading";
+    private static final String HEADING_MARK_CLASS = "heading-mark";
+
+    /**
+     * The report with headings for the page instead of the console: the {@code #} of a heading is left blank, so
+     * the mark of a fold shows there under the mouse (see {@code sedi.css}), the indentation in front of it is left
+     * out, as the style sheet places the heading, and the heading of the only level shown
+     * is left out with the blank line after it, as its button in the tool bar says which level it is.
+     *
+     * @param withoutHeading whether the heading of the level is left out
+     */
+    private static HTML.Tag withWebHeadings(HTML.Tag tag, boolean withoutHeading) {
+        HTML.Tag copy = new HTML.Tag(tag.tagName).attributes(tag.attrs);
+        if (hasClass(tag, HEADING_MARK_CLASS)) {
+            return copy.children(HTML.Text(" "));
+        }
+        List<HTML> children = new ArrayList<>();
+        boolean afterHeading = false;
+        boolean beforeMark = tag.children.stream()
+                .anyMatch(c -> c instanceof HTML.Tag span && hasClass(span, HEADING_MARK_CLASS));
+        for (HTML child : tag.children) {
+            if (beforeMark) {
+                if (!(child instanceof HTML.Tag span && hasClass(span, HEADING_MARK_CLASS))) {
+                    continue;
+                }
+                beforeMark = false;
+            }
+            boolean heading = child instanceof HTML.Tag line && line.children.stream()
+                    .anyMatch(c -> c instanceof HTML.Tag span && hasClass(span, HEADING_CLASS));
+            boolean blank = child instanceof HTML.Tag br && br.tagName.equals("br");
+            if (!(withoutHeading && (heading || afterHeading && blank))) {
+                children.add(child instanceof HTML.Tag childTag ? withWebHeadings(childTag, withoutHeading) : child);
+            }
+            afterHeading = heading;
+        }
+        return copy.children(children);
+    }
+
+    private static boolean hasClass(HTML.Tag tag, String clazz) {
+        return Arrays.asList(tag.attrs.getOrDefault("class", "").split(" ")).contains(clazz);
+    }
+
     /** One loaded page. */
     private final class Page implements WebPage {
 
-        /** The id of the button showing all the changes. */
-        private static final String ALL = "all";
 
-        private View view = new View(reporter);
+        /** At first the level the command line asks for, alone; the page does not list the levels up to it. */
+        private View view = new View(reporter, reporter.options().maxLevel(), false);
 
         @Override
         public HTML render() {
@@ -118,7 +191,9 @@ final class WebReport {
                     content.add(HTML.DIV(error == null ? "Analyzing ..." : "").clazz("message"));
                 } else {
                     HTML.Tag report = view.report(last);
-                    content.add(report.children.isEmpty() ? HTML.DIV("No changes.").clazz("message") : report);
+                    content.add(report.children.isEmpty() ? HTML.DIV("No changes.").clazz("message")
+                            : withFoldComponents(withWebHeadings(report, view.only() != null), "",
+                                    new HashMap<>()));
                 }
             }
             return HTML.DIV().children(content).clazz("sedi");
@@ -127,9 +202,7 @@ final class WebReport {
         @Override
         public void onEvent(WebEvent event) {
             String id = event.targetId();
-            if (ALL.equals(id)) {
-                view = new View(view.reporter().withMaxLevel(ChangeLevel.IMPORTS));
-            } else if (id != null && id.length() == 1) {
+            if (id != null && id.length() == 1) {
                 View next = view.key(id.charAt(0));
                 if (next != null) {
                     view = next;
@@ -139,24 +212,16 @@ final class WebReport {
 
         private HTML.Tag toolbar() {
             ReportOptions options = view.reporter().options();
-            // The report of the levels up to the API ones is the report of the API changes alone.
-            ChangeLevel only = view.only() == null && options.maxLevel() == ChangeLevel.API ? ChangeLevel.API
-                    : view.only();
-            boolean all = view.only() == null && options.maxLevel() == ChangeLevel.IMPORTS;
-            String grouping = view.reporter().grouping() == ReportOptions.Grouping.BY_TYPE ? "by type" : "by category";
+            ChangeLevel only = view.only();
             List<HTML> items = new ArrayList<>();
-            HTML.Tag allButton = HTML.Tag("button", HTML.Text("All")).id(ALL)
-                    .attr("title", "All the changes: API, implementation, cosmetic and imports").listen("click");
-            items.add(all ? allButton.clazz("active") : allButton);
+            items.add(button('l', "All", "All the changes by file, under each file its API, implementation, cosmetic "
+                    + "and import changes", view.byFile()));
             items.add(separator());
             items.add(button('a', "API", "Only the API changes", only == ChangeLevel.API));
             items.add(button('i', "Implementation", "Only the implementation changes",
                     only == ChangeLevel.IMPLEMENTATION));
             items.add(button('c', "Cosmetic", "Only the cosmetic changes", only == ChangeLevel.COSMETIC));
             items.add(button('m', "Imports", "Only the changed imports", only == ChangeLevel.IMPORTS));
-            items.add(separator());
-            items.add(button('g', "Grouping: " + grouping,
-                    "Group the changes by category or by type; shows the levels of the last All or of -l", false));
             items.add(separator());
             items.add(button('d', "Javadoc: " + javadoc(options.javadocContext()),
                     "Javadoc: none, lines around the changes, whole", options.javadocContext() != ReportOptions.NO_JAVADOC));

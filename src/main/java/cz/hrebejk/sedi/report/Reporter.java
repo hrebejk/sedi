@@ -50,7 +50,7 @@ public final class Reporter {
     public static final int DEFAULT_WIDTH = 80;
 
     /**
-     * Creates a reporter showing the API changes grouped by type.
+     * Creates a reporter showing the API changes.
      */
     public Reporter() {
         this(ReportOptions.DEFAULT);
@@ -59,7 +59,7 @@ public final class Reporter {
     /**
      * Creates a reporter.
      *
-     * @param options what to show and how to group it
+     * @param options what to show and how
      */
     public Reporter(ReportOptions options) {
         this(options, DEFAULT_WIDTH);
@@ -84,16 +84,6 @@ public final class Reporter {
     }
 
     /**
-     * Returns a reporter like this one grouping the changes as given.
-     *
-     * @param grouping see {@link ReportOptions#grouping()}
-     * @return the new reporter
-     */
-    public Reporter withGrouping(ReportOptions.Grouping grouping) {
-        return new Reporter(options.withGrouping(grouping), width);
-    }
-
-    /**
      * Returns a reporter like this one showing the whole source of the added types and members, or not.
      *
      * @param show see {@link ReportOptions#showAdditions()}
@@ -111,16 +101,6 @@ public final class Reporter {
      */
     public Reporter withDeletions(boolean show) {
         return new Reporter(options.withDeletions(show), width);
-    }
-
-    /**
-     * Returns a reporter like this one showing the changes of the levels up to the given one.
-     *
-     * @param level see {@link ReportOptions#maxLevel()}
-     * @return the new reporter
-     */
-    public Reporter withMaxLevel(ChangeLevel level) {
-        return new Reporter(options.withMaxLevel(level), width);
     }
 
     /**
@@ -153,35 +133,15 @@ public final class Reporter {
     }
 
     /**
-     * Returns how this reporter groups the changes.
-     *
-     * @return the grouping
-     */
-    public ReportOptions.Grouping grouping() {
-        return options.grouping();
-    }
-
-    /**
-     * Reports the changes of all the files of the diff. A file is left out if it has no change to show,
-     * unless git added, deleted or renamed it.
+     * Reports the changes of all the files of the diff by level: the heading of each level up to
+     * {@link ReportOptions#maxLevel()}, then the changes of the level file by file.
      *
      * @param analysis the analyzed diff
-     * @return the headings and the indented lines under them; if there is nothing to show but imports, the headings
-     *         of the shown levels, each with {@code NO CHANGES} or the changes
+     * @return the headings, each with the lines under it or {@code NO CHANGES}
      */
     public HTML.Tag report(DiffAnalysis analysis) {
         List<FileAnalysis> files = sorted(analysis);
         List<Line> result = new ArrayList<>();
-        if (options.grouping() == ReportOptions.Grouping.BY_TYPE) {
-            // Changed imports alone are no reason to leave the other levels out: show every level then.
-            ReportOptions withoutImports = options.maxLevel() == ChangeLevel.IMPORTS
-                    ? options.withMaxLevel(ChangeLevel.COSMETIC)
-                    : options;
-            if (!new Reporter(withoutImports, width).byType(files).isEmpty()) {
-                return numbered(byType(files));
-            }
-            // Nothing to show by type: say so for every shown level, as the grouping by category does.
-        }
         for (ChangeLevel level : ChangeLevel.values()) {
             if (level.compareTo(options.maxLevel()) > 0) {
                 continue;
@@ -202,24 +162,8 @@ public final class Reporter {
         return HTML.DIV().children(LineNumbers.render(lines, options.lineNumbers())).clazz(Css.REPORT.cssClass());
     }
 
-    /** The changes of every file, the files separated by a line as in the sections of the levels. */
-    private List<Line> byType(List<FileAnalysis> files) {
-        List<Line> result = new ArrayList<>();
-        for (FileAnalysis file : files) {
-            List<Line> part = new ArrayList<>();
-            addFile(part, file, fileLines(file), file.isStructural());
-            if (!part.isEmpty()) {
-                if (!result.isEmpty()) {
-                    result.add(separator());
-                }
-                result.addAll(part);
-            }
-        }
-        return result;
-    }
-
     /**
-     * Reports only the changes of one level, ignoring {@link ReportOptions#maxLevel()} and the grouping.
+     * Reports only the changes of one level, ignoring {@link ReportOptions#maxLevel()}.
      *
      * @param analysis the analyzed diff
      * @param level    the only level to show
@@ -262,19 +206,8 @@ public final class Reporter {
     private List<Line> levelLines(List<FileAnalysis> files, ChangeLevel level) {
         List<Line> lines = new ArrayList<>();
         for (FileAnalysis file : files) {
-            List<Line> fileLines = new ArrayList<>();
-            if (level == ChangeLevel.IMPORTS) {
-                if (file.diff().getChangeType() == DiffEntry.ChangeType.DELETE) {
-                    continue;
-                }
-                importLines(file, false, fileLines);
-            } else {
-                // The added and removed elements are listed in the API changes, their code is shown here.
-                fileLines = lines(file, (container, c) -> c.level() == level
-                        || level == ChangeLevel.IMPLEMENTATION && isShownWhole(c), false, false, false, true);
-            }
             List<Line> part = new ArrayList<>();
-            addFile(part, file, fileLines, false);
+            addFile(part, file, levelLines(file, level), false);
             if (!part.isEmpty()) {
                 if (!lines.isEmpty()) {
                     lines.add(separator());
@@ -282,6 +215,86 @@ public final class Reporter {
                 lines.addAll(part);
             }
         }
+        return lines;
+    }
+
+    /** The changes of one level other than the API of a file, without its title. */
+    private List<Line> levelLines(FileAnalysis file, ChangeLevel level) {
+        List<Line> lines = new ArrayList<>();
+        if (level == ChangeLevel.IMPORTS) {
+            if (file.diff().getChangeType() != DiffEntry.ChangeType.DELETE) {
+                importLines(file, false, lines);
+            }
+            return lines;
+        }
+        // The added and removed elements are listed in the API changes, their code is shown here.
+        return lines(file, (container, c) -> c.level() == level
+                || level == ChangeLevel.IMPLEMENTATION && isShownWhole(c), false, false, false, true);
+    }
+
+    /**
+     * Reports all the changes, whatever {@link ReportOptions#maxLevel()} is, file by file: under
+     * the title of a file the changes of each level of it, under the name of the level. A level without changes is
+     * left out, and so is a file without any. A file and each level of it are {@linkplain Line#fold folds}; the
+     * levels other than the API are collapsed at first.
+     *
+     * @param analysis the analyzed diff
+     * @return the report, empty if there is nothing to show
+     */
+    public HTML.Tag reportByFile(DiffAnalysis analysis) {
+        List<Line> result = new ArrayList<>();
+        for (FileAnalysis file : sorted(analysis)) {
+            List<Line> levels = new ArrayList<>();
+            for (ChangeLevel level : ChangeLevel.values()) {
+                List<Line> lines = level == ChangeLevel.API ? apiLines(file) : levelLines(file, level);
+                if (!lines.isEmpty()) {
+                    levels.add(Line.fold(LEVELS.get(level), level == ChangeLevel.API));
+                    levels.add(Line.outside(Fragment.of("  ").plus(Markup.style(Css.HEADING_MARK, "#")).plus(" ")
+                            .plus(Markup.style(Css.LEVEL, LEVELS.get(level)))));
+                    levels.addAll(lines);
+                    levels.add(Line.end());
+                }
+            }
+            if (!levels.isEmpty()) {
+                if (!result.isEmpty()) {
+                    result.add(separator());
+                }
+                addFile(result, file, levels, false);
+            }
+        }
+        return numbered(result);
+    }
+
+    /** The names of the levels in the {@linkplain #reportByFile report by file}. */
+    private static final Map<ChangeLevel, String> LEVELS = Map.of(
+            ChangeLevel.API, "API",
+            ChangeLevel.IMPLEMENTATION, "Implementation",
+            ChangeLevel.COSMETIC, "Cosmetic",
+            ChangeLevel.IMPORTS, "Imports");
+
+    /**
+     * The API changes of a file, without its title: the public API of the types of an added file, the names of the
+     * types of a removed one, else the changes of its types followed by its added types and the names of its
+     * removed ones.
+     */
+    private List<Line> apiLines(FileAnalysis file) {
+        List<TypeRef> added = new ArrayList<>();
+        List<TypeRef> removed = new ArrayList<>();
+        collectTypes(file, added, removed);
+        List<Line> lines = new ArrayList<>();
+        DiffEntry.ChangeType change = file.diff().getChangeType();
+        if (change == DiffEntry.ChangeType.ADD) {
+            added.forEach(type -> addTree(lines, "  ", addedNode(type.element(), "")));
+            return lines;
+        }
+        if (change != DiffEntry.ChangeType.DELETE) {
+            lines.addAll(lines(file, (container, c) -> c.level() == ChangeLevel.API && !isListedApart(container, c),
+                    true, false, true, false));
+            added.forEach(type -> addTree(lines, "  ", declarationNode(new ElementPair(null, type.element(), Set.of()),
+                    "", null, Fragment.EMPTY, List.of(), addedMembers(type.element()))));
+        }
+        removed.forEach(type -> lines.add(Line.number(type.element().getLine(), '-',
+                Markup.style(Css.TITLE, type.element().getName())).withPrefix("  ")));
         return lines;
     }
 
@@ -301,13 +314,14 @@ public final class Reporter {
         List<List<Line>> parts = new ArrayList<>();
         for (FileAnalysis file : files) {
             if (file.diff().getChangeType() == DiffEntry.ChangeType.ADD) {
-                List<Line> list = new ArrayList<>();
-                list.add(fileTitle(file));
+                List<Line> types = new ArrayList<>();
                 for (TypeRef type : added) {
                     if (type.file() == file) {
-                        addTree(list, "  ", addedNode(type.element(), ""));
+                        addTree(types, "  ", addedNode(type.element(), ""));
                     }
                 }
+                List<Line> list = new ArrayList<>();
+                addFile(list, file, types, true);
                 parts.add(list);
             }
         }
@@ -451,12 +465,22 @@ public final class Reporter {
         return text.isBlank() ? Fragment.of(text) : Markup.style(Css.TREE, text);
     }
 
-    /** Adds the lines of a file below its title. */
+    /** Adds the lines of a file below its title, folded under it if there are any. */
     private void addFile(List<Line> result, FileAnalysis file, List<Line> lines, boolean keepEmpty) {
-        if (!lines.isEmpty() || keepEmpty) {
+        if (!lines.isEmpty()) {
+            result.add(Line.fold(path(file)));
             result.add(fileTitle(file));
             result.addAll(lines);
+            result.add(Line.end());
+        } else if (keepEmpty) {
+            result.add(fileTitle(file));
         }
+    }
+
+    /** The path of the file, of the old one if it was deleted. */
+    private static String path(FileAnalysis file) {
+        return file.diff().getChangeType() == DiffEntry.ChangeType.DELETE ? file.diff().getOldPath()
+                : file.diff().getNewPath();
     }
 
     /**

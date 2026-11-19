@@ -24,18 +24,17 @@ import static cz.hrebejk.sedi.report.HtmlAssert.*;
  */
 public class AstPrinterTest extends TestCase {
 
-    /** The report of the implementation changes of the methods of {@code Foo}, without the headings. */
+    /** The report of the implementation changes of the methods of {@code Foo}. */
     static List<HTML> body(String oldMembers, String newMembers, int bodyContext) throws Exception {
         try (GitTestHelper helper = new GitTestHelper()) {
             helper.writeFile("Foo.java", "class Foo {\n" + oldMembers + "\n}\n");
             helper.commit("init");
             helper.writeFile("Foo.java", "class Foo {\n" + newMembers + "\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                ReportOptions options = new ReportOptions(ChangeLevel.IMPLEMENTATION,
-                        ReportOptions.Grouping.BY_TYPE, bodyContext);
-                List<HTML> lines = lines(new Reporter(options).report(analyzer.analyzeChanges()));
-                // Without the title of the file and the line of the top level type.
-                return lines.subList(2, lines.size());
+                ReportOptions options = new ReportOptions(ChangeLevel.IMPLEMENTATION, bodyContext);
+                List<HTML> lines = lines(new Reporter(options).report(analyzer.analyzeChanges().files().getFirst()));
+                // Without the line of the top level type.
+                return lines.subList(1, lines.size());
             }
         }
     }
@@ -51,8 +50,8 @@ public class AstPrinterTest extends TestCase {
             helper.commit("init");
             helper.writeFile("Foo.java", "class Foo {\n" + newMembers + "\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                ReportOptions options = new ReportOptions(ChangeLevel.IMPLEMENTATION, ReportOptions.Grouping.BY_TYPE);
-                return lines(new Reporter(options).report(analyzer.analyzeChanges())).stream()
+                ReportOptions options = new ReportOptions(ChangeLevel.IMPLEMENTATION);
+                return lines(new Reporter(options).report(analyzer.analyzeChanges().files().getFirst())).stream()
                         .filter(l -> l instanceof HTML.Tag t && Css.CHANGE_LINE.on(t)
                                 && t.getInnerText().substring(1).strip().replaceAll("^[\u2502\u251c\u2514\u2500 ]+", "")
                                 .startsWith("return"))
@@ -61,15 +60,15 @@ public class AstPrinterTest extends TestCase {
         }
     }
 
-    /** The lines of the whole report. */
+    /** The lines of the report of the file. */
     private static List<HTML> errors(String oldMembers, String newMembers) throws Exception {
         try (GitTestHelper helper = new GitTestHelper()) {
             helper.writeFile("Foo.java", "import java.util.*;\nclass Foo {\n" + oldMembers + "\n}\n");
             helper.commit("init");
             helper.writeFile("Foo.java", "import java.util.*;\nclass Foo {\n" + newMembers + "\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                ReportOptions options = new ReportOptions(ChangeLevel.IMPLEMENTATION, ReportOptions.Grouping.BY_TYPE);
-                return lines(new Reporter(options).report(analyzer.analyzeChanges()));
+                ReportOptions options = new ReportOptions(ChangeLevel.IMPLEMENTATION);
+                return lines(new Reporter(options).report(analyzer.analyzeChanges().files().getFirst()));
             }
         }
     }
@@ -478,10 +477,9 @@ public class AstPrinterTest extends TestCase {
             helper.writeFile("Foo.java", "class Foo {\n\n" + method("  void m()", "  a(1);", "  a(3);", "  a(4);", "  a(5);")
                     + "\n  void a(int i) {}\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                ReportOptions options = new ReportOptions(ChangeLevel.IMPLEMENTATION, ReportOptions.Grouping.BY_TYPE,
+                ReportOptions options = new ReportOptions(ChangeLevel.IMPLEMENTATION,
                         ReportOptions.DEFAULT_BODY_CONTEXT, ReportOptions.NO_JAVADOC, true);
                 assertLines(List.of(
-                        fileTitle('~', name("Foo.java")),
                         line("1", ' ', "  ", code("class ", decl("Foo"))),
                         line("3", ' ', "  ", tree("└── "), code("void ", decl("m"), "() { ", tag("impl"))),
                         line("4", ' ', "            ", code("a(1);")),
@@ -490,7 +488,7 @@ public class AstPrinterTest extends TestCase {
                         line("6", '+', "            ", code("a(4);")),
                         line("7", '+', "            ", code("a(5);")),
                         line("8", ' ', "      ", code("}"))),
-                        new Reporter(options).report(analyzer.analyzeChanges()));
+                        new Reporter(options).report(analyzer.analyzeChanges().files().getFirst()));
             }
         }
     }

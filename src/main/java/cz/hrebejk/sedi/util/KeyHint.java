@@ -26,6 +26,7 @@ public final class KeyHint {
     private record Item(char key, String label, String shortLabel) { }
 
     private static final List<Item> ITEMS = List.of(
+            new Item('l', "all", "all"),
             new Item('a', "api", "api"),
             new Item('i', "impl", "impl"),
             new Item('c', "cosmetic", "cos"),

@@ -58,7 +58,7 @@ final class Session {
             "  +        show or hide the whole source of the added types and members",
             "  -        show or hide the whole source of the removed types and members",
             "  t        show or hide the changes of the tests",
-            "  g        group all the changes by category or by type",
+            "  l        show all the changes by file and category",
             "  h        this help",
             "  Esc      leave the help and show the last output again",
             "  q        quit",

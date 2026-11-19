@@ -67,12 +67,9 @@ public class Main implements Callable<Integer> {
     private boolean interactive;
 
     @Option(names = {"-l", "--level"}, paramLabel = "<level>", converter = LevelConverter.class,
-            description = "Least important changes to show: api, impl, cosmetic or imports (default: api).")
+            description = "Least important changes to show: api, impl, cosmetic or imports (default: api). With --web "
+                    + "the level shown at first, alone.")
     private ChangeLevel level = ChangeLevel.API;
-
-    @Option(names = {"-g", "--group"}, paramLabel = "<grouping>", converter = GroupingConverter.class,
-            description = "Group the changes by category or by type (default: category).")
-    private ReportOptions.Grouping grouping = ReportOptions.Grouping.BY_CATEGORY;
 
     @Option(names = {"-b", "--body-context"}, paramLabel = "<n>",
             description = "Most unchanged lines of a method body shown in a row between its changes; a longer run is "
@@ -115,7 +112,7 @@ public class Main implements Callable<Integer> {
     @Option(names = "--theme", paramLabel = "<file>",
             description = "Properties file with the colors, keyed by role (keyword, type, method, string, number, "
                     + "constant, annotation, comment, strike, replacement, added, removed, added_mark, removed_mark, declaration, heading, heading_mark, changed_mark, "
-                    + "title, package, tag, error, line_number, tree, note, no_changes), "
+                    + "title, package, tag, error, line_number, tree, note, no_changes, level), "
                     + "e.g. keyword=#82aaff bold, added=bg:#1e3a2a. Attributes: #rrggbb, bg:#rrggbb, bold, "
                     + "underline, strike, none (default: ~/.config/sedi/theme.properties if it exists).")
     private Path themeFile;
@@ -134,18 +131,6 @@ public class Main implements Callable<Integer> {
                 case "cosmetic" -> ChangeLevel.COSMETIC;
                 case "imports" -> ChangeLevel.IMPORTS;
                 default -> throw new CommandLine.TypeConversionException("expected api, impl, cosmetic or imports");
-            };
-        }
-    }
-
-    /** Reads the groupings: {@code type} and {@code category}. */
-    private static final class GroupingConverter implements CommandLine.ITypeConverter<ReportOptions.Grouping> {
-        @Override
-        public ReportOptions.Grouping convert(String value) {
-            return switch (value.toLowerCase()) {
-                case "type" -> ReportOptions.Grouping.BY_TYPE;
-                case "category" -> ReportOptions.Grouping.BY_CATEGORY;
-                default -> throw new CommandLine.TypeConversionException("expected type or category");
             };
         }
     }
@@ -207,7 +192,7 @@ public class Main implements Callable<Integer> {
         }
         ConsoleHtmlRenderer renderer = new ConsoleHtmlRenderer(
                 new org.maraboo.fleck.console.Console(System.out, System.err, null, !colored), styleSheet);
-        Reporter reporter = new Reporter(new ReportOptions(level, grouping, bodyContext, javadocContext, !noLineNumbers,
+        Reporter reporter = new Reporter(new ReportOptions(level, bodyContext, javadocContext, !noLineNumbers,
                 !hideAdditions, showDeletions, !hideTests))
                 .withWidth(Terminal.width());
         boolean keepRunning = commit == null || interactive;
@@ -255,7 +240,7 @@ public class Main implements Callable<Integer> {
             System.err.println("Cannot read the theme: " + e.getMessage());
             return 1;
         }
-        Reporter reporter = new Reporter(new ReportOptions(level, grouping, bodyContext, javadocContext, !noLineNumbers,
+        Reporter reporter = new Reporter(new ReportOptions(level, bodyContext, javadocContext, !noLineNumbers,
                 !hideAdditions, showDeletions, !hideTests));
         String title = projectDir.getFileName() + " " + (commit == null ? "working copy" : commit);
         WebReport report = new WebReport(reporter, title);
