@@ -107,6 +107,8 @@ final class WebReport {
     private static final String FOLD_CLASS = "fold";
     /** The client component of unchanged lines hidden behind their note, see {@code sedi.js}. */
     private static final String ELIDED_COMPONENT = "sedi-elided";
+    /** The client component showing in the tool bar the file or the element scrolled to, see {@code sedi.js}. */
+    private static final String SPY_COMPONENT = "sedi-spy";
     /** The class of unchanged lines hidden behind their note, see {@code Css.ELIDED}. */
     private static final String ELIDED_CLASS = "elided";
 
@@ -313,6 +315,8 @@ final class WebReport {
                     options.showDeletions()));
             items.add(button('t', "Tests", "The changes of the tests", options.showTests()));
             items.add(HTML.SPAN(title).clazz("title"));
+            // The second line of the bar: where in the report the page is scrolled to, see sedi.js.
+            items.add(new HTML.Tag(SPY_COMPONENT));
             return HTML.DIV().children(items).clazz(TOOLBAR);
         }
 

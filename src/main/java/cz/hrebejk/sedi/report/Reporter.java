@@ -492,14 +492,15 @@ public final class Reporter {
         above.addAll(printer.declaration(element, typeName));
         Line head = above.removeLast();
         return new Node(above, head, List.of(),
-                element.getNodeType() == ElementInfo.NodeType.TYPE ? addedMembers(element, moved) : List.of());
+                element.getNodeType() == ElementInfo.NodeType.TYPE ? addedMembers(element, moved) : List.of(), element);
     }
 
     /**
      * An element shown in a tree: the lines above its signature, like the javadoc and the annotations, the line of
-     * the signature, the lines below it, like the body, and the elements in it.
+     * the signature, the lines below it, like the body, and the elements in it; the element itself, as it is now
+     * unless it was removed.
      */
-    private record Node(List<Line> above, Line head, List<Line> below, List<Node> children) { }
+    private record Node(List<Line> above, Line head, List<Line> below, List<Node> children, ElementInfo element) { }
 
     /** Adds a top level element, its signature indented by {@code indent}, with the tree of the elements in it. */
     private void addTree(List<Line> lines, String indent, Node node) {
@@ -517,7 +518,8 @@ public final class Reporter {
      */
     private static void foldStart(List<Line> lines, Node node) {
         if (!node.below().isEmpty() || !node.children().isEmpty()) {
-            lines.add(Line.fold(node.head().content().text()));
+            lines.add(Line.elementFold(node.head().content().text(),
+                    node.element().getNodeType() == ElementInfo.NodeType.TYPE, node.element().getJavadoc()));
         }
     }
 
@@ -598,7 +600,7 @@ public final class Reporter {
                 : Fragment.of(element.isEnumConstant() ? "" : " = ")
                         .plus(initializer.prefix().plus(initializer.content()).strip());
         Line head = signatures.format(pair, typeName, changedLine);
-        return new Node(above, head.append(rest.plus(suffix)), below, children);
+        return new Node(above, head.append(rest.plus(suffix)), below, children, element);
     }
 
     /**
@@ -660,7 +662,7 @@ public final class Reporter {
         // Without the changes, a renamed or moved type is still marked as such.
         Line head = diff ? printer.formatType(type, outerName)
                 : plainPrinter.formatType(type.isAdded() ? shown : type, outerName);
-        return new Node(above, head, List.of(), children);
+        return new Node(above, head, List.of(), children, type.isRemoved() ? type.oldElement() : type.newElement());
     }
 
     /**
@@ -951,7 +953,7 @@ public final class Reporter {
                 i = last;
             }
         }
-        return new Node(javadocLines(change.pair()), lines.get(0), lines.subList(1, lines.size()), List.of());
+        return new Node(javadocLines(change.pair()), lines.get(0), lines.subList(1, lines.size()), List.of(), element);
     }
 
     /** Collects the types moved into the type, at any depth, by their first lines. */

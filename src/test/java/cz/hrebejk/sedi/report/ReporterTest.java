@@ -213,12 +213,37 @@ public class ReporterTest extends TestCase {
                 HTML.Tag fold = (HTML.Tag) report.children.getLast();
                 assertTrue(markup(fold), Css.FOLD.on(fold));
                 assertEquals("Foo.java", fold.attrs.get("data-name"));
+                assertNull(markup(fold), fold.attrs.get("data-kind"));
                 assertEquals(List.of("~ Foo.java", "    public class Foo", "~   \u2514\u2500\u2500 int long a"),
                         texts(lines(fold)));
                 // The type with its changed members is folded too, under its signature.
                 HTML.Tag type = (HTML.Tag) fold.children.getLast();
                 assertTrue(markup(type), Css.FOLD.on(type));
                 assertEquals("public class Foo", type.attrs.get("data-name"));
+                assertEquals("type", type.attrs.get("data-kind"));
+            }
+        }
+    }
+
+    /** The fold of a member with its body under its signature says it is a member and carries its javadoc. */
+    public void testMemberFoldIsMarked() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", "public class Foo {\n  /**\n   * One.\n   * Really.\n   */\n"
+                    + "  int m() {\n    return 1;\n  }\n}\n");
+            helper.commit("init");
+            helper.writeFile("Foo.java", "public class Foo {\n  /**\n   * One.\n   * Really.\n   */\n"
+                    + "  int m() {\n    return 2;\n  }\n}\n");
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                HTML.Tag file = (HTML.Tag) new Reporter(new ReportOptions(ChangeLevel.IMPLEMENTATION))
+                        .report(analyzer.analyzeChanges()).children.getLast();
+                HTML.Tag type = (HTML.Tag) file.children.getLast();
+                assertEquals(markup(type), "type", type.attrs.get("data-kind"));
+                HTML.Tag member = (HTML.Tag) type.children.getLast();
+                assertTrue(markup(member), Css.FOLD.on(member));
+                assertEquals(markup(member), "member", member.attrs.get("data-kind"));
+                assertEquals(markup(member), "One.\nReally.", member.attrs.get("data-javadoc"));
+                // The type has no javadoc.
+                assertNull(markup(type), type.attrs.get("data-javadoc"));
             }
         }
     }

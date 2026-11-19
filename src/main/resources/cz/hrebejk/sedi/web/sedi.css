@@ -119,6 +119,68 @@ body {
   color: var(--dim);
 }
 
+/* The second line of the tool bar, see sedi.js: the javadoc of an element of it, if shown, and under it the
+   element or the file scrolled to. It lies over the report under the bar, so showing it does not move the report. */
+.toolbar .spy {
+  position: absolute;
+  /* Below the border of the bar, which stays under the buttons. */
+  top: calc(100% + 1px);
+  left: 0;
+  right: 0;
+  background: var(--bar);
+  font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  font-variant-ligatures: none;
+  font-size: 13px;
+}
+
+.toolbar .spy.empty {
+  display: none;
+}
+
+/* The line of the element, as high as SPY_LINE in sedi.js with its border. */
+.toolbar .spy-line {
+  box-sizing: border-box;
+  height: 25px;
+  padding: 0 16px 4px;
+  line-height: 20px;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.toolbar .spy-separator {
+  color: var(--dim);
+}
+
+/* The javadoc unfolds from nothing to its height: the row of the grid grows from 0fr to 1fr. */
+.toolbar .spy-doc {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 200ms ease-out;
+}
+
+.toolbar .spy-doc.open {
+  grid-template-rows: 1fr;
+}
+
+.toolbar .spy-doc-clip {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.toolbar .spy-doc-text {
+  box-sizing: border-box;
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: 6px 16px;
+  /* A gray of a comment, lighter than that of the comments in the report, for reading. */
+  color: #9ba3b2;
+  white-space: pre-wrap;
+  line-height: 1.3;
+}
+
 /* The report scrolls sideways, not the page with the tool bar. */
 .scroller {
   overflow-x: auto;
