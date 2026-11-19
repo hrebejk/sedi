@@ -932,11 +932,23 @@ public final class Reporter {
             lines.add(Line.number(first <= 0 ? 0 : first + i, marker, code.get(i)));
             ElementInfo type = moved.get(first + i);
             if (type != null) {
-                // A moved type is not new code: its first line stands for it.
+                // A moved type is not new code: its first line stands for it. A page can expand the rest of it, as it
+                // is, not marked as added.
                 int count = (int) type.getSourceText().lines().count();
+                int last = Math.min(i + count - 1, code.size() - 1);
+                boolean fold = options.foldContext() && last > i;
+                if (fold) {
+                    lines.add(Line.elided());
+                }
                 lines.add(Line.number(0, ' ', Markup.style(Css.NOTE,
                         "\u2026 moved from " + type.getMovedFrom() + " (" + (count - 1) + " lines)")));
-                i += count - 1;
+                if (fold) {
+                    for (int j = i + 1; j <= last; j++) {
+                        lines.add(Line.number(first + j, ' ', code.get(j)));
+                    }
+                    lines.add(Line.end());
+                }
+                i = last;
             }
         }
         return new Node(javadocLines(change.pair()), lines.get(0), lines.subList(1, lines.size()), List.of());

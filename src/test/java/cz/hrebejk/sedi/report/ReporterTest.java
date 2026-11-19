@@ -1088,6 +1088,10 @@ public class ReporterTest extends TestCase {
     }
     /** Reports one level of the move of the top level {@code a.Color} into the new {@code b.Values}, which adds a member. */
     private static HTML.Tag movedTypeReport(ChangeLevel level) throws Exception {
+        return movedTypeReport(level, new ReportOptions(ChangeLevel.IMPORTS));
+    }
+
+    private static HTML.Tag movedTypeReport(ChangeLevel level, ReportOptions options) throws Exception {
         try (GitTestHelper helper = new GitTestHelper()) {
             helper.writeFile("a/Color.java", "package a;\npublic class Color {\n  public int r;\n"
                     + "  public int g() { return r; }\n}\n");
@@ -1097,7 +1101,7 @@ public class ReporterTest extends TestCase {
                     + "    public int r;\n    public int g() { return r; }\n    public void b() { }\n  }\n"
                     + "  public int v;\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                return new Reporter(new ReportOptions(ChangeLevel.IMPORTS)).reportOnly(analyzer.analyzeChanges(), level);
+                return new Reporter(options).reportOnly(analyzer.analyzeChanges(), level);
             }
         }
     }
@@ -1133,5 +1137,25 @@ public class ReporterTest extends TestCase {
                 line('+', "  ", code("  public int v;")),
                 line('+', "  ", code("}"))),
                 movedTypeReport(ChangeLevel.IMPLEMENTATION));
+    }
+
+    /** For the page the source of a moved type is kept behind the note of the move, to be expanded there. */
+    public void testMovedTypeExpandableInImplementation() throws Exception {
+        assertLines(List.of(
+                heading("Implementation changes"),
+                blank(),
+                fileTitle('+', name("Values.java"), " ", pkg("b")),
+                line('+', "  ", code("public class Values {")),
+                line('+', "  ", code("  public static class Color {")),
+                HTML.DIV(
+                        line(' ', "  ", code(note("\u2026 moved from a.Color (4 lines)"))),
+                        line(' ', "  ", code("    public int r;")),
+                        line(' ', "  ", code("    public int g() { return r; }")),
+                        line(' ', "  ", code("    public void b() { }")),
+                        line(' ', "  ", code("  }"))).clazz(Css.ELIDED.cssClass()),
+                line('+', "  ", code("  public int v;")),
+                line('+', "  ", code("}"))),
+                movedTypeReport(ChangeLevel.IMPLEMENTATION,
+                        new ReportOptions(ChangeLevel.IMPORTS).withFoldContext(true)));
     }
 }
