@@ -114,6 +114,16 @@ public final class Reporter {
     }
 
     /**
+     * Returns a reporter like this one keeping the unchanged lines of a body collapsed to a note behind it, or not.
+     *
+     * @param fold see {@link ReportOptions#foldContext()}
+     * @return the new reporter
+     */
+    public Reporter withFoldContext(boolean fold) {
+        return new Reporter(options.withFoldContext(fold), width);
+    }
+
+    /**
      * Returns what this reporter shows and how.
      *
      * @return the options
@@ -707,7 +717,7 @@ public final class Reporter {
      * {@link ReportOptions#bodyContext()}.
      */
     private List<Line> body(BodyChanges body) {
-        return new AstPrinter(body, options.bodyContext()).print();
+        return new AstPrinter(body, options.bodyContext(), options.foldContext()).print();
     }
 
     /**
@@ -751,7 +761,8 @@ public final class Reporter {
                 : new ElementPair(change.pair().newElement(), change.pair().newElement(), Set.of());
         List<Line> body = change.body() == null ? List.of() : body(change.body());
         // The initializer of a field continues the line of its declaration.
-        boolean inline = body.size() == 1 && !(change.body().newRoot() instanceof BlockTree);
+        boolean inline = body.size() == 1 && body.getFirst().kind() == Line.Kind.NUMBERED
+                && !(change.body().newRoot() instanceof BlockTree);
         // A shown block is enclosed in its braces, as in the source.
         boolean block = !body.isEmpty() && change.body().newRoot() instanceof BlockTree;
         List<Line> below = new ArrayList<>();

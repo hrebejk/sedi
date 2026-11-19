@@ -244,3 +244,45 @@ body {
   font-family: "JetBrains Mono", ui-monospace, monospace;
   text-align: center;
 }
+
+/* Unchanged lines hidden behind the note of their number, see sedi.js. The note is a badge, the empty number in
+   front of it a ▸ which shows them; over the number of one of the shown lines a ▾ hides them again. */
+.elided.closed {
+  cursor: pointer;
+}
+
+.elided .note {
+  padding: 0 6px;
+  font-size: 0.8em;
+  border: 1px solid var(--dim);
+  border-radius: 4px;
+}
+
+.elided.closed:hover .note {
+  border-color: var(--active-border);
+}
+
+.elided.closed .ln,
+.elided.open > .line:hover > .ln {
+  position: relative;
+}
+
+.elided.closed .ln::after,
+.elided.open > .line:hover > .ln::after {
+  position: absolute;
+  right: 0;
+  content: "▸";
+  color: var(--active-border);
+}
+
+.elided.open > .line > .ln {
+  cursor: pointer;
+}
+
+.elided.open > .line:hover > .ln {
+  color: transparent;
+}
+
+.elided.open > .line:hover > .ln::after {
+  content: "▾";
+}

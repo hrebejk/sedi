@@ -85,7 +85,12 @@ enum Css {
      * A part of the report which can be collapsed to its first line, like a file under its title. Its
      * {@code data-name} names it, e.g. by the path of the file.
      */
-    FOLD;
+    FOLD,
+    /**
+     * Unchanged lines of a body hidden behind the note of their number, its first line, which a page can expand, see
+     * {@link ReportOptions#foldContext()}.
+     */
+    ELIDED;
 
     private final String cssClass = name().toLowerCase(Locale.ROOT).replace('_', '-');
 

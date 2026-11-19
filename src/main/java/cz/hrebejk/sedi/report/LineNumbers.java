@@ -31,7 +31,8 @@ final class LineNumbers {
      *
      * @param show {@code false} to show no numbers
      * @return a {@code div.line} for every line, a {@code br} for an empty one, the lines of a fold in a
-     *         {@code div.fold} named by {@code data-name}, with {@code data-open="false"} if collapsed at first
+     *         {@code div.fold} named by {@code data-name}, with {@code data-open="false"} if collapsed at first, the
+     *         hidden unchanged lines in a {@code div.elided} after the note of them
      */
     static List<HTML.Tag> render(List<Line> lines, boolean show) {
         int width = 1;
@@ -45,7 +46,7 @@ final class LineNumbers {
         Deque<List<HTML.Tag>> outer = new ArrayDeque<>();
         Deque<Line> folds = new ArrayDeque<>();
         for (Line line : lines) {
-            if (line.kind() == Line.Kind.FOLD || line.kind() == Line.Kind.FOLDED) {
+            if (line.kind() == Line.Kind.FOLD || line.kind() == Line.Kind.FOLDED || line.kind() == Line.Kind.ELIDED) {
                 outer.push(result);
                 folds.push(line);
                 result = new ArrayList<>();
@@ -53,8 +54,12 @@ final class LineNumbers {
             }
             if (line.kind() == Line.Kind.END) {
                 Line start = folds.pop();
-                HTML.Tag fold = HTML.DIV().children(result).clazz(Css.FOLD.cssClass())
-                        .attr("data-name", start.content().text());
+                HTML.Tag fold = HTML.DIV().children(result);
+                if (start.kind() == Line.Kind.ELIDED) {
+                    fold.clazz(Css.ELIDED.cssClass());
+                } else {
+                    fold.clazz(Css.FOLD.cssClass()).attr("data-name", start.content().text());
+                }
                 if (start.kind() == Line.Kind.FOLDED) {
                     fold.attr("data-open", "false");
                 }
@@ -68,7 +73,7 @@ final class LineNumbers {
                 case PLAIN -> div(Fragment.of(show && !line.content().isEmpty() ? " ".repeat(width + 1) : "")
                         .plus(line.prefix()).plus(line.content()), Css.LINE);
                 case NUMBERED -> numbered(line, show, width);
-                case FOLD, FOLDED, END -> throw new AssertionError(line);
+                case FOLD, FOLDED, ELIDED, END -> throw new AssertionError(line);
             };
             // A line without text has nothing for the console to show: it is an empty line.
             result.add(element.getInnerText().isBlank() ? HTML.BR() : element);

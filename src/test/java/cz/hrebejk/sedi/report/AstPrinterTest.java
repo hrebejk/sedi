@@ -26,12 +26,15 @@ public class AstPrinterTest extends TestCase {
 
     /** The report of the implementation changes of the methods of {@code Foo}. */
     static List<HTML> body(String oldMembers, String newMembers, int bodyContext) throws Exception {
+        return body(oldMembers, newMembers, new ReportOptions(ChangeLevel.IMPLEMENTATION, bodyContext));
+    }
+
+    private static List<HTML> body(String oldMembers, String newMembers, ReportOptions options) throws Exception {
         try (GitTestHelper helper = new GitTestHelper()) {
             helper.writeFile("Foo.java", "class Foo {\n" + oldMembers + "\n}\n");
             helper.commit("init");
             helper.writeFile("Foo.java", "class Foo {\n" + newMembers + "\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                ReportOptions options = new ReportOptions(ChangeLevel.IMPLEMENTATION, bodyContext);
                 List<HTML> lines = lines(new Reporter(options).report(analyzer.analyzeChanges().files().getFirst()));
                 // Without the line of the top level type.
                 return lines.subList(1, lines.size());
@@ -450,6 +453,28 @@ public class AstPrinterTest extends TestCase {
                 line(' ', "            ", code("a(8);")),
                 line(' ', "      ", code("}"))),
                 body(old, now));
+    }
+
+    /** For the page the collapsed lines are kept, after the note of them, to be expanded there. */
+    public void testCollapsedRunIsKeptForThePage() throws Exception {
+        String old = method("void m()", "a(1);", "a(2);", "a(3);", "a(4);", "a(5);", "a(6);", "a(7);")
+                + "\nvoid a(int i) {}";
+        String now = method("void m()", "a(1);", "a(2);", "a(3);", "a(4);", "a(5);", "a(60);", "a(7);")
+                + "\nvoid a(int i) {}";
+        ReportOptions options = new ReportOptions(ChangeLevel.IMPLEMENTATION).withFoldContext(true);
+        assertLines(List.of(
+                line(' ', "  ", tree("└── "), code("void ", decl("m"), "() { ", tag("impl"))),
+                HTML.DIV(
+                        line(' ', "            ", code(note("… 5 lines"))),
+                        line(' ', "            ", code("a(1);")),
+                        line(' ', "            ", code("a(2);")),
+                        line(' ', "            ", code("a(3);")),
+                        line(' ', "            ", code("a(4);")),
+                        line(' ', "            ", code("a(5);"))).clazz(Css.ELIDED.cssClass()),
+                line('~', "            ", code("a(", strike("6"), " ", added("60"), ");")),
+                line(' ', "            ", code("a(7);")),
+                line(' ', "      ", code("}"))),
+                body(old, now, options));
     }
 
     /** A negative context shows the whole body. */

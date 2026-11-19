@@ -33,6 +33,27 @@ function Fold(props) {
 
 register("sedi-fold", Fold);
 
+/**
+ * Unchanged lines of a body hidden behind the note of their number, the first child: a click on the note shows the
+ * lines instead of it, a click on the number of one of the lines hides them again.
+ */
+function Elided(props) {
+    const [open, setOpen] = useState(false);
+    const [note, ...lines] = toChildArray(props.children);
+    if (!open) {
+        return h("div", { class: `${props.class} closed`, title: "Show the lines", onClick: () => setOpen(true) },
+            note);
+    }
+    const collapse = event => {
+        if (event.target.closest(".ln") && window.getSelection().isCollapsed) {
+            setOpen(false);
+        }
+    };
+    return h("div", { class: `${props.class} open`, onClick: collapse }, lines);
+}
+
+register("sedi-elided", Elided);
+
 // The keys of the console: a key presses the button of the tool bar with its data-key.
 document.addEventListener("keydown", event => {
     if (event.ctrlKey || event.metaKey || event.altKey || event.target.closest("input, textarea, select")) {

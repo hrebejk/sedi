@@ -105,21 +105,28 @@ final class WebReport {
     private static final String FOLD_COMPONENT = "sedi-fold";
     /** The class of a fold of the report, see {@code Css.FOLD}. */
     private static final String FOLD_CLASS = "fold";
+    /** The client component of unchanged lines hidden behind their note, see {@code sedi.js}. */
+    private static final String ELIDED_COMPONENT = "sedi-elided";
+    /** The class of unchanged lines hidden behind their note, see {@code Css.ELIDED}. */
+    private static final String ELIDED_CLASS = "elided";
 
     /**
-     * The tree with its folds made the client component which collapses and expands them. Each gets a key of the
-     * key of the fold it is in, its name and how many folds of the same key come before it, so the browser keeps the
-     * state of a fold when the report is rendered again, also in another view of the same changes.
+     * The tree with its folds made the client components which collapse and expand them, also the unchanged lines
+     * hidden behind their note. Each gets a key of the key of the fold it is in, its name and how many folds of the
+     * same key come before it, so the browser keeps the state of a fold when the report is rendered again, also in
+     * another view of the same changes.
      *
      * @param outer the key of the fold the tag is in, empty for none
      * @param seen  the folds of each key seen so far
      */
     private static HTML.Tag withFoldComponents(HTML.Tag tag, String outer, Map<String, Integer> seen) {
         boolean fold = hasClass(tag, FOLD_CLASS);
-        HTML.Tag copy = new HTML.Tag(fold ? FOLD_COMPONENT : tag.tagName).attributes(tag.attrs);
+        boolean elided = hasClass(tag, ELIDED_CLASS);
+        HTML.Tag copy = new HTML.Tag(fold ? FOLD_COMPONENT : elided ? ELIDED_COMPONENT : tag.tagName)
+                .attributes(tag.attrs);
         String key = outer;
-        if (fold) {
-            String name = outer + "/" + tag.attrs.getOrDefault("data-name", "");
+        if (fold || elided) {
+            String name = outer + "/" + tag.attrs.getOrDefault("data-name", "\u2026");
             key = name + "#" + seen.merge(name, 1, Integer::sum);
             copy.attr("key", key);
         }

@@ -222,15 +222,18 @@ final class AstPrinter {
         }
     }
 
-    /** A line of the output: a line of a version, or a remark. */
-    private record Entry(Source source, long line, char marker, String note) {
+    /**
+     * A line of the output: a line of a version, or a remark; the note of unchanged lines may keep them, see
+     * {@link #fold}.
+     */
+    private record Entry(Source source, long line, char marker, String note, List<Long> hidden) {
 
         static Entry line(Source source, long line, char marker) {
-            return new Entry(source, line, marker, null);
+            return new Entry(source, line, marker, null, List.of());
         }
 
-        static Entry note(char marker, String note) {
-            return new Entry(null, 0, marker, note);
+        static Entry note(char marker, String note, List<Long> hidden) {
+            return new Entry(null, 0, marker, note, hidden);
         }
     }
 
@@ -239,6 +242,8 @@ final class AstPrinter {
     private final Source newSource;
     /** The most unchanged lines shown in a row, a negative number for any number of them. */
     private final int context;
+    /** Whether the unchanged lines collapsed to a note are kept behind it, see {@link Line#elided()}. */
+    private final boolean fold;
     /** The statement, or the outermost expression in the header of a compound statement, each new tree is part of. */
     private final Map<Tree, Tree> units = new IdentityHashMap<>();
     /** The new lines to print. */
@@ -257,10 +262,12 @@ final class AstPrinter {
      * @param changes the changes of the body
      * @param context the most unchanged lines shown in a row, a longer run of them is shown as a note with its number
      *                of lines; a negative number to show them all
+     * @param fold    whether the lines collapsed to a note are kept behind it, see {@link ReportOptions#foldContext()}
      */
-    AstPrinter(BodyChanges changes, int context) {
+    AstPrinter(BodyChanges changes, int context, boolean fold) {
         this.changes = changes;
         this.context = context;
+        this.fold = fold;
         this.oldSource = new Source(changes.oldUnit(), changes.oldRoot());
         this.newSource = new Source(changes.newUnit(), changes.newRoot());
         for (Tree tree : changes.unresolved()) {
@@ -706,7 +713,9 @@ final class AstPrinter {
                 entries.add(Entry.line(newSource, l, ' '));
             }
         } else if (!lines.stream().allMatch(this::isBlank)) {
-            entries.add(Entry.note(' ', "… (" + lines.size() + (lines.size() == 1 ? " line)" : " lines)")));
+            String count = lines.size() + (lines.size() == 1 ? " line" : " lines");
+            // Kept behind it, the note is a badge on the page, without the parentheses.
+            entries.add(fold ? Entry.note(' ', "… " + count, lines) : Entry.note(' ', "… (" + count + ")", List.of()));
         }
     }
 
@@ -759,12 +768,24 @@ final class AstPrinter {
             if (e.note() == null && !e.source().clipped(e.line())) {
                 indent = Math.min(indent, indentation(e.source(), e.line()));
             }
+            for (long l : e.hidden()) {
+                indent = Math.min(indent, indentation(newSource, l));
+            }
         }
         indent = indent == Integer.MAX_VALUE ? 0 : indent;
         List<Line> lines = new ArrayList<>();
         for (Entry e : entries) {
             if (e.note() != null) {
+                if (!e.hidden().isEmpty()) {
+                    lines.add(Line.elided());
+                }
                 lines.add(Line.number(0, e.marker(), Markup.style(Css.NOTE, e.note())));
+                if (!e.hidden().isEmpty()) {
+                    for (long l : e.hidden()) {
+                        lines.add(Line.number(l, ' ', Highlighter.code(text(newSource, l, indent, true))));
+                    }
+                    lines.add(Line.end());
+                }
             } else {
                 // A line of added code is marked by its +, the code itself is not.
                 Fragment text = text(e.source(), e.line(), indent, e.marker() != '+');

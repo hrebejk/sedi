@@ -240,8 +240,9 @@ public class Main implements Callable<Integer> {
             System.err.println("Cannot read the theme: " + e.getMessage());
             return 1;
         }
+        // The page expands the unchanged lines collapsed to a note.
         Reporter reporter = new Reporter(new ReportOptions(level, bodyContext, javadocContext, !noLineNumbers,
-                !hideAdditions, showDeletions, !hideTests));
+                !hideAdditions, showDeletions, !hideTests, true));
         String title = projectDir.getFileName() + " " + (commit == null ? "working copy" : commit);
         WebReport report = new WebReport(reporter, title);
         try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader, renameScore)) {

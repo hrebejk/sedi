@@ -39,6 +39,8 @@ record Line(Kind kind, long number, char marker, Fragment prefix, Fragment conte
         FOLD,
         /** Not a line: the start of a fold collapsed at first, else as {@link #FOLD}. */
         FOLDED,
+        /** Not a line: the start of {@linkplain Css#ELIDED unchanged lines hidden} behind the note, its first line. */
+        ELIDED,
         /** Not a line: the end of the fold started last. */
         END
     }
@@ -87,6 +89,11 @@ record Line(Kind kind, long number, char marker, Fragment prefix, Fragment conte
         return new Line(open ? Kind.FOLD : Kind.FOLDED, 0, NONE, Fragment.EMPTY, Fragment.of(name));
     }
 
+    /** The start of unchanged lines hidden behind a note, the first line up to the {@link #end()}. */
+    static Line elided() {
+        return new Line(Kind.ELIDED, 0, NONE, Fragment.EMPTY, Fragment.EMPTY);
+    }
+
     /** The end of the fold started last. */
     static Line end() {
         return new Line(Kind.END, 0, NONE, Fragment.EMPTY, Fragment.EMPTY);
@@ -99,7 +106,8 @@ record Line(Kind kind, long number, char marker, Fragment prefix, Fragment conte
 
     /** The line with the fragment put in front of its prefix; a blank line and the bounds of a fold stay as they are. */
     Line withPrefix(Fragment fragment) {
-        return kind == Kind.BLANK || kind == Kind.FOLD || kind == Kind.FOLDED || kind == Kind.END || fragment.isEmpty() ? this
+        return kind == Kind.BLANK || kind == Kind.FOLD || kind == Kind.FOLDED || kind == Kind.ELIDED
+                || kind == Kind.END || fragment.isEmpty() ? this
                 : new Line(kind, number, marker, fragment.plus(prefix), content);
     }
 
