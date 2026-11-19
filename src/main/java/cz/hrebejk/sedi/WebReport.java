@@ -172,17 +172,74 @@ final class WebReport {
         return Arrays.asList(tag.attrs.getOrDefault("class", "").split(" ")).contains(clazz);
     }
 
+    /** The key of the help, as on the console; also the id of its button. */
+    private static final char HELP_KEY = 'h';
+    /** The id of the tool bar, which a click on hides the help. */
+    private static final String TOOLBAR = "toolbar";
+
+    /** The help, shown instead of the report. */
+    private static final HTML.Tag HELP = HTML.DIV(
+            HTML.Tag("h2", HTML.Text("Buttons and keys")),
+            keys(
+                    "l", "All", "All the changes by file; under each file its API, implementation, cosmetic and "
+                            + "import changes",
+                    "a", "API", "Only the API changes",
+                    "i", "Implementation", "Only the implementation changes",
+                    "c", "Cosmetic", "Only the cosmetic changes: formatting, comments, javadoc",
+                    "m", "Imports", "Only the changed imports",
+                    "d", "Javadoc", "The javadoc shown: none, 3 lines around the changes, whole",
+                    "+", "Additions", "Show or hide the whole source of the added types and members",
+                    "-", "Deletions", "Show or hide the whole source of the removed types and members",
+                    "t", "Tests", "Show or hide the changes of the tests",
+                    "h", "?", "This help; a click on the tool bar brings the report back"),
+            HTML.Tag("h2", HTML.Text("Folding")),
+            HTML.Tag("p", HTML.Text("A click on the title of a file or of a category of its changes collapses or expands "
+                    + "it. The mark in front of the title shows which: \u25be collapses, \u25b8 expands.")),
+            HTML.Tag("h2", HTML.Text("Marks")),
+            keys(
+                    "+", "", "An added file, type, member or line",
+                    "-", "", "A removed file, type, member or line",
+                    "~", "", "A changed file, type, member or line",
+                    "\u2192", "", "A moved or renamed file"))
+            .clazz("help");
+
+    /** A table of keys, a label and a description in each row, given in turns. */
+    private static HTML.Tag keys(String... cells) {
+        List<HTML> rows = new ArrayList<>();
+        for (int i = 0; i < cells.length; i += 3) {
+            rows.add(HTML.Tag("tr",
+                    HTML.Tag("td", HTML.Tag("kbd", HTML.Text(cells[i]))).clazz("key"),
+                    HTML.Tag("td", HTML.Text(cells[i + 1])).clazz("label"),
+                    HTML.Tag("td", HTML.Text(cells[i + 2]))));
+        }
+        return HTML.Tag("table").children(rows);
+    }
+
     /** One loaded page. */
     private final class Page implements WebPage {
 
 
         /** At first the level the command line asks for, alone; the page does not list the levels up to it. */
         private View view = new View(reporter, reporter.options().maxLevel(), false);
+        /** Whether the help is shown instead of the report. */
+        private boolean help;
 
         @Override
         public HTML render() {
             List<HTML> content = new ArrayList<>();
-            content.add(toolbar());
+            HTML.Tag toolbar = toolbar();
+            content.add(help ? toolbar.id(TOOLBAR).listen("click") : toolbar);
+            // While the help is shown the button closes it.
+            content.add(HTML.Tag("button", HTML.Text(help ? "\u2715" : "?"))
+                    .id(String.valueOf(HELP_KEY))
+                    .attr("data-key", String.valueOf(HELP_KEY))
+                    .attr("title", (help ? "Close the help" : "Help") + " (" + HELP_KEY + ")")
+                    .listen("click")
+                    .clazz("help-button"));
+            if (help) {
+                content.add(HELP);
+                return HTML.DIV().children(content).clazz("sedi");
+            }
             synchronized (lock) {
                 if (error != null) {
                     content.add(HTML.DIV(error).clazz("message", "failure"));
@@ -199,10 +256,22 @@ final class WebReport {
             return HTML.DIV().children(content).clazz("sedi");
         }
 
+        /**
+         * Handles the buttons. While the help is shown the tool bar listens too: a click anywhere on it brings the
+         * report back, on a button also with what the button does.
+         */
         @Override
         public void onEvent(WebEvent event) {
             String id = event.targetId();
-            if (id != null && id.length() == 1) {
+            if (id == null) {
+                return;
+            }
+            if (id.equals(String.valueOf(HELP_KEY))) {
+                help = !help;
+                return;
+            }
+            help = false;
+            if (id.length() == 1) {
                 View next = view.key(id.charAt(0));
                 if (next != null) {
                     view = next;
@@ -231,7 +300,7 @@ final class WebReport {
                     options.showDeletions()));
             items.add(button('t', "Tests", "The changes of the tests", options.showTests()));
             items.add(HTML.SPAN(title).clazz("title"));
-            return HTML.DIV().children(items).clazz("toolbar");
+            return HTML.DIV().children(items).clazz(TOOLBAR);
         }
 
         /**

@@ -186,3 +186,61 @@ body {
   content: " …";
   color: var(--dim);
 }
+
+/* The help button, always in the bottom right corner over the report. */
+.help-button {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 2;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--button);
+  color: var(--text);
+  opacity: 0.6;
+  font-family: "Roboto", system-ui, sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.help-button:hover {
+  opacity: 1;
+  border-color: var(--active-border);
+}
+
+/* The help, shown instead of the report. */
+.help {
+  padding: 4px 16px 24px;
+  max-width: 900px;
+  font-family: "Roboto", system-ui, sans-serif;
+  line-height: 1.4;
+}
+
+.help h2 {
+  margin: 20px 0 8px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.help td {
+  padding: 3px 16px 3px 0;
+  vertical-align: top;
+}
+
+.help .label {
+  font-weight: 500;
+}
+
+.help kbd {
+  display: inline-block;
+  min-width: 1.4em;
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--button);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  text-align: center;
+}

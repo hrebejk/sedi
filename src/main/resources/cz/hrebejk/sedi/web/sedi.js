@@ -38,7 +38,7 @@ document.addEventListener("keydown", event => {
     if (event.ctrlKey || event.metaKey || event.altKey || event.target.closest("input, textarea, select")) {
         return;
     }
-    const button = document.querySelector(`.toolbar button[data-key="${CSS.escape(event.key)}"]`);
+    const button = document.querySelector(`button[data-key="${CSS.escape(event.key)}"]`);
     if (button) {
         event.preventDefault();
         button.click();
