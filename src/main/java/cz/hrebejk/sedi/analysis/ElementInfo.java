@@ -57,6 +57,10 @@ public class ElementInfo {
     private SourceText source;
     private long line;
     private boolean enumConstant;
+    /** The qualified name of the old version of a type moved to another type or out of one, else {@code null}. */
+    private String movedFrom;
+    /** The qualified name of a moved type, see {@link #movedFrom}. */
+    private String movedTo;
 
     /**
      * Enum defining the type of reduced AST node.
@@ -479,6 +483,30 @@ public class ElementInfo {
 
     void setEnumConstant(boolean enumConstant) {
         this.enumConstant = enumConstant;
+    }
+
+    /**
+     * Returns the qualified name of the old version of a type which moved into another type or out of one, like a
+     * top level type which became a nested one.
+     *
+     * @return the old qualified name, {@code null} if the type did not move
+     */
+    public String getMovedFrom() {
+        return movedFrom;
+    }
+
+    /**
+     * Returns the qualified name of a type which moved, see {@link #getMovedFrom()}.
+     *
+     * @return the qualified name, {@code null} if the type did not move
+     */
+    public String getMovedTo() {
+        return movedTo;
+    }
+
+    void setMoved(String from, String to) {
+        this.movedFrom = from;
+        this.movedTo = to;
     }
 
     /**

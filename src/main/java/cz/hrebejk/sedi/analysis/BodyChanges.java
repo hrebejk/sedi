@@ -42,10 +42,15 @@ import java.util.Set;
  *                            (identity set)
  * @param comments            the comments added to or removed from the body, in the order of the old and the new
  *                            version
+ * @param renamed             the nodes of the new version which differ from the old one only cosmetically, by a
+ *                            renamed name or by how a name is qualified, marked {@link Renamed} or {@link Edited};
+ *                            shown as they are, marked as renamed (identity map). Empty for cosmetic changes, whose
+ *                            marks are these.
  */
 public record BodyChanges(CompilationUnitInfo oldUnit, CompilationUnitInfo newUnit, Tree oldRoot, Tree newRoot,
                           Map<Tree, Mark> marks, Map<Tree, List<Tree>> removedBefore,
-                          Map<Tree, List<Tree>> removedAtEnd, Set<Tree> unresolved, List<CommentChange> comments) {
+                          Map<Tree, List<Tree>> removedAtEnd, Set<Tree> unresolved, List<CommentChange> comments,
+                          Map<Tree, Mark> renamed) {
 
     /** What happened to a node of the new version. */
     public sealed interface Mark permits Changed, Edited, Added, Replaced, Wrapped, Unwrapped, WrappedStatements,

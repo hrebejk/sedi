@@ -109,7 +109,7 @@ public class AstPrinterTest extends TestCase {
     /** Code added around an expression is marked alone, the expression kept as it is, renamed locals too. */
     public void testWrappedExpressionMarksOnlyTheAddedCode() throws Exception {
         assertLines(List.of(
-                line('~', "  ", tree("│   "), "      ", code("return ", added("!"), "bool ? 1 : 0;")),
+                line('~', "  ", tree("│   "), "      ", code("return ", added("!"), renamed("p", "bool", "bool"), " ? 1 : 0;")),
                 line('~', "  ", tree("│   "), "      ", code("return ", added("f("), "f(a) ", added("+ b)"), ";")),
                 line('~', "  ", tree("│   "), "      ", code("return a + b ", added("+ 1"), ";")),
                 line('~', "  ", tree("│   "), "      ", code("return s.trim()", added(".toLowerCase()"), ";")),
@@ -182,10 +182,10 @@ public class AstPrinterTest extends TestCase {
     /** A removed statement around statements kept shows only its own lines as removed, the kept ones as they are now. */
     public void testUnwrappedStatements() throws Exception {
         assertLines(List.of(
-                line(' ', "  ", tree("└── "), code("void ", decl("a"), "( boolean c, int q ) { ", tag("impl"))),
+                line(' ', "  ", tree("└── "), code("void ", decl("a"), "( boolean c, int ", renamed("p", "q", "q"), " ) { ", tag("impl"))),
                 line(' ', "            ", code("f(0);")),
                 line('-', "            ", code("if (c) {")),
-                line(' ', "            ", code("f(q);")),
+                line(' ', "            ", code("f(", renamed("p", "q", "q"), ");")),
                 line(' ', "            ", code("f(2);")),
                 line('-', "            ", code("}")),
                 line(' ', "            ", code("f(3);")),
@@ -197,8 +197,8 @@ public class AstPrinterTest extends TestCase {
     /** Code removed around an expression is struck through alone, the rest of the line in one run. */
     public void testUnwrappedExpressionStrikesOnlyTheRemovedCode() throws Exception {
         assertLines(List.of(
-                line(' ', "  ", tree("├── "), code("boolean ", decl("neg"), "( boolean q ) { ", tag("impl"))),
-                line('~', "  ", tree("│   "), "      ", code("return ", strike("!"), "q;")),
+                line(' ', "  ", tree("├── "), code("boolean ", decl("neg"), "( boolean ", renamed("p", "q", "q"), " ) { ", tag("impl"))),
+                line('~', "  ", tree("│   "), "      ", code("return ", strike("!"), renamed("p", "q", "q"), ";")),
                 line(' ', "  ", tree("│   "), code("}")),
                 line(' ', "  ", tree("└── "), code("int ", decl("paren"), "( int a, int b ) { ", tag("impl"))),
                 line('~', "            ", code("return ", strike("("), "a + b", strike(") * 2"), ";")),

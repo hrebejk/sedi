@@ -43,7 +43,7 @@ public class CosmeticReportTest extends TestCase {
     public void testRenames() throws Exception {
         assertLines(List.of(
                 line(' ', "  ", code("public class ", decl("Foo"))),
-                line(' ', "  ", tree("├── "), code("static void ", decl("method"), "() {")),
+                line(' ', "  ", tree("├── "), code("static void ", renamed("m1", "method", decl("method")), "() {")),
                 line('~', "  ", tree("│   "), "      ", code("int ", strike("l"), " ", added("sum"), " = 0;")),
                 plain("    ", tree("│   "), "      "),
                 line('~', "  ", tree("│   "), "      ", code("for(int ", strike("k"), " ", added("i"), " = 0; ",
@@ -69,7 +69,7 @@ public class CosmeticReportTest extends TestCase {
     public void testParameterRename() throws Exception {
         assertLines(List.of(
                 line(' ', "  ", code("class ", decl("Foo"))),
-                line('~', "  ", tree("└── "), code("void ", decl("method"), "( int ", strike("p"), " ", added("q"),
+                line('~', "  ", tree("└── "), code("void ", renamed("m1", "method", decl("method")), "( int ", strike("p"), " ", added("q"),
                         " ) {")),
                 line('~', "            ", code("int l = j + ", strike("p"), " ", added("q"), ";")),
                 line(' ', "      ", code("}"))),
@@ -136,9 +136,9 @@ public class CosmeticReportTest extends TestCase {
         assertLines(List.of(
                 line(' ', "  ", code("class ", decl("Foo"))),
                 line(' ', "  ", tree("└── "), code("int ", decl("m"), "( int a ) {")),
-                line(' ', "            ", code("int total = a * 2;")),
-                line('~', "            ", code("if (total > ", strike("3"), " ", added("4"), ") {")),
-                line(' ', "            ", code("  return total + 1;")),
+                line(' ', "            ", code("int ", renamed("t", "total", "total"), " = a * 2;")),
+                line('~', "            ", code("if (", renamed("t", "total", "total"), " > ", strike("3"), " ", added("4"), ") {")),
+                line(' ', "            ", code("  return ", renamed("t", "total", "total"), " + 1;")),
                 line(' ', "            ", code("}")),
                 line('+', "            ", code(comment("// nothing"))),
                 line(' ', "            ", code("return 0;")),
@@ -171,5 +171,69 @@ public class CosmeticReportTest extends TestCase {
                 noChanges(),
                 blank()),
                 section(before, after, ChangeLevel.IMPLEMENTATION));
+    }
+    /** The section of the level for {@code Use.java} after the class {@code Foo} it uses is renamed to {@code Bar}. */
+    private static List<HTML> typeRenameSection(String before, String after, ChangeLevel level) throws Exception {
+        String members = " {\n  public %s(int x) { }\n  public void a() { }\n  public void b() { }\n}\n";
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", "public class Foo" + members.formatted("Foo"));
+            helper.writeFile("Use.java", before);
+            helper.commit("init");
+            java.nio.file.Files.delete(helper.getRepositoryPath().resolve("Foo.java"));
+            helper.writeFile("Bar.java", "public class Bar" + members.formatted("Bar"));
+            helper.writeFile("Use.java", after);
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                List<HTML> lines = lines(new Reporter(new ReportOptions(ChangeLevel.IMPORTS)).reportOnly(analyzer.analyzeChanges(), level));
+                return lines.subList(3, lines.size());
+            }
+        }
+    }
+
+    private static final String USE_OLD = "public class Use {\n  Object make() {\n    return new Foo(1);\n  }\n}\n";
+    private static final String USE_NEW = "public class Use {\n  Object make() {\n    return new Bar(2);\n  }\n}\n";
+
+    /** A renamed type in a body changed otherwise: marked as renamed in the implementation section. */
+    public void testTypeRenameInImplementationSection() throws Exception {
+        assertLines(List.of(
+                line(' ', "  ", code("public class ", decl("Use"))),
+                line(' ', "  ", tree("└── "), code("Object ", decl("make"), "() {")),
+                line('~', "            ", code("return new ", renamed("Foo", "Bar", "Bar"), "(", strike("1"), " ",
+                        added("2"), ");")),
+                line(' ', "      ", code("}"))),
+                typeRenameSection(USE_OLD, USE_NEW, ChangeLevel.IMPLEMENTATION));
+    }
+
+    /** A renamed type in a body changed otherwise: the old name struck through in the cosmetic section. */
+    public void testTypeRenameInCosmeticSection() throws Exception {
+        assertLines(List.of(
+                line(' ', "  ", code("public class ", decl("Use"))),
+                line(' ', "  ", tree("└── "), code("Object ", decl("make"), "() {")),
+                line('~', "            ", code("return new ", strike("Foo"), " ", added("Bar"), "(2);")),
+                line(' ', "      ", code("}"))),
+                typeRenameSection(USE_OLD, USE_NEW, ChangeLevel.COSMETIC));
+    }
+
+    /** A parameter of a renamed type in the head of a method with a changed body: the new type marked as renamed. */
+    public void testRenamedParameterTypeInImplementationHead() throws Exception {
+        assertLines(List.of(
+                line(' ', "  ", code("public class ", decl("Use"))),
+                line(' ', "  ", tree("└── "), code("Object ", decl("make"), "( ", renamed("Foo", "Bar", "Bar"),
+                        " f ) {")),
+                line('~', "            ", code("return ", strike("1"), " ", added("2"), ";")),
+                line(' ', "      ", code("}"))),
+                typeRenameSection("public class Use {\n  Object make(Foo f) {\n    return 1;\n  }\n}\n",
+                        "public class Use {\n  Object make(Bar f) {\n    return 2;\n  }\n}\n",
+                        ChangeLevel.IMPLEMENTATION));
+    }
+
+    /** The head of a renamed method with a changed body shows the new name marked as renamed. */
+    public void testRenamedMethodHeadInImplementationSection() throws Exception {
+        assertLines(List.of(
+                line(' ', "  ", code("class ", decl("Foo"))),
+                line(' ', "  ", tree("└── "), code("int ", renamed("m1", "method", decl("method")), "( int a ) {")),
+                line('~', "            ", code("return a + ", strike("1"), " ", added("2"), ";")),
+                line(' ', "      ", code("}"))),
+                section("class Foo {\n  int m1(int a) {\n    return a + 1;\n  }\n}\n",
+                        "class Foo {\n  int method(int a) {\n    return a + 2;\n  }\n}\n", ChangeLevel.IMPLEMENTATION));
     }
 }

@@ -59,6 +59,11 @@ enum Css {
     STRIKE,
     /** New text, added or replacing the struck through text. */
     ADDED,
+    /**
+     * A renamed or moved name, or code which differs only by such names or by how they are qualified, shown as it is
+     * now; its title tells what it was.
+     */
+    RENAMED,
     /** The name of a declared type, method or field. */
     DECLARATION,
     /** Section headings. */

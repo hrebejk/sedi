@@ -181,7 +181,7 @@ final class MemberMatcher {
         return result;
     }
 
-    private static Set<Facet> changedFacets(ElementInfo old, ElementInfo updated) {
+    static Set<Facet> changedFacets(ElementInfo old, ElementInfo updated) {
         Set<Facet> changed = EnumSet.noneOf(Facet.class);
         for (Facet facet : Facet.values()) {
             if (!old.getFacetSha(facet).equals(updated.getFacetSha(facet))) {

@@ -133,6 +133,11 @@ final class Expect {
         return span(Css.ADDED, parts);
     }
 
+    /** Code shown as it is now, which differs from the old one by a rename; its title tells what it was. */
+    static HTML.Tag renamed(String oldText, String newText, Object... parts) {
+        return span(Css.RENAMED, parts).attr("title", oldText + " \u2192 " + newText);
+    }
+
     /** The name of a declaration. */
     static HTML.Tag decl(Object... parts) {
         return span(Css.DECLARATION, parts);

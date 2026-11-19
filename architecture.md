@@ -182,6 +182,16 @@ Whatever is left over is added or removed. Kinds never mix, and constructors pai
 whose ids or names differ is recorded in `Renames`, and nested types are visited recursively. **Renames are global to
 the diff**, because a file can refer to an element renamed in another file.
 
+**Moved types.** The types left over as removed or added in any container of any file, nested ones included, are then
+paired across the whole diff by `ApiDiffAnalyzer.pairMoves`. A pair must have the same simple name and declaration kind,
+and at least half of the members in common by kind, name and parameter count, or no members at all. Higher
+similarity goes first, and a type moves together with the types nested in it. This finds a top level type that became
+a nested one, like `styles.Color` → `css.CssValues.Color`, and the other way around. A move is recorded in `Renames`
+like a rename, so references to the moved type become cosmetic. In the classification, the moved type is a pair of its
+old version, from wherever it was, and its new version. Its body is diffed against the file of its old version. The new
+`ElementInfo` knows where it came from (`getMovedFrom`). The removed type at the old place is dropped, and an added type
+with types moved into it gets the `ApiChanges` of those moves.
+
 ### Phase 6: Hashing, second pass
 
 The new side of each file is hashed again with the `Renames` (`new ElementHashCalculator(trees, renames)`). The
@@ -278,6 +288,14 @@ The printers:
 Names javac could not resolve are shown white on red, so code that does not compile is visible but does not break
 the analysis.
 
+Renames outside the API section show only the new name. In bodies printed with the implementation changes (the
+cosmetic marks `BodyDiff` copies into `BodyChanges.renamed`) and in the signature heads of the implementation and
+cosmetic sections (`SignatureDiffPrinter.plain()` and `cosmetic()`), a renamed or moved name is a `.renamed` span. It
+has a muted yellow background and a `title` of `old → new`, which the web page shows on hover. A moved type shows
+in the API section where it now is, with its old qualified name struck through. In the whole source of an added type
+it is collapsed to its first line and a note saying where it moved from. A deleted file whose types all moved is not
+listed.
+
 ---
 
 ## 5. Key principles
@@ -369,7 +387,7 @@ Tests are JUnit 4. `GitTestHelper` creates throwaway repositories with an initia
   hashing cost.
 - **Pairing heuristics are local and greedy.**
   - Nested types are paired only by name, so a renamed inner type is shown as removed and added (open in
-    `todo.md`).
+    `todo.md`). Moves between containers are found only when the simple name stays the same.
   - Passes 4–6 give up when there are several candidates.
   - A global score-based assignment, such as Hungarian matching on facet similarity, would handle "rename + small
     signature change" and swapped names better.

@@ -103,7 +103,21 @@ final class Markup {
     }
 
     /** The {@code →} starting the title of a renamed file. */
-    static Fragment renamed() {
+    static Fragment renamedFile() {
         return style(Css.CHANGE_MARK, "→");
+    }
+
+    /**
+     * The new version of a renamed or moved name, or of code which differs from the old one only by such names or by
+     * how they are qualified, marked as renamed. The old and the new version show on demand, as the title of the
+     * span: on the page under the mouse. It is not a change of its own.
+     *
+     * @param content the new version as shown
+     * @param oldText the old version
+     * @param newText the new version
+     */
+    static Fragment renamed(Fragment content, String oldText, String newText) {
+        return content.isEmpty() ? content
+                : Fragment.of(Css.RENAMED.span(content).attr("title", oldText + " \u2192 " + newText));
     }
 }

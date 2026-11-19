@@ -66,6 +66,8 @@ final class AstPrinter {
         final BitSet errors = new BitSet();
         /** Text put in front of the character at a position, like old code struck through. */
         final Map<Integer, List<Fragment>> inserts = new TreeMap<>();
+        /** The code which differs only by a renamed name or its qualification, by its start. */
+        final Map<Integer, Renamed> renamed = new TreeMap<>();
 
         Source(CompilationUnitInfo info, Tree root) {
             unit = info.compilationUnit();
@@ -223,6 +225,12 @@ final class AstPrinter {
     }
 
     /**
+     * Code shown as it is, marked as renamed: from {@code start} to {@code end}, what it was before.
+     */
+    private record Renamed(int start, int end, String oldText) {
+    }
+
+    /**
      * A line of the output: a line of a version, or a remark; the note of unchanged lines may keep them, see
      * {@link #fold}.
      */
@@ -276,6 +284,17 @@ final class AstPrinter {
                 newSource.errors.set(newSource.start(tree), newSource.end(tree));
             }
         }
+        changes.renamed().forEach((tree, mark) -> {
+            Renamed renamed = switch (mark) {
+                case BodyChanges.Renamed r -> new Renamed(r.nameStart(), r.nameEnd(), r.oldName());
+                case BodyChanges.Edited e when newSource.isPresent(tree) && oldSource.isPresent(e.oldTree()) ->
+                        new Renamed(newSource.start(tree), newSource.end(tree), oldSource.oneLine(e.oldTree()));
+                default -> null;
+            };
+            if (renamed != null && renamed.start() >= newSource.from && renamed.end() <= newSource.to) {
+                newSource.renamed.put(renamed.start(), renamed);
+            }
+        });
     }
 
     /**
@@ -845,6 +864,18 @@ final class AstPrinter {
             }
             int flags = (source.comments.get(i) ? 1 : 0) | (markAdded && source.added.get(i) ? 2 : 0)
                     | (source.errors.get(i) ? 4 : 0);
+            Renamed renamed = source.renamed.get(i);
+            if (renamed != null && renamed.end() <= to) {
+                // Shown as it is now, on its own, what it was on demand.
+                out = out.plus(style(run.toString(), runFlags));
+                run.setLength(0);
+                runFlags = -1;
+                String now = source.text.substring(i, renamed.end());
+                out = out.plus(Markup.renamed(style(now, flags), renamed.oldText(), source.oneLine(i, renamed.end())));
+                column += now.length();
+                i = renamed.end() - 1;
+                continue;
+            }
             if (flags != runFlags) {
                 out = out.plus(style(run.toString(), runFlags));
                 run.setLength(0);

@@ -1067,4 +1067,52 @@ public class ReporterTest extends TestCase {
                 false)));
         assertFalse(api.toString(), api.stream().anyMatch(l -> l.contains("run();")));
     }
+    /** Reports one level of the move of the top level {@code a.Color} into the new {@code b.Values}, which adds a member. */
+    private static HTML.Tag movedTypeReport(ChangeLevel level) throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("a/Color.java", "package a;\npublic class Color {\n  public int r;\n"
+                    + "  public int g() { return r; }\n}\n");
+            helper.commit("init");
+            java.nio.file.Files.delete(helper.getRepositoryPath().resolve("a/Color.java"));
+            helper.writeFile("b/Values.java", "package b;\npublic class Values {\n  public static class Color {\n"
+                    + "    public int r;\n    public int g() { return r; }\n    public void b() { }\n  }\n"
+                    + "  public int v;\n}\n");
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                return new Reporter(new ReportOptions(ChangeLevel.IMPORTS)).reportOnly(analyzer.analyzeChanges(), level);
+            }
+        }
+    }
+
+    /**
+     * Tests that a type moved into an added type is shown in it by where it was and its changes, not as added, and
+     * that the deleted file it was in is not listed.
+     */
+    public void testMovedTypeInApi() throws Exception {
+        List<HTML> lines = lines(movedTypeReport(ChangeLevel.API));
+        assertLines(List.of(
+                heading("API changes"),
+                blank(),
+                fileTitle('+', name("Values.java"), " ", pkg("b")),
+                line(' ', "  ", code("public class ", decl("Values"))),
+                line('~', "  ", tree("├── "), code("public ", added("static"), " class ", strike("a.Color"), " ",
+                        added(decl("Color")))),
+                line('+', "  ", tree("│   "), tree("└── "), code("public void ", decl("b"), "()")),
+                line(' ', "  ", tree("└── "), code("public int ", decl("v")))),
+                lines);
+        assertFalse(texts(lines).toString(), texts(lines).stream().anyMatch(l -> l.contains("Color.java")));
+    }
+
+    /** Tests that the whole source of an added type shows a type moved into it collapsed, with where it was. */
+    public void testMovedTypeInImplementation() throws Exception {
+        assertLines(List.of(
+                heading("Implementation changes"),
+                blank(),
+                fileTitle('+', name("Values.java"), " ", pkg("b")),
+                line('+', "  ", code("public class Values {")),
+                line('+', "  ", code("  public static class Color {")),
+                line(' ', "  ", code(note("\u2026 moved from a.Color (4 lines)"))),
+                line('+', "  ", code("  public int v;")),
+                line('+', "  ", code("}"))),
+                movedTypeReport(ChangeLevel.IMPLEMENTATION));
+    }
 }

@@ -78,6 +78,14 @@ public class ReportStylesTest extends TestCase {
         }
     }
 
+    /** A renamed name has a background of its own, which a theme can change. */
+    public void testRenamed() {
+        HTML.Tag renamed = renamed("a", "b", "b");
+        assertEquals(PALETTE.get("renamed-background"), style(ReportStyles.styleSheet(PALETTE), renamed).background());
+        StyleSheet themed = ReportStyles.styleSheet(PALETTE, Map.of("renamed", "bg:#010203"));
+        assertEquals(color("#010203"), style(themed, renamed).background());
+    }
+
     public void testParse() {
         Style style = new Style();
         ReportStyles.parse("#ff8000 bg:#000102 bold underline strike", style);

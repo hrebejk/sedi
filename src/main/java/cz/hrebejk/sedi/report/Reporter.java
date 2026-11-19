@@ -26,6 +26,8 @@ import org.maraboo.fleck.html.HTML;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -42,6 +44,8 @@ public final class Reporter {
 
     private final SignatureDiffPrinter printer;
     private final SignatureDiffPrinter cosmeticPrinter;
+    /** Shows the signatures as they are, only the renamed names marked, see {@link SignatureDiffPrinter#plain()}. */
+    private final SignatureDiffPrinter plainPrinter;
     private final JavadocPrinter javadoc;
     private final ReportOptions options;
     private final int width;
@@ -69,6 +73,7 @@ public final class Reporter {
         this.width = width;
         this.printer = new SignatureDiffPrinter();
         this.cosmeticPrinter = printer.cosmetic();
+        this.plainPrinter = printer.plain();
         this.javadoc = new JavadocPrinter(options.javadocContext());
         this.options = options;
     }
@@ -294,14 +299,15 @@ public final class Reporter {
         List<Line> lines = new ArrayList<>();
         DiffEntry.ChangeType change = file.diff().getChangeType();
         if (change == DiffEntry.ChangeType.ADD) {
-            added.forEach(type -> addTree(lines, "  ", addedNode(type.element(), "")));
+            added.forEach(type -> addTree(lines, "  ", addedNode(type.element(), "", movedInto(file, type))));
+            // The types moved here to the top level of the file.
+            lines.addAll(apiChangeLines(file));
             return lines;
         }
         if (change != DiffEntry.ChangeType.DELETE) {
-            lines.addAll(lines(file, (container, c) -> c.level() == ChangeLevel.API && !isListedApart(container, c),
-                    true, false, true, false));
+            lines.addAll(apiChangeLines(file));
             added.forEach(type -> addTree(lines, "  ", declarationNode(new ElementPair(null, type.element(), Set.of()),
-                    "", null, Fragment.EMPTY, List.of(), addedMembers(type.element()))));
+                    "", null, Fragment.EMPTY, List.of(), addedMembers(type.element(), movedInto(file, type)))));
         }
         removed.forEach(type -> lines.add(Line.number(type.element().getLine(), '-',
                 Markup.style(Css.TITLE, type.element().getName())).withPrefix("  ")));
@@ -310,6 +316,39 @@ public final class Reporter {
 
     /** A top level type added or removed, with the file it is in. */
     private record TypeRef(FileAnalysis file, ElementInfo element) { }
+
+    /** The API changes of the types of a file, the top level types added or removed left out. */
+    private List<Line> apiChangeLines(FileAnalysis file) {
+        return lines(file, (container, c) -> c.level() == ChangeLevel.API && !isListedApart(container, c),
+                true, false, true, false);
+    }
+
+    /** The changes of the types moved into an added top level type, {@code null} if none moved there. */
+    private static ApiChanges movedInto(FileAnalysis file, TypeRef type) {
+        return nestedOf(file.rootChanges(), type.element());
+    }
+
+    /** The changes of the type nested in the container, {@code null} if there are none. */
+    private static ApiChanges nestedOf(ApiChanges container, ElementInfo type) {
+        if (container == null) {
+            return null;
+        }
+        for (ApiChanges nested : container.nested()) {
+            if (nested.type().newElement() == type) {
+                return nested;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Whether all the types of a deleted file moved elsewhere, into other types or out of them: the file has no
+     * changes of its own to show.
+     */
+    private static boolean isAllMoved(FileAnalysis file) {
+        return file.diff().getChangeType() == DiffEntry.ChangeType.DELETE && !file.oldRoot().getChildren().isEmpty()
+                && file.rootChanges().changes().isEmpty() && file.rootChanges().nested().isEmpty();
+    }
 
     /**
      * The API changes: the public API of the added types, the names of the removed types, then the changes of the
@@ -327,9 +366,11 @@ public final class Reporter {
                 List<Line> types = new ArrayList<>();
                 for (TypeRef type : added) {
                     if (type.file() == file) {
-                        addTree(types, "  ", addedNode(type.element(), ""));
+                        addTree(types, "  ", addedNode(type.element(), "", movedInto(file, type)));
                     }
                 }
+                // The types moved here to the top level of the file.
+                types.addAll(apiChangeLines(file));
                 List<Line> list = new ArrayList<>();
                 addFile(list, file, types, true);
                 parts.add(list);
@@ -339,13 +380,13 @@ public final class Reporter {
             if (type.file().diff().getChangeType() != DiffEntry.ChangeType.ADD) {
                 List<Line> lines = new ArrayList<>();
                 addTree(lines, "", declarationNode(new ElementPair(null, type.element(), Set.of()), "", null,
-                        location(type, true), List.of(), addedMembers(type.element())));
+                        location(type, true), List.of(), addedMembers(type.element(), movedInto(type.file(), type))));
                 parts.add(lines);
             }
         }
         List<Line> names = new ArrayList<>();
         for (FileAnalysis file : files) {
-            if (file.diff().getChangeType() == DiffEntry.ChangeType.DELETE) {
+            if (file.diff().getChangeType() == DiffEntry.ChangeType.DELETE && !isAllMoved(file)) {
                 names.add(fileTitle(file));
             }
         }
@@ -366,9 +407,9 @@ public final class Reporter {
         }
         for (FileAnalysis file : files) {
             List<Line> changed = new ArrayList<>();
-            if (file.diff().getChangeType() != DiffEntry.ChangeType.RENAME) {
-                addFile(changed, file, lines(file, (container, c) -> c.level() == ChangeLevel.API
-                        && !isListedApart(container, c), true, false, true, false), false);
+            DiffEntry.ChangeType change = file.diff().getChangeType();
+            if (change != DiffEntry.ChangeType.RENAME && change != DiffEntry.ChangeType.ADD) {
+                addFile(changed, file, apiChangeLines(file), false);
             }
             parts.add(changed);
         }
@@ -420,26 +461,38 @@ public final class Reporter {
         return where.isEmpty() ? Fragment.EMPTY : Fragment.of(" ").plus(Markup.style(Css.PACKAGE, where));
     }
 
-    /** The members of an added type which are a part of the public API, and the types nested in it,
-     * without the {@code +} as all of them are new. */
-    private List<Node> addedMembers(ElementInfo type) {
+    /**
+     * The members of an added type which are a part of the public API, and the types nested in it,
+     * without the {@code +} as all of them are new. A type moved there is shown with its changes instead.
+     *
+     * @param moved the changes of the types moved into the type, {@code null} if none moved there
+     */
+    private List<Node> addedMembers(ElementInfo type, ApiChanges moved) {
         boolean inInterface = Visibility.isInterface(type);
         List<Node> nodes = new ArrayList<>();
         for (ElementInfo member : type.getChildren()) {
             if (Visibility.isExposed(member, true, inInterface)) {
-                nodes.add(addedNode(member, type.getName()));
+                ApiChanges nested = nestedOf(moved, member);
+                nodes.add(nested != null && !nested.type().isAdded()
+                        ? typeNode(nested.type(), type.getName(), true,
+                                render(nested, (container, c) -> c.level() == ChangeLevel.API, false, true, false))
+                        : addedNode(member, type.getName(), nested));
             }
         }
         return nodes;
     }
 
-    /** An element of an added type with its javadoc and, if it is a type, its members. */
-    private Node addedNode(ElementInfo element, String typeName) {
+    /**
+     * An element of an added type with its javadoc and, if it is a type, its members.
+     *
+     * @param moved the changes of the types moved into the element, {@code null} if none moved there
+     */
+    private Node addedNode(ElementInfo element, String typeName, ApiChanges moved) {
         List<Line> above = new ArrayList<>(javadoc.plain(element));
         above.addAll(printer.declaration(element, typeName));
         Line head = above.removeLast();
         return new Node(above, head, List.of(),
-                element.getNodeType() == ElementInfo.NodeType.TYPE ? addedMembers(element) : List.of());
+                element.getNodeType() == ElementInfo.NodeType.TYPE ? addedMembers(element, moved) : List.of());
     }
 
     /**
@@ -523,17 +576,19 @@ public final class Reporter {
      */
     private Node declarationNode(ElementPair pair, String typeName, Line initializer, Fragment suffix,
                                  List<Line> below, List<Node> children) {
-        return declarationNode(pair, false, typeName, initializer, suffix, below, children);
+        return declarationNode(pair, printer, typeName, initializer, suffix, below, children);
     }
 
     /**
-     * Like {@link #declarationNode(ElementPair, String, String, String, List, List)}.
+     * Like {@link #declarationNode(ElementPair, String, Line, Fragment, List, List)}.
      *
-     * @param cosmetic whether to show the cosmetic changes of the signature, the javadoc and annotations as they are
+     * @param signatures the printer of the signature; unless it is the one showing the changes of the API, the
+     *                   javadoc and annotations are shown as they are
      */
-    private Node declarationNode(ElementPair pair, boolean cosmetic, String typeName, Line initializer,
+    private Node declarationNode(ElementPair pair, SignatureDiffPrinter signatures, String typeName, Line initializer,
                                  Fragment suffix, List<Line> below, List<Node> children) {
-        ElementPair unchanged = cosmetic ? new ElementPair(pair.newElement(), pair.newElement(), Set.of()) : pair;
+        boolean asIs = signatures != printer;
+        ElementPair unchanged = asIs ? new ElementPair(pair.newElement(), pair.newElement(), Set.of()) : pair;
         List<Line> above = new ArrayList<>(javadocLines(unchanged));
         above.addAll(printer.annotations(unchanged));
         boolean changedLine = initializer != null && initializer.marker() != ' ' && initializer.marker() != Line.NONE;
@@ -542,7 +597,7 @@ public final class Reporter {
         Fragment rest = initializer == null ? Fragment.EMPTY
                 : Fragment.of(element.isEnumConstant() ? "" : " = ")
                         .plus(initializer.prefix().plus(initializer.content()).strip());
-        Line head = (cosmetic ? cosmeticPrinter : printer).format(pair, typeName, changedLine);
+        Line head = signatures.format(pair, typeName, changedLine);
         return new Node(above, head.append(rest.plus(suffix)), below, children);
     }
 
@@ -602,7 +657,10 @@ public final class Reporter {
         ElementPair shown = diff ? type : new ElementPair(type.newElement(), type.newElement(), Set.of());
         List<Line> above = new ArrayList<>(javadocLines(shown));
         above.addAll(printer.annotations(shown));
-        return new Node(above, printer.formatType(shown, outerName), List.of(), children);
+        // Without the changes, a renamed or moved type is still marked as such.
+        Line head = diff ? printer.formatType(type, outerName)
+                : plainPrinter.formatType(type.isAdded() ? shown : type, outerName);
+        return new Node(above, head, List.of(), children);
     }
 
     /**
@@ -727,7 +785,7 @@ public final class Reporter {
         Fragment mark = switch (type) {
             case ADD -> Markup.sign(true);
             case DELETE -> Markup.sign(false);
-            case RENAME -> Markup.renamed();
+            case RENAME -> Markup.renamedFile();
             default -> Markup.modified();
         };
         return mark.plus(" ").plus(title);
@@ -757,6 +815,10 @@ public final class Reporter {
                     nodes.add(whole && isShownWhole(change) ? wholeNode(change) : memberNode(changes, change, tagged));
                 }
             } else if (item instanceof ApiChanges type) {
+                if (type.type().isAdded() && (diff || whole && isShownWhole(changes, type, filter))) {
+                    // The types moved into an added type are shown with it.
+                    continue;
+                }
                 List<Node> nested = render(type, filter, tagged, diff, whole);
                 boolean own = changes.changes().stream()
                         .anyMatch(c -> filter.test(changes, c) && isSignatureOf(c, type));
@@ -766,6 +828,13 @@ public final class Reporter {
             }
         }
         return nodes;
+    }
+
+    /** Whether the added nested type is shown with its whole source. */
+    private boolean isShownWhole(ApiChanges container, ApiChanges type,
+                                 BiPredicate<ApiChanges, MemberChange> filter) {
+        return container.changes().stream().anyMatch(c -> c.pair().isAdded()
+                && c.pair().newElement() == type.type().newElement() && isShownWhole(c) && filter.test(container, c));
     }
 
     /** The line of a member change or of a nested type in the new source, in the old one if it was removed. */
@@ -778,7 +847,10 @@ public final class Reporter {
     private Node memberNode(ApiChanges changes, MemberChange change, boolean tagged) {
         // The signature shows the changes of its level: of the API, the cosmetic ones, or none.
         boolean cosmetic = change.level() == ChangeLevel.COSMETIC;
-        ElementPair pair = change.level() == ChangeLevel.API || cosmetic ? change.pair()
+        boolean api = change.level() == ChangeLevel.API;
+        boolean both = !change.pair().isAdded() && !change.pair().isRemoved();
+        SignatureDiffPrinter signatures = api || !both ? printer : cosmetic ? cosmeticPrinter : plainPrinter;
+        ElementPair pair = api || both ? change.pair()
                 : new ElementPair(change.pair().newElement(), change.pair().newElement(), Set.of());
         List<Line> body = change.body() == null ? List.of() : body(change.body());
         // The initializer of a field continues the line of its declaration.
@@ -795,8 +867,8 @@ public final class Reporter {
         }
         List<Node> children = change.level() == ChangeLevel.API && change.pair().isAdded()
                 && change.pair().newElement().getNodeType() == ElementInfo.NodeType.TYPE
-                ? addedMembers(change.pair().newElement()) : List.of();
-        return declarationNode(pair, cosmetic, changes.typeName(), inline ? body.getFirst() : null,
+                ? addedMembers(change.pair().newElement(), nestedOf(changes, change.pair().newElement())) : List.of();
+        return declarationNode(pair, signatures, changes.typeName(), inline ? body.getFirst() : null,
                 Fragment.of(block ? " {" : "").plus(tagged ? tag(change) : Fragment.EMPTY), below, children);
     }
 
@@ -824,11 +896,54 @@ public final class Reporter {
         List<Fragment> code = Highlighter.codeLines(dedent(text));
         char marker = added ? '+' : '-';
         long first = element.getStartLine();
+        Map<Long, ElementInfo> moved = new HashMap<>();
+        if (added && first > 0) {
+            collectMoved(element, moved);
+        }
+        // The javadoc of a moved type moved with it.
+        Set<Long> movedJavadoc = new HashSet<>();
+        List<String> source = text.lines().toList();
+        moved.values().forEach(type -> {
+            if (type.getJavadocLine() > 0) {
+                // The javadoc line is that of its first text, the /** can be above it.
+                long start = type.getJavadocLine();
+                while (start > first && !source.get((int) (start - first)).contains("/**")) {
+                    start--;
+                }
+                for (long l = start; l < type.getStartLine(); l++) {
+                    movedJavadoc.add(l);
+                }
+            }
+        });
         List<Line> lines = new ArrayList<>();
         for (int i = 0; i < code.size(); i++) {
+            if (movedJavadoc.contains(first + i)) {
+                continue;
+            }
             lines.add(Line.number(first <= 0 ? 0 : first + i, marker, code.get(i)));
+            ElementInfo type = moved.get(first + i);
+            if (type != null) {
+                // A moved type is not new code: its first line stands for it.
+                int count = (int) type.getSourceText().lines().count();
+                lines.add(Line.number(0, ' ', Markup.style(Css.NOTE,
+                        "\u2026 moved from " + type.getMovedFrom() + " (" + (count - 1) + " lines)")));
+                i += count - 1;
+            }
         }
         return new Node(javadocLines(change.pair()), lines.get(0), lines.subList(1, lines.size()), List.of());
+    }
+
+    /** Collects the types moved into the type, at any depth, by their first lines. */
+    private static void collectMoved(ElementInfo type, Map<Long, ElementInfo> moved) {
+        for (ElementInfo child : type.getChildren()) {
+            if (child.getNodeType() == ElementInfo.NodeType.TYPE) {
+                if (child.getMovedFrom() != null && child.getSourceText() != null && child.getStartLine() > 0) {
+                    moved.put(child.getStartLine(), child);
+                } else {
+                    collectMoved(child, moved);
+                }
+            }
+        }
     }
 
     /** The text with its tabs expanded and the indentation all its lines have removed. */

@@ -90,14 +90,21 @@ final class BodyDiff {
         diff.pair(oldBody, newBody, !BodyChanges.isCompound(newBody.getTree()));
         Set<Tree> unresolved = unresolved(oldElement, newElement);
         List<BodyChanges.CommentChange> comments = diff.comments(oldBody.getTree(), newBody.getTree());
-        BodyChanges implementation = diff.marks.isEmpty() && comments.isEmpty() ? null
-                : new BodyChanges(oldUnit, newUnit, oldBody.getTree(), newBody.getTree(), diff.marks,
-                diff.removedBefore, diff.removedAtEnd, unresolved, comments);
         Map<Tree, BodyChanges.Mark> cosmetic = new CosmeticDiff(oldUnit, newUnit, diff.sourceText(newUnit),
                 newBody.getTree()).marks(diff.equal);
+        // The code which changed only cosmetically is shown as it is with the implementation changes, marked.
+        Map<Tree, BodyChanges.Mark> renamed = new IdentityHashMap<>();
+        cosmetic.forEach((tree, mark) -> {
+            if (mark instanceof BodyChanges.Renamed || mark instanceof BodyChanges.Edited) {
+                renamed.put(tree, mark);
+            }
+        });
+        BodyChanges implementation = diff.marks.isEmpty() && comments.isEmpty() ? null
+                : new BodyChanges(oldUnit, newUnit, oldBody.getTree(), newBody.getTree(), diff.marks,
+                diff.removedBefore, diff.removedAtEnd, unresolved, comments, renamed);
         return new Result(implementation, cosmetic.isEmpty() ? null
                 : new BodyChanges(oldUnit, newUnit, oldBody.getTree(), newBody.getTree(), cosmetic,
-                Map.of(), Map.of(), unresolved, List.of()));
+                Map.of(), Map.of(), unresolved, List.of(), Map.of()));
     }
 
     /**

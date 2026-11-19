@@ -52,6 +52,8 @@ public final class ReportStyles {
         STRIKE(".strike"),
         /** New text following the struck through text it replaced. */
         REPLACEMENT(".added"),
+        /** A renamed or moved name shown as it is now, the old name in its title. */
+        RENAMED(".renamed"),
         /** Lines of added code. */
         ADDED(".add-line > .code"),
         /** Lines of removed code. */
@@ -104,6 +106,8 @@ public final class ReportStyles {
         p.add(color("#d8aeb3"), "strike");
         p.add(color("#4f242a"), "strike-background");
         p.add(color("#1c4429"), "added-background");
+        // A rename is no change of the code, it is only told apart: a muted yellow.
+        p.add(color("#4a4426"), "renamed-background");
         p.add(color("#5fd787"), "added-mark");
         p.add(color("#ff6b78"), "removed-mark");
         p.add(color("#e5c07b"), "changed-mark");
@@ -203,6 +207,7 @@ public final class ReportStyles {
                     .textDecoration(CssValues.TextDecoration.STRIKETHROUGH);
             case REPLACEMENT -> (s, p) -> s.background(p.get("added-background"))
                     .textDecoration(CssValues.TextDecoration.UNDERLINE);
+            case RENAMED -> (s, p) -> s.background(p.get("renamed-background"));
             case ADDED, REMOVED -> (s, p) -> { };
             case ADDED_MARK -> bold("added-mark");
             case REMOVED_MARK -> bold("removed-mark");

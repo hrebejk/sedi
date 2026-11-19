@@ -39,18 +39,35 @@ import java.util.stream.Collectors;
  */
 final class SignatureDiffPrinter {
 
-    /** Whether the parts equal but for renames and qualification are shown changed, see {@link #cosmetic()}. */
+    /**
+     * Whether the changes of the API are left out, see {@link #cosmetic()}; a renamed element shows its new name
+     * marked as renamed.
+     */
     private final boolean cosmetic;
+    /** Whether the cosmetic changes are shown as the new version marked as renamed, see {@link #plain()}. */
+    private final boolean plain;
 
     /**
      * Creates a printer.
      */
     SignatureDiffPrinter() {
-        this(false);
+        this(false, false);
     }
 
-    private SignatureDiffPrinter(boolean cosmetic) {
+    private SignatureDiffPrinter(boolean cosmetic, boolean plain) {
         this.cosmetic = cosmetic;
+        this.plain = plain;
+    }
+
+    /**
+     * Returns a printer showing the signature as it is in the new version: the changes of the API are left out, and
+     * the parts which changed only cosmetically, like a renamed element or a part referring to a renamed or moved
+     * type, are marked as renamed, with the old version to show on demand.
+     *
+     * @return the printer
+     */
+    SignatureDiffPrinter plain() {
+        return new SignatureDiffPrinter(true, true);
     }
 
     /**
@@ -61,7 +78,7 @@ final class SignatureDiffPrinter {
      * @return the printer
      */
     SignatureDiffPrinter cosmetic() {
-        return new SignatureDiffPrinter(true);
+        return new SignatureDiffPrinter(true, false);
     }
 
     /**
@@ -355,10 +372,14 @@ final class SignatureDiffPrinter {
         }
     }
 
-    /** The pieces of one element's signature. */
+    /**
+     * The pieces of one element's signature; {@code movedFrom} and {@code movedTo} are the old and new qualified
+     * names of a type which moved into another type or out of one, else {@code null}.
+     */
     private record Parts(ElementInfo.NodeType nodeType, List<Piece> annotations, List<Piece> modifiers,
                          List<Piece> typeParams, Piece type, String name, List<Piece[]> params, List<Piece> throwsList,
-                         List<Piece> extendsList, List<Piece> implementsList, List<Piece> permitsList) {
+                         List<Piece> extendsList, List<Piece> implementsList, List<Piece> permitsList,
+                         String movedFrom, String movedTo) {
 
         static Parts of(ElementInfo info, String typeName) {
             Tree tree = info.getOriginalTree();
@@ -370,7 +391,7 @@ final class SignatureDiffPrinter {
                 }
                 return new Parts(info.getNodeType(), annotations(info, m.getModifiers()), modifiers(info, m.getModifiers()),
                         pieces(info, m.getTypeParameters()), Piece.of(info, m.getReturnType()), name, params,
-                        pieces(info, m.getThrows()), List.of(), List.of(), List.of());
+                        pieces(info, m.getThrows()), List.of(), List.of(), List.of(), null, null);
             }
             if (tree instanceof VariableTree v) {
                 Piece type = Piece.of(info, v.getType());
@@ -380,7 +401,8 @@ final class SignatureDiffPrinter {
                             info.getFacetSha(cz.hrebejk.sedi.analysis.Facet.RETURN_TYPE), type.line(), type.full());
                 }
                 return new Parts(info.getNodeType(), annotations(info, v.getModifiers()), modifiers(info, v.getModifiers()),
-                        List.of(), type, v.getName().toString(), List.of(), List.of(), List.of(), List.of(), List.of());
+                        List.of(), type, v.getName().toString(), List.of(), List.of(), List.of(), List.of(), List.of(),
+                        null, null);
             }
             if (tree instanceof ClassTree c) {
                 // An interface lists the interfaces it extends where a class lists the ones it implements.
@@ -400,10 +422,10 @@ final class SignatureDiffPrinter {
                 return new Parts(info.getNodeType(), annotations(info, c.getModifiers()), modifiers(info, c.getModifiers()),
                         pieces(info, c.getTypeParameters()), Piece.text(keyword(c.getKind())),
                         c.getSimpleName().toString(), components, List.of(), extended, implemented,
-                        pieces(info, c.getPermitsClause()));
+                        pieces(info, c.getPermitsClause()), info.getMovedFrom(), info.getMovedTo());
             }
             return new Parts(info.getNodeType(), List.of(), List.of(), List.of(), Piece.NONE, info.getName(), List.of(),
-                    List.of(), List.of(), List.of(), List.of());
+                    List.of(), List.of(), List.of(), List.of(), null, null);
         }
 
         private static List<Piece> annotations(ElementInfo info, ModifiersTree modifiers) {
@@ -438,16 +460,16 @@ final class SignatureDiffPrinter {
             case METHOD -> {
                 out.add(typeParams(o, n));
                 out.add(slot(o.type(), n.type()));
-                out.add(declared(o.name(), n.name()).plus("(").plus(params(o, n)).plus(")"));
+                out.add(declared(o, n).plus("(").plus(params(o, n)).plus(")"));
                 addClause(out, "throws", o.throwsList(), n.throwsList());
             }
             case FIELD -> {
                 out.add(slot(o.type(), n.type()));
-                out.add(declared(o.name(), n.name()));
+                out.add(declared(o, n));
             }
             default -> {
                 out.add(slot(o.type(), n.type()));
-                Fragment name = declared(o.name(), n.name()).plus(typeParams(o, n));
+                Fragment name = declared(o, n).plus(typeParams(o, n));
                 out.add(n.type().text().equals("record") ? name.plus("(").plus(params(o, n)).plus(")") : name);
                 addClause(out, "extends", o.extendsList(), n.extendsList());
                 addClause(out, "implements", o.implementsList(), n.implementsList());
@@ -586,9 +608,16 @@ final class SignatureDiffPrinter {
     }
 
     /** Like {@link #slot}, the new name shown as a declaration. */
-    private Fragment declared(String oldName, String newName) {
-        Fragment name = Markup.style(Css.DECLARATION, newName);
-        return cosmetic || oldName.equals(newName) || oldName.isEmpty() ? name : Markup.replace(oldName, name);
+    private Fragment declared(Parts o, Parts n) {
+        Fragment name = Markup.style(Css.DECLARATION, n.name());
+        if (n.movedFrom() != null) {
+            // Where the type was is shown, where it is now is told by the type it is in, or by its file.
+            return cosmetic ? Markup.renamed(name, n.movedFrom(), n.movedTo()) : Markup.replace(n.movedFrom(), name);
+        }
+        if (o.name().equals(n.name()) || o.name().isEmpty()) {
+            return name;
+        }
+        return cosmetic ? Markup.renamed(name, o.name(), n.name()) : Markup.replace(o.name(), name);
     }
 
     /** Removed tokens struck through, followed by all tokens of the new version, the added ones underlined. */
@@ -616,8 +645,11 @@ final class SignatureDiffPrinter {
      * keys differ.
      */
     private Fragment same(Piece oldPiece, Piece newPiece) {
-        return cosmetic && !oldPiece.full().equals(newPiece.full())
-                ? replace(oldPiece, newPiece) : newPiece.html();
+        if (!cosmetic || oldPiece.full().equals(newPiece.full())) {
+            return newPiece.html();
+        }
+        // A plain printer shows the new version, marked as renamed.
+        return plain ? Markup.renamed(newPiece.html(), oldPiece.text(), newPiece.text()) : replace(oldPiece, newPiece);
     }
 
     /** The content struck through. */

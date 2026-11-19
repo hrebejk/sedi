@@ -13,6 +13,10 @@ import cz.hrebejk.sedi.compilation.CompilationUnitInfo;
 import org.eclipse.jgit.diff.DiffEntry;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -103,15 +107,7 @@ final class ApiDiffAnalyzer {
                 ElementInfo root = old ? oldRoot.apply(oldUnits.get(i)) : root(newUnits.get(i), Renames.EMPTY);
                 ElementInfo primary = types(root).get(typeName(old ? diffs.get(i).getOldPath() : diffs.get(i).getNewPath()));
                 if (primary != null) {
-                    Set<String> keys = new LinkedHashSet<>();
-                    for (ElementInfo child : primary.getChildren()) {
-                        // Constructors are left out, as all the classes have one, even when it is not declared.
-                        if (!(child.getOriginalTree() instanceof com.sun.source.tree.MethodTree m
-                                && m.getName().contentEquals("<init>"))) {
-                            keys.add(child.getNodeType() + "|" + child.getName() + "|" + child.getParamCount());
-                        }
-                    }
-                    members.put(i, keys);
+                    members.put(i, memberKeys(primary));
                 }
             }
         }
@@ -120,10 +116,8 @@ final class ApiDiffAnalyzer {
             for (int a : members.keySet()) {
                 if (diffs.get(d).getChangeType() == DiffEntry.ChangeType.DELETE
                         && diffs.get(a).getChangeType() == DiffEntry.ChangeType.ADD) {
-                    Set<String> common = new LinkedHashSet<>(members.get(d));
-                    common.retainAll(members.get(a));
-                    double similarity = (double) common.size() / Math.max(members.get(d).size(), members.get(a).size());
-                    if (!common.isEmpty() && similarity >= 0.5) {
+                    double similarity = similarity(members.get(d), members.get(a));
+                    if (similarity >= 0.5) {
                         candidates.add(new Candidate(d, a, similarity));
                     }
                 }
@@ -153,21 +147,157 @@ final class ApiDiffAnalyzer {
         return new Paired(resultDiffs, resultOld, resultNew);
     }
 
+    /** The members of a type compared by their kinds, names and numbers of parameters, constructors left out. */
+    private static Set<String> memberKeys(ElementInfo type) {
+        Set<String> keys = new LinkedHashSet<>();
+        for (ElementInfo child : type.getChildren()) {
+            // Constructors are left out, as all the classes have one, even when it is not declared.
+            if (!(child.getOriginalTree() instanceof com.sun.source.tree.MethodTree m
+                    && m.getName().contentEquals("<init>"))) {
+                keys.add(child.getNodeType() + "|" + child.getName() + "|" + child.getParamCount());
+            }
+        }
+        return keys;
+    }
+
+    /** The share of the members two types have in common, {@code 0} if they have none in common. */
+    private static double similarity(Set<String> a, Set<String> b) {
+        Set<String> common = new LinkedHashSet<>(a);
+        common.retainAll(b);
+        return common.isEmpty() ? 0 : (double) common.size() / Math.max(a.size(), b.size());
+    }
+
+    /** A type of one version of a file with the compilation unit it is in. */
+    private record Located(ElementInfo type, CompilationUnitInfo unit) {
+    }
+
+    /** The types removed from and added to the containers of the files, to find the moved ones among them. */
+    private record Unpaired(List<Located> removed, List<Located> added) {
+    }
+
+    /**
+     * The types which moved into another type or out of one, by the ids of their new versions, and the ids of their
+     * old versions. Ids are used as the new versions are hashed again with the renames.
+     */
+    private static final class Moves {
+
+        static final Moves NONE = new Moves();
+
+        private final Map<String, Located> byNewId = new HashMap<>();
+        private final Set<String> oldIds = new HashSet<>();
+
+        /** The old version of a type moved here, {@code null} if it did not move. */
+        Located from(ElementInfo newType) {
+            String id = newType.getElementId();
+            return id == null ? null : byNewId.get(id);
+        }
+
+        /** Whether the type moved elsewhere. */
+        boolean isMovedAway(ElementInfo oldType) {
+            return oldType.getElementId() != null && oldIds.contains(oldType.getElementId());
+        }
+
+        /** Whether some type nested in the new type, at any depth, moved there. */
+        boolean hasTargetsIn(ElementInfo newType) {
+            for (ElementInfo child : newType.getChildren()) {
+                if (child.getNodeType() == ElementInfo.NodeType.TYPE && (from(child) != null || hasTargetsIn(child))) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    /**
+     * Pairs the removed and the added types of the same name and kind with mostly the same members, compared by
+     * their kinds, names and numbers of parameters: the type moved, like a top level type which became a nested one,
+     * or the other way around. Types without members pair by their names and kinds alone. The moves are added to the
+     * renames, as are the renames of their members.
+     */
+    private static Moves pairMoves(Unpaired unpaired, Renames renames) {
+        record Candidate(Located old, Located young, double similarity) {
+        }
+        List<Candidate> candidates = new ArrayList<>();
+        for (Located o : unpaired.removed()) {
+            for (Located n : unpaired.added()) {
+                if (o.type().getName().equals(n.type().getName()) && declarationKind(o.type()) != null
+                        && declarationKind(o.type()) == declarationKind(n.type())
+                        && o.type().getElementId() != null && n.type().getElementId() != null) {
+                    Set<String> oldKeys = memberKeys(o.type());
+                    Set<String> newKeys = memberKeys(n.type());
+                    double similarity = oldKeys.isEmpty() && newKeys.isEmpty() ? 1 : similarity(oldKeys, newKeys);
+                    if (similarity >= 0.5) {
+                        candidates.add(new Candidate(o, n, similarity));
+                    }
+                }
+            }
+        }
+        if (candidates.isEmpty()) {
+            return Moves.NONE;
+        }
+        candidates.sort((x, y) -> Double.compare(y.similarity(), x.similarity()));
+        Moves moves = new Moves();
+        Set<ElementInfo> used = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (Candidate c : candidates) {
+            // A type moves with the types nested in it, so neither of them moves on its own.
+            if (isAnyUsed(c.old().type(), used) || isAnyUsed(c.young().type(), used)) {
+                continue;
+            }
+            markUsed(c.old().type(), used);
+            markUsed(c.young().type(), used);
+            moves.byNewId.put(c.young().type().getElementId(), c.old());
+            moves.oldIds.add(c.old().type().getElementId());
+            renames.add(c.old().type(), c.young().type());
+            collectRenames(c.old().type(), c.young().type(), renames, null);
+        }
+        return moves;
+    }
+
+    /** Whether the type or a type nested in it is used. */
+    private static boolean isAnyUsed(ElementInfo type, Set<ElementInfo> used) {
+        if (used.contains(type)) {
+            return true;
+        }
+        for (ElementInfo child : type.getChildren()) {
+            if (child.getNodeType() == ElementInfo.NodeType.TYPE && isAnyUsed(child, used)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void markUsed(ElementInfo type, Set<ElementInfo> used) {
+        used.add(type);
+        for (ElementInfo child : type.getChildren()) {
+            if (child.getNodeType() == ElementInfo.NodeType.TYPE) {
+                markUsed(child, used);
+            }
+        }
+    }
+
+    /** The kind of the declaration of a type, like a class or an enum, {@code null} if it is not known. */
+    private static com.sun.source.tree.Tree.Kind declarationKind(ElementInfo type) {
+        return type.getOriginalTree() instanceof com.sun.source.tree.ClassTree c ? c.getKind() : null;
+    }
+
     private static DiffAnalysis analyzePaired(List<DiffEntry> diffs, List<CompilationUnitInfo> oldUnits,
                                               List<CompilationUnitInfo> newUnits,
                                               Function<CompilationUnitInfo, ElementInfo> oldRoot) {
         List<ElementInfo> oldRoots = new ArrayList<>();
         Renames renames = new Renames();
+        Unpaired unpaired = new Unpaired(new ArrayList<>(), new ArrayList<>());
         for (int i = 0; i < diffs.size(); i++) {
             ElementInfo old = oldRoot.apply(oldUnits.get(i));
             oldRoots.add(old);
             Versions v = versions(diffs.get(i), old, root(newUnits.get(i), Renames.EMPTY));
+            Collector collector = new Collector(oldUnits.get(i), newUnits.get(i), unpaired);
             if (v.oldPrimary() != null) {
                 renames.add(v.oldPrimary(), v.newPrimary());
-                collectRenames(v.oldPrimary(), v.newPrimary(), renames);
+                collectRenames(v.oldPrimary(), v.newPrimary(), renames, collector);
             }
-            collectRenames(v.oldRoot(), v.newRoot(), renames);
+            collectRenames(v.oldRoot(), v.newRoot(), renames, collector);
         }
+        Moves moves = pairMoves(unpaired, renames);
 
         List<FileAnalysis> files = new ArrayList<>();
         for (int i = 0; i < diffs.size(); i++) {
@@ -180,25 +310,54 @@ final class ApiDiffAnalyzer {
             ApiChanges primary = v.oldPrimary() == null ? null
                     : changes(v.oldPrimary(), v.newPrimary(), v.newPrimary().getName(),
                     Visibility.isExposed(v.newPrimary(), true, false),
-                    new ElementPair(v.oldPrimary(), v.newPrimary(), Set.of()), sources);
+                    new ElementPair(v.oldPrimary(), v.newPrimary(), Set.of()), sources, moves);
             files.add(new FileAnalysis(diff, oldUnit, newUnit, oldRoots.get(i), newRoot, v.oldPrimary(),
                     v.newPrimary(), className(oldUnit, diff.getOldPath()), className(newUnit, diff.getNewPath()),
                     packageName(oldUnit), packageName(newUnit), primary,
-                    changes(v.oldRoot(), v.newRoot(), "", true, null, sources), importChanges(oldUnit, newUnit)));
+                    changes(v.oldRoot(), v.newRoot(), "", true, null, sources, moves), importChanges(oldUnit, newUnit)));
         }
         return new DiffAnalysis(files, renames);
     }
 
-    private static void collectRenames(ElementInfo oldContainer, ElementInfo newContainer, Renames renames) {
+    /** Collects the removed and the added types of the containers of a file, see {@link Unpaired}. */
+    private record Collector(CompilationUnitInfo oldUnit, CompilationUnitInfo newUnit, Unpaired unpaired) {
+
+        /** Adds a removed or an added type and the types nested in it, which can move on their own. */
+        void add(ElementInfo type, boolean removed) {
+            if (removed) {
+                unpaired.removed().add(new Located(type, oldUnit));
+            } else {
+                unpaired.added().add(new Located(type, newUnit));
+            }
+            for (ElementInfo child : type.getChildren()) {
+                if (child.getNodeType() == ElementInfo.NodeType.TYPE) {
+                    add(child, removed);
+                }
+            }
+        }
+    }
+
+    /**
+     * Records the renamed members of two versions of a container, and of the types nested in it.
+     *
+     * @param collector receives the removed and added types, {@code null} if they are not needed
+     */
+    private static void collectRenames(ElementInfo oldContainer, ElementInfo newContainer, Renames renames,
+                                       Collector collector) {
         List<ElementPair> pairs = MemberMatcher.match(oldContainer, newContainer);
         for (ElementPair pair : pairs) {
             if (!pair.isAdded() && !pair.isRemoved()) {
                 renames.add(pair.oldElement(), pair.newElement());
+            } else if (collector != null) {
+                ElementInfo type = pair.isAdded() ? pair.newElement() : pair.oldElement();
+                if (type.getNodeType() == ElementInfo.NodeType.TYPE) {
+                    collector.add(type, pair.isRemoved());
+                }
             }
         }
         for (ElementPair type : MemberMatcher.nestedTypes(oldContainer, newContainer, pairs)) {
             renames.add(type.oldElement(), type.newElement());
-            collectRenames(type.oldElement(), type.newElement(), renames);
+            collectRenames(type.oldElement(), type.newElement(), renames, collector);
         }
     }
 
@@ -247,11 +406,30 @@ final class ApiDiffAnalyzer {
      * @param exposed whether the container is a part of the public API
      */
     private static ApiChanges changes(ElementInfo oldContainer, ElementInfo newContainer, String typeName,
-                                      boolean exposed, ElementPair typePair, Sources sources) {
+                                      boolean exposed, ElementPair typePair, Sources sources, Moves moves) {
         MemberMatcher.Matches matches = MemberMatcher.matchAll(oldContainer, newContainer);
         boolean inInterface = Visibility.isInterface(newContainer);
         List<MemberChange> changes = new ArrayList<>();
-        for (ElementPair pair : matches.changed()) {
+        List<ElementPair> changed = new ArrayList<>();
+        // The moved types are diffed with the file their old version is in.
+        Map<ElementPair, Sources> movedSources = new IdentityHashMap<>();
+        List<ApiChanges> nested = new ArrayList<>();
+        for (ElementPair matched : matches.changed()) {
+            ElementPair pair = matched;
+            if (isType(pair) && pair.isRemoved() && moves.isMovedAway(pair.oldElement())) {
+                continue;
+            }
+            if (isType(pair) && pair.isAdded()) {
+                Located from = moves.from(pair.newElement());
+                if (from != null) {
+                    pair = moved(from, pair.newElement());
+                    movedSources.put(pair, new Sources(from.unit(), sources.newUnit()));
+                } else if (moves.hasTargetsIn(pair.newElement())) {
+                    nested.add(movedInto(pair, Visibility.isExposed(pair.newElement(), exposed, inInterface),
+                            sources, moves));
+                }
+            }
+            changed.add(pair);
             ElementInfo shown = pair.isRemoved() ? pair.oldElement() : pair.newElement();
             boolean publicApi = Visibility.isExposed(shown, exposed, inInterface);
             changes.add(new MemberChange(pair, ChangeLevel.API, publicApi));
@@ -275,12 +453,52 @@ final class ApiDiffAnalyzer {
             changes.add(new MemberChange(self, ChangeLevel.IMPLEMENTATION, exposed));
         }
 
-        List<ApiChanges> nested = new ArrayList<>();
-        for (ElementPair type : MemberMatcher.nestedTypes(oldContainer, newContainer, matches.changed())) {
+        for (ElementPair type : MemberMatcher.nestedTypes(oldContainer, newContainer, changed)) {
             nested.add(changes(type.oldElement(), type.newElement(), type.newElement().getName(),
-                    Visibility.isExposed(type.newElement(), exposed, inInterface), type, sources));
+                    Visibility.isExposed(type.newElement(), exposed, inInterface), type,
+                    movedSources.getOrDefault(type, sources), moves));
         }
         return new ApiChanges(typeName, exposed, typePair, changes, nested);
+    }
+
+    /** The pair of the old and the new version of a moved type, the new one knowing where it moved from. */
+    private static ElementPair moved(Located from, ElementInfo newType) {
+        newType.setMoved(from.type().getElementId(), newType.getElementId());
+        return new ElementPair(from.type(), newType, MemberMatcher.changedFacets(from.type(), newType));
+    }
+
+    /**
+     * The changes of an added type in which there are types moved there: the moves of the types and their changes,
+     * nothing about the added members, which are shown as a part of the added type.
+     *
+     * @param added   the added type
+     * @param exposed whether the added type is a part of the public API
+     */
+    private static ApiChanges movedInto(ElementPair added, boolean exposed, Sources sources, Moves moves) {
+        ElementInfo type = added.newElement();
+        boolean inInterface = Visibility.isInterface(type);
+        List<MemberChange> changes = new ArrayList<>();
+        List<ApiChanges> nested = new ArrayList<>();
+        for (ElementInfo child : type.getChildren()) {
+            if (child.getNodeType() != ElementInfo.NodeType.TYPE) {
+                continue;
+            }
+            boolean childExposed = Visibility.isExposed(child, exposed, inInterface);
+            Located from = moves.from(child);
+            if (from != null) {
+                ElementPair pair = moved(from, child);
+                changes.add(new MemberChange(pair, ChangeLevel.API, childExposed));
+                nested.add(changes(from.type(), child, child.getName(), childExposed, pair,
+                        new Sources(from.unit(), sources.newUnit()), moves));
+            } else if (moves.hasTargetsIn(child)) {
+                nested.add(movedInto(new ElementPair(null, child, Set.of()), childExposed, sources, moves));
+            }
+        }
+        return new ApiChanges(type.getName(), exposed, added, changes, nested);
+    }
+
+    private static boolean isType(ElementPair pair) {
+        return (pair.isAdded() ? pair.newElement() : pair.oldElement()).getNodeType() == ElementInfo.NodeType.TYPE;
     }
 
     /** Whether the element has a body of its own which can change: methods and fields, not types. */
