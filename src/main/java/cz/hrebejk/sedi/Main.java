@@ -32,6 +32,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
@@ -46,6 +47,16 @@ public class Main implements Callable<Integer> {
     @Parameters(arity = "0..1", paramLabel = "<rev>",
             description = "Show the API diff of the given commit (SHA, abbreviated SHA, tag, branch, HEAD~2, ...) or range (a..b, a...b; a.. compares a with the working copy) and exit, unless --interactive is given.")
     private String commit;
+
+    @Option(names = {"-w", "--web"},
+            description = "Show the diff in the browser instead of the console, with buttons for what the keys of "
+                    + "--interactive do. Without <rev> or with a.. the page follows the changes of the working copy. "
+                    + "Runs until stopped by Ctrl+C.")
+    private boolean web;
+
+    @Option(names = "--port", paramLabel = "<port>",
+            description = "Port of the web server of --web (default: 0, any free port).")
+    private int port;
 
     @Option(names = "--info", description = "Print the resolved class path.")
     private boolean info;
@@ -181,6 +192,9 @@ public class Main implements Callable<Integer> {
                     .collect(Collectors.joining(File.pathSeparator)));
         }
 
+        if (web) {
+            return web();
+        }
         Console console = System.console();
         boolean terminal = console != null && console.isTerminal();
         boolean colored = color == ColorMode.ALWAYS || color == ColorMode.AUTO && terminal;
@@ -200,7 +214,7 @@ public class Main implements Callable<Integer> {
         if (!keepRunning || !terminal && commit != null) {
             return reportCommit(reporter, renderer);
         }
-        Session session = new Session(reporter, renderer, javadocContext, System.out, terminal, colored, "Watching " + projectDir + " ...");
+        Session session = new Session(reporter, renderer, System.out, terminal, colored, "Watching " + projectDir + " ...");
         Terminal raw = null;
         if (terminal) {
             try {
@@ -229,6 +243,67 @@ public class Main implements Callable<Integer> {
                 raw.close();
                 System.out.println();
             }
+        }
+    }
+
+    /** Shows the diff in the browser until the process is stopped, see {@link #web}. */
+    private int web() {
+        StyleSheet styleSheet;
+        try {
+            styleSheet = styleSheet();
+        } catch (IOException | IllegalArgumentException e) {
+            System.err.println("Cannot read the theme: " + e.getMessage());
+            return 1;
+        }
+        Reporter reporter = new Reporter(new ReportOptions(level, grouping, bodyContext, javadocContext, !noLineNumbers,
+                !hideAdditions, showDeletions, !hideTests));
+        String title = projectDir.getFileName() + " " + (commit == null ? "working copy" : commit);
+        WebReport report = new WebReport(reporter, title);
+        try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader, renameScore)) {
+            int actualPort;
+            try {
+                actualPort = report.start(port, styleSheet).port();
+            } catch (IOException e) {
+                System.err.println("Cannot start the web server: " + e.getMessage());
+                return 1;
+            }
+            String url = "http://localhost:" + actualPort + "/";
+            System.out.println("Showing " + title + " on " + url + "  (Ctrl+C to stop)");
+            openBrowser(url);
+            Session.Analysis analysis = commit == null ? analyzer::analyzeChanges
+                    : filter -> analyzer.analyzeCommit(commit, filter);
+            Predicate<String> java = path -> path.endsWith(".java");
+            report.analyze(analysis, java);
+            if (commit != null && !comparesWorkingCopy()) {
+                Thread.currentThread().join();
+            }
+            try (DirectoryWatcher watcher = new DirectoryWatcher(projectDir)) {
+                watcher.run(changed -> {
+                    if (changed.stream().anyMatch(p -> java.test(p.toString()))) {
+                        report.analyze(analysis, java);
+                    }
+                });
+            }
+            return 0;
+        } catch (IOException e) {
+            System.err.println("Cannot watch: " + e.getMessage());
+            return 1;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return 0;
+        }
+    }
+
+    /** Opens the page in the default browser, if the system has a command for it; the URL is printed anyway. */
+    private static void openBrowser(String url) {
+        String os = System.getProperty("os.name").toLowerCase();
+        List<String> command = os.contains("win") ? List.of("rundll32", "url.dll,FileProtocolHandler", url)
+                : os.contains("mac") ? List.of("open", url) : List.of("xdg-open", url);
+        try {
+            new ProcessBuilder(command).redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD).start();
+        } catch (IOException ignored) {
+            // no browser to open, the user opens the printed URL
         }
     }
 

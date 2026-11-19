@@ -8,9 +8,7 @@
  */
 package cz.hrebejk.sedi;
 
-import cz.hrebejk.sedi.analysis.ChangeLevel;
 import cz.hrebejk.sedi.analysis.DiffAnalysis;
-import cz.hrebejk.sedi.report.ReportOptions;
 import cz.hrebejk.sedi.report.Reporter;
 import cz.hrebejk.sedi.util.DirectoryWatcher;
 import cz.hrebejk.sedi.util.Pager;
@@ -33,11 +31,8 @@ import java.util.stream.Collectors;
 
 /**
  * The running application: shows a report, keeps the analysis it was made from and reacts to the keys and
- * to the changes of the watched directory. The keys {@code a i c m} show only the changes of one category,
- * {@code d} cycles the javadoc shown, {@code +} and {@code -} show or hide the whole source of the added and the
- * removed types and members, {@code t} shows or hides the tests, {@code g} shows all the changes again, switching between grouping them by
- * category and by type, {@code h} shows the help, {@code Esc} leaves it and {@code q} quits. All rendering happens on the thread
- * that calls {@link #run}.
+ * to the changes of the watched directory. The keys of the {@link View} change what is shown, {@code h} shows the
+ * help, {@code Esc} leaves it and {@code q} quits. All rendering happens on the thread that calls {@link #run}.
  */
 final class Session {
 
@@ -70,12 +65,9 @@ final class Session {
             "  other    next page of a long output");
 
     private final String idleMessage;
-    /** The unchanged javadoc lines shown around a change after {@code d} switched from no javadoc. */
-    private static final int JAVADOC_CONTEXT = 3;
 
-    private Reporter reporter;
+    private View view;
     private final ConsoleHtmlRenderer renderer;
-    private int javadocContext;
     private final PrintStream out;
     private final boolean interactive;
     private final boolean colored;
@@ -87,7 +79,6 @@ final class Session {
     /** The files of the report, the same after every change. */
     private Predicate<String> filter;
     private DiffAnalysis last;
-    private ChangeLevel only;
     private boolean shown;
 
     /**
@@ -95,18 +86,16 @@ final class Session {
      *
      * @param reporter    renders the analysis as the options of the command line say
      * @param renderer    renders the report into the lines shown on the console
-     * @param javadocContext the javadoc context the reporter was made with, see {@link ReportOptions#javadocContext()}
      * @param out         where to print
      * @param interactive whether the output is a terminal on which keys can be read
      * @param colored     whether the key hint may use colors
      * @param idleMessage printed after a report when the output is not a terminal
      */
-    Session(Reporter reporter, ConsoleHtmlRenderer renderer, int javadocContext, PrintStream out, boolean interactive,
+    Session(Reporter reporter, ConsoleHtmlRenderer renderer, PrintStream out, boolean interactive,
             boolean colored, String idleMessage) {
         this.idleMessage = idleMessage;
-        this.reporter = reporter;
+        this.view = new View(reporter);
         this.renderer = renderer;
-        this.javadocContext = javadocContext;
         this.out = out;
         this.interactive = interactive;
         this.colored = colored;
@@ -219,7 +208,7 @@ final class Session {
 
     /** Shows the last analysis in the current view. Returns {@code false} if the user quit. */
     private boolean show() {
-        List<String> lines = renderer.lines(only == null ? reporter.report(last) : reporter.reportOnly(last, only));
+        List<String> lines = renderer.lines(view.report(last));
         if (lines.isEmpty()) {
             if (shown) {
                 // keep what is on the screen
@@ -246,45 +235,15 @@ final class Session {
         switch (key) {
             case -1, 'q':
                 return false;
-            case 'a':
-                only = ChangeLevel.API;
-                return last == null || show();
-            case 'i':
-                only = ChangeLevel.IMPLEMENTATION;
-                return last == null || show();
-            case 'c':
-                only = ChangeLevel.COSMETIC;
-                return last == null || show();
-            case 'm':
-                only = ChangeLevel.IMPORTS;
-                return last == null || show();
-            case 'd':
-                javadocContext = switch (javadocContext) {
-                    case ReportOptions.NO_JAVADOC -> JAVADOC_CONTEXT;
-                    case ReportOptions.WHOLE_JAVADOC -> ReportOptions.NO_JAVADOC;
-                    default -> ReportOptions.WHOLE_JAVADOC;
-                };
-                reporter = reporter.withJavadocContext(javadocContext);
-                return last == null || show();
-            case '+':
-                reporter = reporter.withAdditions(!reporter.options().showAdditions());
-                return last == null || show();
-            case '-':
-                reporter = reporter.withDeletions(!reporter.options().showDeletions());
-                return last == null || show();
-            case 't':
-                reporter = reporter.withTests(!reporter.options().showTests());
-                return last == null || show();
-            case 'g':
-                // One level alone has no grouping, so all the levels are shown again.
-                only = null;
-                reporter = reporter.withGrouping(reporter.grouping() == ReportOptions.Grouping.BY_TYPE
-                        ? ReportOptions.Grouping.BY_CATEGORY : ReportOptions.Grouping.BY_TYPE);
-                return last == null || show();
             case 'h':
                 return help();
             default:
-                return true;
+                View next = view.key(key);
+                if (next == null) {
+                    return true;
+                }
+                view = next;
+                return last == null || show();
         }
     }
 

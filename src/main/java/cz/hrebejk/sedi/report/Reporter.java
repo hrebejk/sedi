@@ -114,6 +114,16 @@ public final class Reporter {
     }
 
     /**
+     * Returns a reporter like this one showing the changes of the levels up to the given one.
+     *
+     * @param level see {@link ReportOptions#maxLevel()}
+     * @return the new reporter
+     */
+    public Reporter withMaxLevel(ChangeLevel level) {
+        return new Reporter(options.withMaxLevel(level), width);
+    }
+
+    /**
      * Returns a reporter like this one showing the changes of the test sources, or not.
      *
      * @param show see {@link ReportOptions#showTests()}
