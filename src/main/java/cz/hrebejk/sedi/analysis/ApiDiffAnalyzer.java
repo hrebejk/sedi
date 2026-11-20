@@ -457,6 +457,12 @@ final class ApiDiffAnalyzer {
             if (isCode(pair)) {
                 sources.addBodyChanges(changes, pair, publicApi, false,
                         Compatibility.check(pair, oldContainer, newContainer, exposed));
+            } else {
+                // A type of the same signature can still break the clients, if its package changed.
+                Set<Incompatibility> moved = Compatibility.check(pair, oldContainer, newContainer, exposed);
+                if (!moved.isEmpty()) {
+                    changes.add(new MemberChange(pair, ChangeLevel.API, publicApi, null, moved));
+                }
             }
         }
         ElementPair self = new ElementPair(oldContainer, newContainer, Set.of());

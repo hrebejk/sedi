@@ -9,7 +9,6 @@
 package cz.hrebejk.sedi.analysis;
 
 import cz.hrebejk.sedi.GitTestHelper;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.nio.file.Files;
@@ -153,10 +152,7 @@ public class CompatibilityTest {
         assertEquals(set(REMOVED), of(a, "c"));
     }
 
-    // BUG: a type whose file moved to another package keeps its SIGNATURE hash, so MemberMatcher pairs it as
-    // unchanged and ApiDiffAnalyzer.changes never calls Compatibility.check for it; the REMOVED rule for a changed
-    // package in Compatibility.changed is unreachable and the analysis has no change of Foo at all.
-    @Ignore("BUG: a type moved to another package with its file is not reported as REMOVED")
+    /** A type keeps its signature when only its package changes, but its old name is gone. */
     @Test
     public void publicTypeMovedToAnotherPackage() throws Exception {
         String body = "public class Foo {\n  public int f;\n  public void m() { }\n  public void n() { }\n}\n";
