@@ -51,6 +51,10 @@ repository. To compile the changed files, SeDi needs the project's classpath and
   not compile is still analyzed; unresolved names are just shown in red.
 - **Source roots.** By default these are `src/main/java` and `src/test/java` if they exist, otherwise the project
   directory. Use `--sourcepath` for other layouts.
+- **Multi-module projects.** If `pom.xml` has `<modules>` (nested ones too), every module is compiled on its own:
+  with its own source roots (the source and test source directories of its POM), the source roots of the modules it
+  depends on, and its own dependencies. The modules need not be built or installed. Every module is watched.
+  `--classpath` or `--sourcepath` turn this off and compile the project as one.
 
 For example, for a project without Maven:
 
@@ -184,7 +188,7 @@ sedi --web HEAD~4..   # everything since the first commit, updated as you edit
 
 ## Limitations
 
-Java only; simple Maven projects (no multi-module builds, no JPMS); local and anonymous classes are not tracked as
+Java only; simple Maven projects (multi-module builds are supported, but no profiles, plugins or JPMS); local and anonymous classes are not tracked as
 elements; non-Java files are ignored.
 
 ## License

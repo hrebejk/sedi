@@ -132,7 +132,7 @@ badged ⚠, those which may break them ⓘ (see `Compatibility`).
 |-------------------------------------------|----------------------------------------------------------------|
 | 0: infrastructure (JGit, javac, test repo)| Done                                                           |
 | 1: categorizing changes, tests            | Done                                                           |
-| 2: classpath from Maven                   | Done (plus `--classpath` and `--sourcepath`)                   |
+| 2: classpath from Maven                   | Done, multi-module too (plus `--classpath` and `--sourcepath`) |
 | 3: watching the folder, picocli, console  | Done, with an interactive console mode                         |
 | 4: web server                             | Done (`--web`)                                                 |
 | 5: refactoring recognition POC            | Renames and type moves only                                    |
@@ -144,7 +144,7 @@ This project is purely experimental POC. We do not need take into account
 all complexities of real world projects. I.e.:
 
 * No other languages than Java
-* Only simple maven project - no fancy maven configurations, no multi-module builds
+* Only simple maven projects - no fancy maven configurations (multi-module builds are supported)
 * For now no support for Java modules
 
 ## Coding rules
@@ -192,10 +192,14 @@ renders it to ANSI text with fleck's `ConsoleHtmlRenderer`; the web page shows i
 
 `Main` is a picocli command. It:
 
-1. Resolves the classpath: `--classpath` if given, otherwise from `pom.xml` with `MavenClasspath`, which uses the
-   Maven model builder and Maven Resolver as libraries, so `mvn` is never started. Without either, only the JDK.
-2. Resolves the source roots: `--sourcepath`, otherwise `src/main/java` and `src/test/java` if they exist, otherwise
-   the project directory (`DiffAstAnalyzer.CONVENTIONAL_ROOTS`).
+1. Resolves the modules (`SourceModule`: own roots, source roots, an `AstLoader` with the classpath). Without
+   `--classpath` and `--sourcepath`, from `pom.xml` with `MavenProject`, which uses the Maven model builder and
+   Maven Resolver as libraries, so `mvn` is never started. It walks `<modules>` recursively. A `WorkspaceReader`
+   serves the reactor's POMs, so sibling dependencies resolve transitively without being installed. Siblings
+   contribute their source roots, never jars.
+2. Otherwise there is one module: the `--sourcepath` roots, or `src/main/java` and `src/test/java` if they exist,
+   otherwise the project directory (`SourceModule.of`), compiled against `--classpath`, the dependencies of
+   `pom.xml`, or only the JDK.
 3. Picks a mode:
    - **`sedi <rev>`** (not a terminal, or no `-i`): prints the report and exits.
    - **`sedi`**, **`sedi a..`**, **`sedi -i <rev>`**: `Session`. Watches the directory if the new side is the working
@@ -233,8 +237,10 @@ It returns JGit `DiffEntry`s with rename detection (`--rename-score`, 50% by def
 
 ### Phase 2: Compiling both versions (javac)
 
-`AstLoader` runs **one javac task per side**, with `-proc:none -Xprefer:source`, dropping all diagnostics so code
-that does not compile is still analyzed.
+`AstLoader` runs **one javac task per side and module**, with `-proc:none -Xprefer:source`, dropping all
+diagnostics so code that does not compile is still analyzed. A changed file belongs to the `SourceModule` whose own
+roots contain it most specifically (else the first module). It is compiled with that module's loader (classpath)
+and source roots.
 
 The project's other classes are not passed to javac up front. `SourceFileManager` serves `SOURCE_PATH` from
 `SourceFileProvider`s, so javac reads a class's source only when it meets it:
@@ -421,6 +427,8 @@ holds sample sources for each kind of change. `ChangeClassificationTest`, `Membe
 - **Compatibility** has no subtype checks (a narrower return type is breaking too) and does not tell checked from
   unchecked exceptions. It looks at inheritance through javac's `Element`s kept in `ElementInfo`, so those, like
   the trees, are valid only while the `DiffAstAnalyzer` is open.
+- **Multi-module**: one javac task per module and side. A sibling dependency of a module is a placeholder (its
+  directory) in the resolver. A changed `pom.xml` is not re-read while watching.
 - **Diagnostics are thrown away**, so the user does not learn why names are red.
 - **Large classes**: `Reporter` (~1100 lines), `AstPrinter` (~1000), `BodyDiff`, `SignatureDiffPrinter`,
   `ElementHashCalculator` (~650–700). `FileAnalysis` has 14 components.
