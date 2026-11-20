@@ -551,7 +551,7 @@ public final class Reporter {
             if (!options.publicOnly() || Visibility.isExposed(member, true, inInterface)) {
                 ApiChanges nested = nestedOf(moved, member);
                 nodes.add(nested != null && !nested.type().isAdded()
-                        ? typeNode(nested.type(), type.getName(), true,
+                        ? typeNode(nested, type.getName(), true,
                                 render(nested, (container, c) -> isShownApi(c), false, true, false))
                         : addedNode(member, type.getName(), nested));
             }
@@ -719,7 +719,7 @@ public final class Reporter {
         if (file.oldPrimary() != null) {
             List<Node> members = render(file.primaryChanges(), filter, tagged, diff, whole);
             if (header || !members.isEmpty()) {
-                nodes.add(typeNode(file.primaryChanges().type(), "", diff, members));
+                nodes.add(typeNode(file.primaryChanges(), "", diff, members));
             }
         }
         nodes.addAll(render(file.rootChanges(), filter, tagged, diff, whole));
@@ -732,12 +732,14 @@ public final class Reporter {
      * The node of a changed type with its javadoc, annotations and signature, the changes of them shown if
      * {@code diff}, and the changes in it.
      */
-    private Node typeNode(ElementPair type, String outerName, boolean diff, List<Node> children) {
+    private Node typeNode(ApiChanges changes, String outerName, boolean diff, List<Node> children) {
+        ElementPair type = changes.type();
         ElementPair shown = diff ? type : new ElementPair(type.newElement(), type.newElement(), Set.of());
         List<Line> above = new ArrayList<>(javadocLines(shown));
         above.addAll(printer.annotations(shown));
         // Without the changes, a renamed or moved type is still marked as such.
-        Line head = diff ? printer.formatType(type, outerName)
+        // The badge of the change of the type goes with the changes of the signatures.
+        Line head = diff ? printer.formatType(type, outerName).append(Markup.incompatible(changes.incompatibilities()))
                 : plainPrinter.formatType(type.isAdded() ? shown : type, outerName);
         return new Node(above, head, List.of(), children, type.isRemoved() ? type.oldElement() : type.newElement());
     }
@@ -937,7 +939,7 @@ public final class Reporter {
                 boolean own = changes.changes().stream()
                         .anyMatch(c -> filter.test(changes, c) && isSignatureOf(c, type));
                 if (own || !nested.isEmpty()) {
-                    nodes.add(typeNode(type.type(), changes.typeName(), diff, nested));
+                    nodes.add(typeNode(type, changes.typeName(), diff, nested));
                 }
             }
         }
@@ -983,7 +985,8 @@ public final class Reporter {
                 && change.pair().newElement().getNodeType() == ElementInfo.NodeType.TYPE
                 ? addedMembers(change.pair().newElement(), nestedOf(changes, change.pair().newElement())) : List.of();
         return declarationNode(pair, signatures, changes.typeName(), inline ? body.getFirst() : null,
-                Fragment.of(block ? " {" : "").plus(tagged ? tag(change) : Fragment.EMPTY), below, children);
+                Fragment.of(block ? " {" : "").plus(tagged ? tag(change) : Fragment.EMPTY)
+                        .plus(Markup.incompatible(change.incompatibilities())), below, children);
     }
 
     /**
@@ -1005,7 +1008,8 @@ public final class Reporter {
         ElementInfo element = added ? change.pair().newElement() : change.pair().oldElement();
         String text = element.getSourceText();
         if (text == null) {
-            return declarationNode(change.pair(), "", null, Fragment.EMPTY, List.of(), List.of());
+            return declarationNode(change.pair(), "", null, Markup.incompatible(change.incompatibilities()),
+                    List.of(), List.of());
         }
         List<Fragment> code = Syntax.lines(element.getSourceTextRuns());
         char marker = added ? '+' : '-';
@@ -1056,7 +1060,8 @@ public final class Reporter {
                 i = last;
             }
         }
-        return new Node(javadocLines(change.pair()), lines.get(0), lines.subList(1, lines.size()), List.of(), element);
+        Line head = lines.get(0).append(Markup.incompatible(change.incompatibilities()));
+        return new Node(javadocLines(change.pair()), head, lines.subList(1, lines.size()), List.of(), element);
     }
 
     /** Collects the types moved into the type, at any depth, by their first lines. */

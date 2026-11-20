@@ -128,7 +128,8 @@ public class ReporterTest extends TestCase {
                         line(" 6", '+', "  ", tree("│   "), code(comment("* Third."))),
                         line(" 8", ' ', "  ", tree("├── "), code("public void ", decl("m"), "()")),
                         line(" 9", '+', "  ", tree("│   "), code(comment("* Added."))),
-                        line("10", '+', "  ", tree("└── "), code("public void ", decl("n"), "()"))),
+                        line("10", '+', "  ", tree("└── "), code("public void ", decl("n"), "()", " ",
+                                risky("method added to an extensible class, may clash with subclasses")))),
                         lines);
             }
         }
@@ -311,7 +312,7 @@ public class ReporterTest extends TestCase {
                 assertEquals(1, analyses.size());
                 assertEquals(org.eclipse.jgit.diff.DiffEntry.ChangeType.RENAME, analyses.get(0).diff().getChangeType());
                 assertLines(List.of(
-                        line('~', "  ", code("public class ", strike("Foo"), " ", added(decl("Bar")))),
+                        line('~', "  ", code("public class ", strike("Foo"), " ", added(decl("Bar")), " ", breaking("removed, renamed or moved"))),
                         line('~', "  ", tree("└── "), code(strike("int"), " ", added("long"), " ", decl("a")))),
                         new Reporter().report(analyses.get(0)));
             }
@@ -423,7 +424,7 @@ public class ReporterTest extends TestCase {
                 blank(),
                 fileTitle('~', name("Foo.java")),
                 line(' ', "  ", code("public class ", decl("Foo"))),
-                line('~', "  ", tree("├── "), code("public ", strike("int"), " ", added("long"), " ", decl("a"))),
+                line('~', "  ", tree("├── "), code("public ", strike("int"), " ", added("long"), " ", decl("a"), " ", breaking("type changed"))),
                 line('~', "  ", tree("└── "), code("private ", strike("int"), " ", added("long"), " ", decl("b")))),
                 report(ReportOptions.DEFAULT));
     }
@@ -435,7 +436,7 @@ public class ReporterTest extends TestCase {
     public void testLevelsOfFile() throws Exception {
         assertLines(List.of(
                 line(' ', "  ", code("public class ", decl("Foo"))),
-                line('~', "  ", tree("├── "), code("public ", strike("int"), " ", added("long"), " ", decl("a"))),
+                line('~', "  ", tree("├── "), code("public ", strike("int"), " ", added("long"), " ", decl("a"), " ", breaking("type changed"))),
                 line('~', "  ", tree("├── "), code("private ", strike("int"), " ", added("long"), " ", decl("b"))),
                 line(' ', "  ", tree("├── "), code("public int ", decl("m"), "() { ", tag("impl"))),
                 line('~', "  ", tree("│   "), "      ", code("return ", strike("1"), " ", added("2"), ";")),
@@ -449,7 +450,7 @@ public class ReporterTest extends TestCase {
                 fileReport(new ReportOptions(ChangeLevel.IMPORTS)));
         assertLines(List.of(
                 line(' ', "  ", code("public class ", decl("Foo"))),
-                line('~', "  ", tree("├── "), code("public ", strike("int"), " ", added("long"), " ", decl("a"))),
+                line('~', "  ", tree("├── "), code("public ", strike("int"), " ", added("long"), " ", decl("a"), " ", breaking("type changed"))),
                 line('~', "  ", tree("├── "), code("private ", strike("int"), " ", added("long"), " ", decl("b"))),
                 line(' ', "  ", tree("└── "), code("public int ", decl("m"), "() { ", tag("impl"))),
                 line('~', "            ", code("return ", strike("1"), " ", added("2"), ";")),
@@ -466,7 +467,7 @@ public class ReporterTest extends TestCase {
                 blank(),
                 fileTitle('~', name("Foo.java")),
                 line(' ', "  ", code("public class ", decl("Foo"))),
-                line('~', "  ", tree("├── "), code("public ", strike("int"), " ", added("long"), " ", decl("a"))),
+                line('~', "  ", tree("├── "), code("public ", strike("int"), " ", added("long"), " ", decl("a"), " ", breaking("type changed"))),
                 line('~', "  ", tree("└── "), code("private ", strike("int"), " ", added("long"), " ", decl("b"))),
                 blank(),
                 heading("Implementation changes"),
@@ -579,11 +580,12 @@ public class ReporterTest extends TestCase {
                         fileTitle('~', name("Foo.java")),
                         line(' ', "  ", code("public class ", decl("Foo"))),
                         line('~', "  ", tree("└── "), code("public ", strike("int"), " ", added("long"), " ",
-                                decl("a"))),
+                                decl("a"), " ", breaking("type changed"))),
                         separator(),
                         fileTitle('~', name("R.java")),
                         line('~', "  ", code("public record ", decl("R"), "( int ", decl("a"), ", ",
-                                added("long ", decl("c")), ", String ", decl("b"), " )"))),
+                                added("long ", decl("c")), ", String ", decl("b"), " )", " ",
+                                breaking("record components changed")))),
                         new Reporter(new ReportOptions(ChangeLevel.API)).report(analyzer.analyzeChanges()));
             }
         }
@@ -673,7 +675,8 @@ public class ReporterTest extends TestCase {
                         fileTitle('~', name("Foo.java"), " ", pkg("p")),
                         line('~', "  ", code("public ", added("abstract"), " class ", decl("Foo"), "<T, ", added("U"),
                                 "> extends ", strike("Object"), " ", added("Number"), " implements Runnable, ",
-                                added("Cloneable"))),
+                                added("Cloneable"), " ",
+                                breaking("type parameters changed", "abstract added"))),
                         line('~', "  ", tree("└── "), code("static ", added("final"), " class ", decl("In"),
                                 " implements ", added("Runnable"))),
                         line('+', "      ", tree("└── "), code("public void ", decl("run"), "()"))),
@@ -763,7 +766,7 @@ public class ReporterTest extends TestCase {
                         separator(),
                         fileTitle('→', name(strike("Foo.java"), " ", added("Bar.java")), " ", pkg(strike("a"), " ",
                                 added("b"))),
-                        line('~', "  ", code("public class ", strike("Foo"), " ", added(decl("Bar"))))),
+                        line('~', "  ", code("public class ", strike("Foo"), " ", added(decl("Bar")), " ", breaking("removed, renamed or moved")))),
                         new Reporter(new ReportOptions(ChangeLevel.API))
                                 .report(analyzer.analyzeChanges()));
             }
@@ -1062,10 +1065,11 @@ public class ReporterTest extends TestCase {
         String added = "public class Foo {\n  /**\n   * Fresh.\n   * Really.\n   */\n  public void fresh() { }\n}\n";
         assertLines(List.of(
                 line(' ', "  ", code("public class ", decl("Foo"))),
-                line('-', "  ", tree("├── "), code(strike("public int ", decl("gone"), "( String s )"))),
+                line('-', "  ", tree("├── "), code(strike("public int ", decl("gone"), "( String s )"), " ", breaking("removed, renamed or moved"))),
                 line('+', "  ", tree("│   "), code(comment("* Fresh."))),
                 line('+', "  ", tree("│   "), code(comment("* Really."))),
-                line('+', "  ", tree("└── "), code("public void ", decl("fresh"), "()"))),
+                line('+', "  ", tree("└── "), code("public void ", decl("fresh"), "()", " ",
+                        risky("method added to an extensible class, may clash with subclasses")))),
                 javadocReport(old, added, 1));
     }
 
@@ -1078,7 +1082,7 @@ public class ReporterTest extends TestCase {
                 line('-', "  ", tree("│   "), code(comment("* ", strike("Gone.")))),
                 line('+', "  ", tree("│   "), code(comment("* Fresh."))),
                 line('+', "  ", tree("│   "), code(comment("* Really."))),
-                line('~', "  ", tree("└── "), code("public void ", strike("gone"), " ", added(decl("fresh")), "()"))),
+                line('~', "  ", tree("└── "), code("public void ", strike("gone"), " ", added(decl("fresh")), "()", " ", breaking("removed, renamed or moved")))),
                 javadocReport(old, added, 1));
     }
 
@@ -1216,8 +1220,9 @@ public class ReporterTest extends TestCase {
                 fileTitle('+', name("Values.java"), " ", pkg("b")),
                 line(' ', "  ", code("public class ", decl("Values"))),
                 line('~', "  ", tree("├── "), code("public ", added("static"), " class ", strike("a.Color"), " ",
-                        added(decl("Color")))),
-                line('+', "  ", tree("│   "), tree("└── "), code("public void ", decl("b"), "()")),
+                        added(decl("Color")), " ", breaking("removed, renamed or moved"))),
+                line('+', "  ", tree("│   "), tree("└── "), code("public void ", decl("b"), "()", " ",
+                        risky("method added to an extensible class, may clash with subclasses"))),
                 line(' ', "  ", tree("└── "), code("public int ", decl("v")))),
                 lines);
         assertFalse(texts(lines).toString(), texts(lines).stream().anyMatch(l -> l.contains("Color.java")));

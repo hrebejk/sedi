@@ -8,11 +8,14 @@
  */
 package cz.hrebejk.sedi.report;
 
+import cz.hrebejk.sedi.analysis.Incompatibility;
 import cz.hrebejk.sedi.util.WordDiff;
 import org.maraboo.fleck.html.HTML;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Marks up the pieces of the report with their {@link Css} classes: styled text, the old text struck through and
@@ -144,5 +147,24 @@ final class Markup {
     static Fragment renamed(Fragment content, String oldText, String newText) {
         return content.isEmpty() ? content
                 : Fragment.of(Css.RENAMED.span(content).attr("title", oldText + " \u2192 " + newText));
+    }
+
+    /**
+     * The badge of an API change which breaks the clients, {@code ⚠}, or which may break them, {@code ⓘ}, preceded
+     * by a space. Its title lists how; on the page it shows under the mouse.
+     *
+     * @param incompatibilities how the change breaks the clients
+     * @return the badge, empty if there are no incompatibilities
+     */
+    static Fragment incompatible(Set<Incompatibility> incompatibilities) {
+        if (incompatibilities.isEmpty()) {
+            return Fragment.EMPTY;
+        }
+        boolean breaking = incompatibilities.stream().anyMatch(Incompatibility::isBreaking);
+        String title = incompatibilities.stream().map(Incompatibility::description)
+                .collect(Collectors.joining("\n"));
+        HTML.Tag badge = (breaking ? Css.BREAKING : Css.RISKY).span(breaking ? "\u26a0" : "\u24d8")
+                .attr("title", title);
+        return Fragment.of(" ").plus(Fragment.of(badge));
     }
 }

@@ -76,6 +76,10 @@ enum Css {
     PACKAGE,
     /** The tag of the level of a change. */
     TAG,
+    /** The badge of an API change which breaks the clients, its title telling how. */
+    BREAKING,
+    /** The badge of an API change which may break the clients, its title telling how. */
+    RISKY,
     /** Names javac could not resolve, as in code which does not compile. */
     ERROR,
     /** The lines of the tree of the members of a type and the lines between the files. */

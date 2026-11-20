@@ -170,6 +170,16 @@ final class Expect {
         return Css.TAG.span("[" + level + "]");
     }
 
+    /** The badge of a change which breaks the clients, its title listing the reasons. */
+    static HTML.Tag breaking(String... reasons) {
+        return Css.BREAKING.span("\u26a0").attr("title", String.join("\n", reasons));
+    }
+
+    /** The badge of a change which may break the clients, its title listing the reasons. */
+    static HTML.Tag risky(String... reasons) {
+        return Css.RISKY.span("\u24d8").attr("title", String.join("\n", reasons));
+    }
+
     /** A span of the class. */
     static HTML.Tag span(Css css, Object... parts) {
         return HTML.SPAN().children(nodes(parts)).clazz(css.cssClass());

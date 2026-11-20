@@ -72,6 +72,10 @@ public final class ReportStyles {
         TITLE(".title"),
         PACKAGE(".package"),
         TAG(".tag"),
+        /** The badge of a change which breaks the clients of the API. */
+        BREAKING(".breaking"),
+        /** The badge of a change which may break the clients of the API. */
+        RISKY(".risky"),
         ERROR(".error"),
         LINE_NUMBER(".ln"),
         TREE(".tree"),
@@ -103,7 +107,7 @@ public final class ReportStyles {
         p.add(color("#88c0d0"), "method", "heading-mark");
         p.add(color("#b48ead"), "field");
         p.add(color("#a3be8c"), "literal", "added-mark");
-        p.add(color("#ebcb8b"), "constant", "changed-mark");
+        p.add(color("#ebcb8b"), "constant", "changed-mark", "risky");
         p.add(color("#d08770"), "annotation", "no-changes");
         p.add(color("#616e88"), "comment", "tag", "note");
         // The backgrounds of changes are the Aurora colors blended into the Nord background.
@@ -112,7 +116,7 @@ public final class ReportStyles {
         p.add(color("#3b4a3e"), "added-background");
         // A rename is no change of the code, it is only told apart: a muted yellow.
         p.add(color("#4a4636"), "renamed-background");
-        p.add(color("#bf616a"), "removed-mark");
+        p.add(color("#bf616a"), "removed-mark", "breaking");
         p.add(color("#eceff4"), "title", "heading");
         p.add(color("#d8dee9"), "level");
         p.add(color("#4c566a"), "package", "line-number", "tree");
@@ -219,6 +223,8 @@ public final class ReportStyles {
             case TITLE -> bold("title");
             case PACKAGE -> fg("package");
             case TAG -> fg("tag");
+            case BREAKING -> bold("breaking");
+            case RISKY -> fg("risky");
             case ERROR -> (s, p) -> s.foreground(p.get("error")).background(p.get("error-background"))
                     .fontStyle(CssValues.FontStyle.BOLD);
             case LINE_NUMBER -> fg("line-number");
