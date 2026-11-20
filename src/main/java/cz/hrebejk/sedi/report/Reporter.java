@@ -190,6 +190,37 @@ public final class Reporter {
         return numbered(section(sorted(analysis), level));
     }
 
+    /**
+     * Counts the changed elements of one level, or of all of them, of the files the report shows. An element
+     * changed in more than one level counts once among all of them; a change of the javadoc alone does not count
+     * when the javadoc is not shown.
+     *
+     * @param analysis the analyzed diff
+     * @param level    the level to count, {@code null} for all the levels but the imports
+     * @return the number of the changed types and members
+     */
+    public int countChanged(DiffAnalysis analysis, ChangeLevel level) {
+        boolean hideJavadoc = options.javadocContext() == ReportOptions.NO_JAVADOC;
+        Set<ElementPair> changed = new HashSet<>();
+        for (FileAnalysis file : sorted(analysis)) {
+            for (ApiChanges changes : file.oldPrimary() == null ? List.of(file.rootChanges())
+                    : List.of(file.primaryChanges(), file.rootChanges())) {
+                collectChanged(changes, level, hideJavadoc, changed);
+            }
+        }
+        return changed.size();
+    }
+
+    private static void collectChanged(ApiChanges changes, ChangeLevel level, boolean hideJavadoc,
+                                       Set<ElementPair> changed) {
+        for (MemberChange change : changes.changes()) {
+            if ((level == null || change.level() == level) && !(hideJavadoc && change.isJavadocOnly())) {
+                changed.add(change.pair());
+            }
+        }
+        changes.nested().forEach(nested -> collectChanged(nested, level, hideJavadoc, changed));
+    }
+
     /** The files to report, sorted by package and class; the tests are left out unless they are shown. */
     private List<FileAnalysis> sorted(DiffAnalysis analysis) {
         return analysis.files().stream()

@@ -796,6 +796,29 @@ public class ReporterTest extends TestCase {
     }
 
     /**
+     * Tests that countChanged counts the changed elements of each level, and an element changed in more levels
+     * once among all of them.
+     */
+    public void testCountChanged() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", "public class Foo {\n  int a;\n  void m() { int x = 1; }\n"
+                    + "  int n(int p) { return p; }\n}\n");
+            helper.commit("init");
+            helper.writeFile("Foo.java", "public class Foo {\n  long a;\n  void m() { int y = 1; }\n"
+                    + "  long n(int p) { return p + 1; }\n}\n");
+
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                var analysis = analyzer.analyzeChanges();
+                Reporter reporter = new Reporter(new ReportOptions(ChangeLevel.IMPORTS));
+                assertEquals(2, reporter.countChanged(analysis, ChangeLevel.API));
+                assertEquals(1, reporter.countChanged(analysis, ChangeLevel.IMPLEMENTATION));
+                assertEquals(1, reporter.countChanged(analysis, ChangeLevel.COSMETIC));
+                assertEquals(3, reporter.countChanged(analysis, null));
+            }
+        }
+    }
+
+    /**
      * Tests that the changes of the files under {@code src/test/} are left out of every view when the tests are
      * hidden, and shown by default.
      */

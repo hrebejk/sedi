@@ -101,6 +101,31 @@ body {
   color: #eceff4;
 }
 
+/* How many elements changed in the level of a button. */
+.toolbar button .count {
+  display: inline-block;
+  min-width: 1.4em;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--border);
+  color: #eceff4;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.toolbar button.active .count {
+  background: var(--active-border);
+  color: var(--bar);
+}
+
+.toolbar button .count.none {
+  background: none;
+  color: var(--dim);
+}
+
 /* The key of a button. */
 .toolbar u {
   text-decoration-thickness: 1px;

@@ -298,13 +298,19 @@ final class WebReport {
             ReportOptions options = view.reporter().options();
             ChangeLevel only = view.only();
             List<HTML> items = new ArrayList<>();
-            items.add(button('l', "All", "All the changes by file, under each file its API, implementation, cosmetic "
-                    + "and import changes", view.byFile()));
+            DiffAnalysis analysis;
+            synchronized (lock) {
+                analysis = last;
+            }
+            items.add(withCount(button('l', "All", "All the changes by file, under each file its API, "
+                    + "implementation, cosmetic and import changes", view.byFile()), analysis, null));
             items.add(separator());
-            items.add(button('a', "API", "Only the API changes", only == ChangeLevel.API));
-            items.add(button('i', "Implementation", "Only the implementation changes",
-                    only == ChangeLevel.IMPLEMENTATION));
-            items.add(button('c', "Cosmetic", "Only the cosmetic changes", only == ChangeLevel.COSMETIC));
+            items.add(withCount(button('a', "API", "Only the API changes", only == ChangeLevel.API),
+                    analysis, ChangeLevel.API));
+            items.add(withCount(button('i', "Implementation", "Only the implementation changes",
+                    only == ChangeLevel.IMPLEMENTATION), analysis, ChangeLevel.IMPLEMENTATION));
+            items.add(withCount(button('c', "Cosmetic", "Only the cosmetic changes", only == ChangeLevel.COSMETIC),
+                    analysis, ChangeLevel.COSMETIC));
             items.add(button('m', "Imports", "Only the changed imports", only == ChangeLevel.IMPORTS));
             items.add(separator());
             items.add(button('d', "Javadoc: " + javadoc(options.javadocContext()),
@@ -337,6 +343,20 @@ final class WebReport {
                     .attr("title", hint + " (" + key + ")")
                     .listen("click");
             return active ? tag.clazz("active") : tag;
+        }
+
+        /**
+         * The button with a badge of how many elements changed in the level, see {@link Reporter#countChanged};
+         * without it while there is no analysis.
+         *
+         * @param level the level counted, {@code null} for all of them
+         */
+        private HTML.Tag withCount(HTML.Tag button, DiffAnalysis analysis, ChangeLevel level) {
+            if (analysis == null) {
+                return button;
+            }
+            int count = view.reporter().countChanged(analysis, level);
+            return button.children(HTML.SPAN(String.valueOf(count)).clazz(count == 0 ? "count none" : "count"));
         }
 
         private static HTML.Tag separator() {
