@@ -11,6 +11,7 @@ package cz.hrebejk.sedi;
 import cz.hrebejk.sedi.analysis.ChangeLevel;
 import cz.hrebejk.sedi.analysis.DiffAstAnalyzer;
 import cz.hrebejk.sedi.compilation.AstLoader;
+import cz.hrebejk.sedi.compilation.SourceModule;
 import cz.hrebejk.sedi.report.ReportOptions;
 import cz.hrebejk.sedi.report.Reporter;
 import cz.hrebejk.sedi.report.ReportStyles;
@@ -18,7 +19,7 @@ import org.maraboo.fleck.console.ConsoleHtmlRenderer;
 import org.maraboo.fleck.css.StyleSheet;
 import cz.hrebejk.sedi.util.DirectoryWatcher;
 import cz.hrebejk.sedi.util.GitInspector;
-import cz.hrebejk.sedi.util.MavenClasspath;
+import cz.hrebejk.sedi.util.MavenProject;
 import cz.hrebejk.sedi.util.Terminal;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
@@ -44,7 +45,7 @@ import java.util.stream.Collectors;
 @Command(name = "sedi", mixinStandardHelpOptions = true, description = "Semantic diff of Java sources.")
 public class Main implements Callable<Integer> {
 
-    @Option(names = {"-d", "--dir"}, description = "Project directory containing pom.xml (default: current directory).")
+    @Option(names = {"-d", "--dir"}, description = "Project directory containing pom.xml, which may have modules (default: current directory).")
     private Path projectDir = Path.of("").toAbsolutePath();
 
     @Parameters(arity = "0..1", paramLabel = "<rev>",
@@ -130,11 +131,8 @@ public class Main implements Callable<Integer> {
                     + "--dir itself). May be repeated.")
     private List<String> sourcepathOption = List.of();
 
-    private List<Path> classpath = List.of();
-
-    private List<String> sourceRoots = List.of();
-
-    private AstLoader astLoader = new AstLoader();
+    /** The parts of the project compiled separately: the modules of a Maven project, else the project. */
+    private List<SourceModule> modules = List.of();
 
     /** Reads the short names of the levels: {@code api}, {@code impl}, {@code cosmetic} and {@code imports}. */
     private static final class LevelConverter implements CommandLine.ITypeConverter<ChangeLevel> {
@@ -179,26 +177,35 @@ public class Main implements Callable<Integer> {
             return 2;
         }
         projectDir = projectDir.toAbsolutePath().normalize();
+        List<String> sourceRoots;
         try {
             sourceRoots = sourceRoots(sourcepathOption);
         } catch (IllegalArgumentException e) {
             System.err.println(e.getMessage());
             return 2;
         }
-        Path pom = projectDir.resolve("pom.xml");
-        if (!classpathOption.isEmpty()) {
-            classpath = split(classpathOption).stream().map(Path::of).toList();
-            astLoader = new AstLoader(classpath);
-        } else if (Files.isRegularFile(pom)) {
-            classpath = MavenClasspath.resolve(projectDir);
-            astLoader = new AstLoader(classpath);
+        boolean maven = Files.isRegularFile(projectDir.resolve("pom.xml"));
+        List<MavenProject.Module> mavenModules = maven && classpathOption.isEmpty()
+                ? MavenProject.load(projectDir) : List.of();
+        if (classpathOption.isEmpty() && sourceRoots.isEmpty() && maven) {
+            modules = mavenModules.stream().map(m -> new SourceModule(m.roots(), m.sourceRoots(),
+                    new AstLoader(m.classpath()))).toList();
         } else {
-            System.err.println("No pom.xml found in " + projectDir + ", using JDK classpath only.");
+            // The given paths override the modules; without a classpath given, the dependencies of all modules.
+            List<Path> classpath = !classpathOption.isEmpty() ? split(classpathOption).stream().map(Path::of).toList()
+                    : mavenModules.stream().flatMap(m -> m.classpath().stream()).distinct().toList();
+            if (!maven && classpathOption.isEmpty()) {
+                System.err.println("No pom.xml found in " + projectDir + ", using JDK classpath only.");
+            }
+            mavenModules = List.of(new MavenProject.Module("", sourceRoots, sourceRoots, classpath));
+            modules = List.of(SourceModule.of(projectDir, sourceRoots, new AstLoader(classpath)));
         }
         if (info) {
-            System.out.println(classpath.stream()
-                    .map(p -> p.getFileName().toString())
-                    .collect(Collectors.joining(File.pathSeparator)));
+            for (MavenProject.Module module : mavenModules) {
+                System.out.println((module.dir().isEmpty() ? "." : module.dir()) + ": " + module.classpath().stream()
+                        .map(p -> p.getFileName().toString())
+                        .collect(Collectors.joining(File.pathSeparator)));
+            }
         }
 
         if (web) {
@@ -235,7 +242,7 @@ public class Main implements Callable<Integer> {
             }
         }
         // One analyzer for the whole session, so the old versions are compiled only once.
-        try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader, renameScore, sourceRoots)) {
+        try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, renameScore, modules)) {
             Session.Analysis analysis = commit == null ? analyzer::analyzeChanges
                     : filter -> analyzer.analyzeCommit(commit, filter);
             if (commit != null && !comparesWorkingCopy()) {
@@ -294,7 +301,7 @@ public class Main implements Callable<Integer> {
                 !hideAdditions, showDeletions, !hideTests, true));
         String title = projectDir.getFileName() + " " + (commit == null ? "working copy" : commit);
         WebReport report = new WebReport(reporter, projectDir.getFileName().toString(), commit);
-        try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader, renameScore, sourceRoots)) {
+        try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, renameScore, modules)) {
             int actualPort;
             try {
                 actualPort = report.start(port, styleSheet).port();
@@ -368,7 +375,7 @@ public class Main implements Callable<Integer> {
 
     /** Prints the API changes of the selected commit and returns the process exit code. */
     private int reportCommit(Reporter reporter, ConsoleHtmlRenderer renderer) {
-        try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader, renameScore, sourceRoots)) {
+        try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, renameScore, modules)) {
             renderer.lines(reporter.report(analyzer.analyzeCommit(commit, path -> path.endsWith(".java"))))
                     .forEach(System.out::println);
             return 0;

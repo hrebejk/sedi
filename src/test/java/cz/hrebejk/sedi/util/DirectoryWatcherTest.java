@@ -111,4 +111,16 @@ public class DirectoryWatcherTest extends TestCase {
         assertNotNull("No batch", batch);
         assertTrue(batch.toString(), batch.contains(file));
     }
+    /**
+     * A Java file written deep in a module, in directories which existed before the watcher started, is reported.
+     */
+    public void testJavaFileDeepInModule() throws Exception {
+        helper.writeFile("core/src/main/java/p/Old.java", "package p;\npublic class Old {}\n");
+        startWatching();
+        Path file = helper.writeFile("core/src/main/java/p/X.java", "package p;\npublic class X {}\n");
+
+        Set<Path> batch = batches.poll(5, TimeUnit.SECONDS);
+        assertNotNull("No batch", batch);
+        assertTrue(batch.toString(), batch.contains(file));
+    }
 }
