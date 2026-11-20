@@ -81,6 +81,22 @@
   </repositories>
 
   <build>
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+      </resource>
+      <!-- License of sedi and of the bundled third-party components, so that sedi.jar carries them.
+           Under META-INF/sedi because the shade plugin drops META-INF/LICENSE files. -->
+      <resource>
+        <directory>${project.basedir}</directory>
+        <targetPath>META-INF/sedi</targetPath>
+        <includes>
+          <include>LICENSE</include>
+          <include>THIRD-PARTY-NOTICES.md</include>
+          <include>licenses/**</include>
+        </includes>
+      </resource>
+    </resources>
     <plugins>
       <plugin>
         <!-- to create libraries in mreb/lib

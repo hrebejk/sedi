@@ -58,8 +58,18 @@ The NOTICE files of the Apache-licensed libraries are merged into
 
 ## License texts
 
-- Apache License 2.0: https://www.apache.org/licenses/LICENSE-2.0
-- SIL Open Font License 1.1: https://openfontlicense.org
-- Eclipse Public License 1.0: https://www.eclipse.org/legal/epl-v10.html
-- Eclipse Distribution License 1.0: https://www.eclipse.org/org/documents/edl-v10.php
-- MIT License: https://opensource.org/license/mit
+The full license texts are in the [`licenses/`](licenses) folder, taken from the
+libraries' own jars. `sedi.jar` carries them, together with this file and sedi's
+`LICENSE`, in `META-INF/sedi/`.
+
+| File | Covers |
+|---|---|
+| `licenses/Apache-2.0.txt` | All libraries above under the Apache License 2.0 |
+| `licenses/EPL-1.0.txt` | Eclipse Public License 1.0 (Eclipse Sisu Inject) |
+| `licenses/sisu-inject-about.html` | Eclipse Sisu Inject license statement |
+| `licenses/jgit-about.html` | Eclipse JGit: Eclipse Distribution License 1.0 and its third-party content |
+| `licenses/slf4j-LICENSE.txt` | SLF4J (MIT) |
+
+The font license texts are in `src/main/resources/cz/hrebejk/sedi/web/fonts/`
+(in `sedi.jar` under `cz/hrebejk/sedi/web/fonts/`), and the Preact license is in
+the fleck jar (`org/maraboo/fleck/web/PREACT-LICENSE`).
