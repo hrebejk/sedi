@@ -59,9 +59,26 @@
     <dependency>
       <groupId>org.maraboo</groupId>
       <artifactId>fleck</artifactId>
-      <version>1.0-SNAPSHOT</version>
+      <version>1.0</version>
     </dependency>
   </dependencies>
+
+  <repositories>
+    <!-- fleck is not published yet; its jar is kept in lib/, laid out as a Maven repository.
+         To update it, build fleck and run:
+         mvn install:install-file -Dfile=<fleck jar> -DgroupId=org.maraboo -DartifactId=fleck
+             -Dversion=<version> -Dpackaging=jar -DgeneratePom=true -DlocalRepositoryPath=lib -->
+    <repository>
+      <id>project-lib</id>
+      <url>file://${project.basedir}/lib</url>
+      <releases>
+        <checksumPolicy>ignore</checksumPolicy>
+      </releases>
+      <snapshots>
+        <enabled>false</enabled>
+      </snapshots>
+    </repository>
+  </repositories>
 
   <build>
     <plugins>

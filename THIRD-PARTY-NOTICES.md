@@ -5,6 +5,14 @@ and, in the `sedi.jar` built by `mvn package`, redistributes the third-party
 components listed below. Each remains under its own license; the MIT License of
 sedi does not apply to them.
 
+## fleck
+
+`lib/org/maraboo/fleck/` contains the jar of fleck, a small web UI library by
+the author of sedi that is not published separately yet. It is
+Copyright (c) 2026 Petr Hrebejk and licensed under the MIT License, on the same
+terms as sedi (see [LICENSE](LICENSE)). It bundles Preact, listed below under
+its own license.
+
 ## Fonts
 
 Bundled in `src/main/resources/cz/hrebejk/sedi/web/fonts/`.
