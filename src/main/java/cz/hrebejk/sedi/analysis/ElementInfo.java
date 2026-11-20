@@ -381,6 +381,25 @@ public class ElementInfo {
     }
 
     /**
+     * Returns the text of a tree of the element like {@link #getSource(Tree)}, in runs of the same syntax role.
+     *
+     * @param tree a tree of the element
+     * @return the runs, {@code null} if the tree has no place in the source
+     */
+    public List<SyntaxRoles.Run> getSourceRuns(Tree tree) {
+        return source == null ? null : source.oneLineRuns(tree);
+    }
+
+    /**
+     * Returns the whole element like {@link #getSourceText()}, in runs of the same syntax role.
+     *
+     * @return the runs, {@code null} if the source is not known
+     */
+    public List<SyntaxRoles.Run> getSourceTextRuns() {
+        return source == null ? null : source.textRuns(originalTree);
+    }
+
+    /**
      * Returns the line where the element starts in the source, with its annotations, unlike {@link #getLine()}.
      *
      * @return the line, starting at 1; {@code 0} if it is not known

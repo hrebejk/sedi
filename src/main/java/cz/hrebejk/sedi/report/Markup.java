@@ -9,7 +9,9 @@
 package cz.hrebejk.sedi.report;
 
 import cz.hrebejk.sedi.util.WordDiff;
+import org.maraboo.fleck.html.HTML;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -36,9 +38,32 @@ final class Markup {
         return strike(Fragment.of(text));
     }
 
-    /** The old content, struck through. */
+    /** The old content, struck through, without its syntax highlighting. */
     static Fragment strike(Fragment content) {
-        return content.isEmpty() ? Fragment.EMPTY : style(Css.STRIKE, content).asChanged();
+        return content.isEmpty() ? Fragment.EMPTY
+                : style(Css.STRIKE, Fragment.of(unhighlighted(content.nodes()), content.changed())).asChanged();
+    }
+
+    /** The nodes with the spans of the syntax highlighting replaced by their children. */
+    private static List<HTML> unhighlighted(List<HTML> nodes) {
+        List<HTML> out = new ArrayList<>();
+        for (HTML node : nodes) {
+            switch (node) {
+                case HTML.Text t -> out.add(t);
+                case HTML.Tag t when isHighlight(t) -> out.addAll(unhighlighted(t.children));
+                case HTML.Tag t -> out.add(HTML.Tag(t.tagName).attributes(t.attrs).children(unhighlighted(t.children)));
+            }
+        }
+        return out;
+    }
+
+    private static boolean isHighlight(HTML.Tag tag) {
+        for (Css css : Css.values()) {
+            if (css.isHighlight() && css.on(tag)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Code javac could not resolve. */

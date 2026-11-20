@@ -11,6 +11,7 @@ package cz.hrebejk.sedi.report;
 import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ImportTree;
+import com.sun.source.tree.Tree;
 import cz.hrebejk.sedi.analysis.ApiChanges;
 import cz.hrebejk.sedi.analysis.BodyChanges;
 import cz.hrebejk.sedi.analysis.ChangeLevel;
@@ -19,6 +20,7 @@ import cz.hrebejk.sedi.analysis.ElementInfo;
 import cz.hrebejk.sedi.analysis.ElementPair;
 import cz.hrebejk.sedi.analysis.FileAnalysis;
 import cz.hrebejk.sedi.analysis.MemberChange;
+import cz.hrebejk.sedi.analysis.SyntaxRoles;
 import cz.hrebejk.sedi.analysis.Visibility;
 import cz.hrebejk.sedi.compilation.CompilationUnitInfo;
 import org.eclipse.jgit.diff.DiffEntry;
@@ -676,14 +678,26 @@ public final class Reporter {
     private void importLines(FileAnalysis file, boolean tagged, List<Line> lines) {
         Fragment tag = tagged ? tag("import") : Fragment.EMPTY;
         file.importChanges().removed()
-                .forEach(i -> lines.add(importLine(false, i, line(file.oldUnit(), i)).withPrefix("  ").append(tag)));
+                .forEach(i -> lines.add(Line.number(line(file.oldUnit(), i), '-', Markup.strike("import " + i))
+                        .withPrefix("  ").append(tag)));
         file.importChanges().added()
-                .forEach(i -> lines.add(importLine(true, i, line(file.newUnit(), i)).withPrefix("  ").append(tag)));
+                .forEach(i -> lines.add(Line.number(line(file.newUnit(), i), '+', importCode(file.newUnit(), i))
+                        .withPrefix("  ").append(tag)));
     }
 
-    private static Line importLine(boolean added, String name, long line) {
-        return Line.number(line, added ? '+' : '-',
-                added ? Highlighter.code("import " + name) : Markup.strike("import " + name));
+    /** An import of the version of the file, highlighted, see {@link #importTree}. */
+    private static Fragment importCode(CompilationUnitInfo unit, String name) {
+        ImportTree tree = importTree(unit, name);
+        if (tree == null) {
+            return Fragment.of("import " + name);
+        }
+        CompilationUnitTree root = unit.compilationUnit();
+        Tree identifier = tree.getQualifiedIdentifier();
+        long start = unit.trees().getSourcePositions().getStartPosition(root, identifier);
+        long end = unit.trees().getSourcePositions().getEndPosition(root, identifier);
+        Fragment code = Syntax.fragment(SyntaxRoles.of(unit, tree).runs((int) start, (int) end));
+        return Syntax.keyword("import").plus(" ")
+                .plus(tree.isStatic() ? Syntax.keyword("static").plus(" ") : Fragment.EMPTY).plus(code);
     }
 
     /**
@@ -693,17 +707,31 @@ public final class Reporter {
      * @return the line, {@code 0} if not known
      */
     private static long line(CompilationUnitInfo unit, String name) {
-        if (unit == null) {
+        ImportTree i = importTree(unit, name);
+        if (i == null) {
             return 0;
         }
         CompilationUnitTree tree = unit.compilationUnit();
-        for (ImportTree i : tree.getImports()) {
+        long start = unit.trees().getSourcePositions().getStartPosition(tree, i);
+        return start < 0 ? 0 : tree.getLineMap().getLineNumber(start);
+    }
+
+    /**
+     * The tree of an import in a version of the file.
+     *
+     * @param name the import as {@link cz.hrebejk.sedi.analysis.ImportChanges} has it, e.g. {@code static a.B.c}
+     * @return the tree, {@code null} if not found
+     */
+    private static ImportTree importTree(CompilationUnitInfo unit, String name) {
+        if (unit == null) {
+            return null;
+        }
+        for (ImportTree i : unit.compilationUnit().getImports()) {
             if (((i.isStatic() ? "static " : "") + i.getQualifiedIdentifier()).equals(name)) {
-                long start = unit.trees().getSourcePositions().getStartPosition(tree, i);
-                return start < 0 ? 0 : tree.getLineMap().getLineNumber(start);
+                return i;
             }
         }
-        return 0;
+        return null;
     }
 
     private static Fragment tag(String text) {
@@ -874,7 +902,7 @@ public final class Reporter {
             body.forEach(l -> below.add(l.withPrefix("      ")));
         }
         if (block) {
-            below.add(Line.number(closingLine(change.body()), ' ', Highlighter.code("}")));
+            below.add(Line.number(closingLine(change.body()), ' ', Fragment.of("}")));
         }
         List<Node> children = change.level() == ChangeLevel.API && change.pair().isAdded()
                 && change.pair().newElement().getNodeType() == ElementInfo.NodeType.TYPE
@@ -904,7 +932,7 @@ public final class Reporter {
         if (text == null) {
             return declarationNode(change.pair(), "", null, Fragment.EMPTY, List.of(), List.of());
         }
-        List<Fragment> code = Highlighter.codeLines(dedent(text));
+        List<Fragment> code = Syntax.lines(element.getSourceTextRuns());
         char marker = added ? '+' : '-';
         long first = element.getStartLine();
         Map<Long, ElementInfo> moved = new HashMap<>();
@@ -968,29 +996,6 @@ public final class Reporter {
             }
         }
     }
-
-    /** The text with its tabs expanded and the indentation all its lines have removed. */
-    private static String dedent(String text) {
-        List<String> lines = text.lines().map(Reporter::expandTabs).toList();
-        int indent = lines.stream().filter(l -> !l.isBlank())
-                .mapToInt(l -> l.length() - l.stripLeading().length()).min().orElse(0);
-        return String.join("\n", lines.stream()
-                .map(l -> l.isBlank() ? "" : l.substring(indent).stripTrailing()).toList());
-    }
-
-    private static String expandTabs(String line) {
-        StringBuilder out = new StringBuilder();
-        for (char c : line.toCharArray()) {
-            if (c == '\t') {
-                out.append(" ".repeat(TAB_WIDTH - out.length() % TAB_WIDTH));
-            } else {
-                out.append(c);
-            }
-        }
-        return out.toString();
-    }
-
-    private static final int TAB_WIDTH = 4;
 
     /** The line of the closing brace of a body which is a block. */
     private static long closingLine(BodyChanges body) {

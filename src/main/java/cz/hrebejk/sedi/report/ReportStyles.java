@@ -43,8 +43,9 @@ public final class ReportStyles {
         KEYWORD(".keyword"),
         TYPE(".type"),
         METHOD(".method"),
-        STRING(".string"),
-        NUMBER(".number"),
+        FIELD(".field"),
+        /** Numbers, strings, characters, booleans and {@code null}. */
+        LITERAL(".literal"),
         CONSTANT(".constant"),
         ANNOTATION(".annotation"),
         COMMENT(".comment"),
@@ -62,6 +63,7 @@ public final class ReportStyles {
         ADDED_MARK(".add-mark, .add-line > .ln"),
         /** The {@code -} starting a line of removed code, and the number of the line. */
         REMOVED_MARK(".remove-mark, .remove-line > .ln"),
+        /** The name of a declared type, method or field. */
         DECLARATION(".declaration"),
         HEADING(".heading"),
         HEADING_MARK(".heading-mark"),
@@ -89,36 +91,34 @@ public final class ReportStyles {
     }
 
     /**
-     * The default colors, pastel ones meant for a dark terminal.
+     * The default colors, those of Nord (https://www.nordtheme.com), meant for a terminal with the Nord background
+     * ({@code #2e3440}).
      *
      * @return a new palette
      */
     public static Palette palette() {
         Palette p = new Palette("sedi");
-        p.add(color("#82aaff"), "keyword");
-        p.add(color("#7fd1b9"), "type");
-        p.add(color("#f2e2a0"), "method");
-        p.add(color("#b8e0a0"), "string");
-        p.add(color("#f7c59f"), "number", "constant");
-        p.add(color("#a6e3e9"), "annotation");
-        p.add(color("#7f8796"), "comment", "tag");
-        // Removed text on red and added text on green, enough to stand out of the dark background.
-        p.add(color("#d8aeb3"), "strike");
-        p.add(color("#4f242a"), "strike-background");
-        p.add(color("#1c4429"), "added-background");
+        p.add(color("#81a1c1"), "keyword");
+        p.add(color("#8fbcbb"), "type");
+        p.add(color("#88c0d0"), "method", "heading-mark");
+        p.add(color("#b48ead"), "field");
+        p.add(color("#a3be8c"), "literal", "added-mark");
+        p.add(color("#ebcb8b"), "constant", "changed-mark");
+        p.add(color("#d08770"), "annotation", "no-changes");
+        p.add(color("#616e88"), "comment", "tag", "note");
+        // The backgrounds of changes are the Aurora colors blended into the Nord background.
+        p.add(color("#d8a0a6"), "strike");
+        p.add(color("#4b3439"), "strike-background");
+        p.add(color("#3b4a3e"), "added-background");
         // A rename is no change of the code, it is only told apart: a muted yellow.
-        p.add(color("#4a4426"), "renamed-background");
-        p.add(color("#5fd787"), "added-mark");
-        p.add(color("#ff6b78"), "removed-mark");
-        p.add(color("#e5c07b"), "changed-mark");
-        p.add(color("#9cc4ff"), "heading-mark");
-        p.add(color("#e4ecf7"), "title");
-        p.add(color("#8a93a5"), "package", "note");
-        // White on bright red: code which does not compile must not be missed.
-        p.add(color("#ffffff"), "error");
-        p.add(color("#e0102a"), "error-background");
-        p.add(color("#5c6370"), "line-number", "tree");
-        p.add(color("#ff9e3d"), "no-changes");
+        p.add(color("#4a4636"), "renamed-background");
+        p.add(color("#bf616a"), "removed-mark");
+        p.add(color("#eceff4"), "title", "heading");
+        p.add(color("#d8dee9"), "level");
+        p.add(color("#4c566a"), "package", "line-number", "tree");
+        // Snow Storm on Nord red: code which does not compile must not be missed.
+        p.add(color("#eceff4"), "error");
+        p.add(color("#bf616a"), "error-background");
         return p;
     }
 
@@ -198,8 +198,8 @@ public final class ReportStyles {
             case KEYWORD -> fg("keyword");
             case TYPE -> fg("type");
             case METHOD -> fg("method");
-            case STRING -> fg("string");
-            case NUMBER -> fg("number");
+            case FIELD -> fg("field");
+            case LITERAL -> fg("literal");
             case CONSTANT -> fg("constant");
             case ANNOTATION -> fg("annotation");
             case COMMENT -> fg("comment");
@@ -213,7 +213,7 @@ public final class ReportStyles {
             case REMOVED_MARK -> bold("removed-mark");
             case CHANGED_MARK -> bold("changed-mark");
             case DECLARATION -> (s, p) -> s.fontStyle(CssValues.FontStyle.BOLD);
-            case HEADING -> (s, p) -> s.fontStyle(CssValues.FontStyle.BOLD)
+            case HEADING -> (s, p) -> s.foreground(p.get("heading")).fontStyle(CssValues.FontStyle.BOLD)
                     .textDecoration(CssValues.TextDecoration.UNDERLINE);
             case HEADING_MARK -> fg("heading-mark");
             case TITLE -> bold("title");
@@ -225,7 +225,7 @@ public final class ReportStyles {
             case TREE -> fg("tree");
             case NOTE -> fg("note");
             case NO_CHANGES -> bold("no-changes");
-            case LEVEL -> (s, p) -> s.fontStyle(CssValues.FontStyle.BOLD);
+            case LEVEL -> bold("level");
         };
     }
 

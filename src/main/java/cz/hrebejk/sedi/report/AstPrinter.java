@@ -19,6 +19,7 @@ import com.sun.source.tree.Tree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreeScanner;
 import cz.hrebejk.sedi.analysis.BodyChanges;
+import cz.hrebejk.sedi.analysis.SyntaxRoles;
 import cz.hrebejk.sedi.compilation.CompilationUnitInfo;
 import cz.hrebejk.sedi.util.WordDiff;
 
@@ -43,7 +44,7 @@ import java.util.TreeSet;
  * removed is struck through in front of it. Statements added or removed on lines of their own are printed as such
  * lines, the removed ones from the old version. Every line is numbered by its line in its version and marked by
  * {@code +} if it was added, {@code -} if removed, {@code ~} if changed, see {@link Line}. The code is highlighted by
- * the {@link Highlighter}.
+ * its {@link SyntaxRoles}; the old code struck through in front of the new one is not.
  */
 final class AstPrinter {
 
@@ -64,6 +65,7 @@ final class AstPrinter {
         final BitSet literals = new BitSet();
         final BitSet added = new BitSet();
         final BitSet errors = new BitSet();
+        final SyntaxRoles roles;
         /** Text put in front of the character at a position, like old code struck through. */
         final Map<Integer, List<Fragment>> inserts = new TreeMap<>();
         /** The code which differs only by a renamed name or its qualification, by its start. */
@@ -78,6 +80,7 @@ final class AstPrinter {
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
+            roles = SyntaxRoles.of(info, text, root);
             boolean block = root instanceof BlockTree;
             from = start(root) + (block ? 1 : 0);
             to = end(root) - (block ? 1 : 0);
@@ -311,13 +314,13 @@ final class AstPrinter {
             }
             int start = newSource.start(changes.newRoot());
             return List.of(Line.number(start < 0 ? 0 : newSource.line(start), '~',
-                    Highlighter.code(Markup.strike(oldSource.oneLine(changes.oldRoot())))));
+                    Markup.strike(oldSource.oneLine(changes.oldRoot()))));
         }
         if (!oldSource.isPresent(changes.oldRoot())
                 && newSource.firstLine(changes.newRoot()) == newSource.lastLine(changes.newRoot())) {
             // Arguments or a class body added to an enum constant without them, on its line: all of it is added.
             return List.of(Line.number(newSource.firstLine(changes.newRoot()), '~',
-                    Highlighter.code(Markup.added(newSource.oneLine(changes.newRoot())))));
+                    Markup.added(newSource.oneLine(changes.newRoot()))));
         }
         findUnits(changes.newRoot(), null);
         decorate(changes.newRoot(), true);
@@ -801,14 +804,14 @@ final class AstPrinter {
                 lines.add(Line.number(0, e.marker(), Markup.style(Css.NOTE, e.note())));
                 if (!e.hidden().isEmpty()) {
                     for (long l : e.hidden()) {
-                        lines.add(Line.number(l, ' ', Highlighter.code(text(newSource, l, indent, true))));
+                        lines.add(Line.number(l, ' ', text(newSource, l, indent, true)));
                     }
                     lines.add(Line.end());
                 }
             } else {
                 // A line of added code is marked by its +, the code itself is not.
                 Fragment text = text(e.source(), e.line(), indent, e.marker() != '+');
-                lines.add(Line.number(e.line(), e.marker(), Highlighter.code(text)));
+                lines.add(Line.number(e.line(), e.marker(), text));
             }
         }
         return lines;
@@ -830,13 +833,59 @@ final class AstPrinter {
         return Integer.MAX_VALUE;
     }
 
+    /**
+     * A run of the characters of a line of the same marks: flags 1 a comment, 2 added, 4 an error, and the same
+     * syntax role.
+     */
+    private record Segment(String text, int flags, SyntaxRoles.Role role, boolean declaration) {
+    }
+
+    /** Collects the characters of a line into segments, see {@link Segment}. */
+    private static final class Segments {
+
+        final List<Segment> segments = new ArrayList<>();
+        private final StringBuilder text = new StringBuilder();
+        private int flags = -1;
+        private SyntaxRoles.Role role;
+        private boolean declaration;
+
+        /** Adds the text of a character, the character at the position of the source. */
+        void add(String c, Source source, int position, int flags) {
+            // Comments and errors are shown as they are.
+            boolean plain = (flags & 5) != 0;
+            SyntaxRoles.Role role = plain ? null : source.roles.role(position);
+            boolean declaration = !plain && source.roles.isDeclaration(position);
+            if (flags != this.flags || role != this.role || declaration != this.declaration) {
+                flush();
+                this.flags = flags;
+                this.role = role;
+                this.declaration = declaration;
+            }
+            text.append(c);
+        }
+
+        /** The segments collected so far, styled, see {@link #style}; they are cleared. */
+        Fragment take() {
+            flush();
+            Fragment out = style(segments);
+            segments.clear();
+            return out;
+        }
+
+        private void flush() {
+            if (!text.isEmpty()) {
+                segments.add(new Segment(text.toString(), flags, role, declaration));
+                text.setLength(0);
+            }
+        }
+    }
+
     /** The line with its marks, without the given indentation, tabs expanded. */
     private Fragment text(Source source, long line, int indent, boolean markAdded) {
         int from = source.lineStart(line);
         int to = source.lineEnd(line);
         Fragment out = Fragment.EMPTY;
-        StringBuilder run = new StringBuilder();
-        int runFlags = -1;
+        Segments segments = new Segments();
         int column = 0;
         boolean leading = true;
         for (int i = from; i <= to; i++) {
@@ -852,9 +901,7 @@ final class AstPrinter {
             }
             List<Fragment> inserted = source.inserts.get(i);
             if (inserted != null) {
-                out = out.plus(style(run.toString(), runFlags));
-                run.setLength(0);
-                runFlags = -1;
+                out = out.plus(segments.take());
                 for (Fragment f : inserted) {
                     out = out.plus(f);
                 }
@@ -862,52 +909,89 @@ final class AstPrinter {
             if (i == to) {
                 break;
             }
-            int flags = (source.comments.get(i) ? 1 : 0) | (markAdded && source.added.get(i) ? 2 : 0)
-                    | (source.errors.get(i) ? 4 : 0);
+            int flags = flags(source, i, markAdded);
             Renamed renamed = source.renamed.get(i);
             if (renamed != null && renamed.end() <= to) {
                 // Shown as it is now, on its own, what it was on demand.
-                out = out.plus(style(run.toString(), runFlags));
-                run.setLength(0);
-                runFlags = -1;
+                out = out.plus(segments.take());
                 String now = source.text.substring(i, renamed.end());
-                out = out.plus(Markup.renamed(style(now, flags), renamed.oldText(), source.oneLine(i, renamed.end())));
+                Segments name = new Segments();
+                for (int j = i; j < renamed.end(); j++) {
+                    name.add(String.valueOf(source.text.charAt(j)), source, j, flags);
+                }
+                out = out.plus(Markup.renamed(name.take(), renamed.oldText(), source.oneLine(i, renamed.end())));
                 column += now.length();
                 i = renamed.end() - 1;
                 continue;
             }
-            if (flags != runFlags) {
-                out = out.plus(style(run.toString(), runFlags));
-                run.setLength(0);
-                runFlags = flags;
-            }
             if (c == '\t') {
-                run.append(" ".repeat(TAB_WIDTH - column % TAB_WIDTH));
+                segments.add(" ".repeat(TAB_WIDTH - column % TAB_WIDTH), source, i, flags);
                 column += TAB_WIDTH - column % TAB_WIDTH;
             } else {
-                run.append(c);
+                segments.add(String.valueOf(c), source, i, flags);
                 column++;
             }
         }
-        out = out.plus(style(run.toString(), runFlags));
+        out = out.plus(segments.take());
         return out.stripTrailing();
     }
 
-    /** A run of characters in the styles of its flags: 1 a comment, 2 added, 4 an error. */
-    private static Fragment style(String text, int flags) {
-        if (text.isEmpty() || flags <= 0) {
-            return Fragment.of(text);
+    /** The marks of the character: 1 a comment, 2 added, 4 an error. */
+    private static int flags(Source source, int position, boolean markAdded) {
+        return (source.comments.get(position) ? 1 : 0) | (markAdded && source.added.get(position) ? 2 : 0)
+                | (source.errors.get(position) ? 4 : 0);
+    }
+
+    /** The segments in the styles of their marks and roles, the segments of the same marks in one span. */
+    private static Fragment style(List<Segment> segments) {
+        Fragment out = Fragment.EMPTY;
+        int i = 0;
+        while (i < segments.size()) {
+            int j = i;
+            while (j < segments.size() && segments.get(j).flags() == segments.get(i).flags()) {
+                j++;
+            }
+            out = out.plus(style(segments.subList(i, j), segments.get(i).flags()));
+            i = j;
+        }
+        return out;
+    }
+
+    /** Segments of the same marks in their styles. */
+    private static Fragment style(List<Segment> segments, int flags) {
+        StringBuilder sb = new StringBuilder();
+        segments.forEach(s -> sb.append(s.text()));
+        String text = sb.toString();
+        if (flags <= 0) {
+            return roles(segments, 0, text.length());
         }
         // The spaces around added code are not marked.
         String stripped = (flags & 2) != 0 ? text.strip() : text;
         if (stripped.isEmpty()) {
             return Fragment.of(text);
         }
-        int start = text.indexOf(stripped);
-        Fragment styled = (flags & 1) != 0 ? Markup.style(Css.COMMENT, stripped) : Fragment.of(stripped);
+        int start = (flags & 2) != 0 ? text.length() - text.stripLeading().length() : 0;
+        int end = start + stripped.length();
+        Fragment styled = (flags & 1) != 0 ? Markup.style(Css.COMMENT, stripped)
+                : (flags & 4) != 0 ? Fragment.of(stripped) : roles(segments, start, end);
         styled = (flags & 4) != 0 ? Markup.style(Css.ERROR, styled) : styled;
         styled = (flags & 2) != 0 ? Markup.added(styled) : styled;
-        return Fragment.of(text.substring(0, start)).plus(styled).plus(text.substring(start + stripped.length()));
+        return Fragment.of(text.substring(0, start)).plus(styled).plus(text.substring(end));
+    }
+
+    /** The text of the segments from one offset to another, in the spans of their roles. */
+    private static Fragment roles(List<Segment> segments, int from, int to) {
+        Fragment out = Fragment.EMPTY;
+        int offset = 0;
+        for (Segment s : segments) {
+            int a = Math.max(from, offset);
+            int b = Math.min(to, offset + s.text().length());
+            if (a < b) {
+                out = out.plus(Syntax.span(s.role(), s.declaration(), s.text().substring(a - offset, b - offset)));
+            }
+            offset += s.text().length();
+        }
+        return out;
     }
 
     private static boolean isStatement(Tree tree) {

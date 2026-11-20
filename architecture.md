@@ -283,7 +283,10 @@ The printers:
   number in each line, and the column is laid out last, once its width is known.
 - **`Theme`** maps a `Role` (keyword, type, strike, added, …) to a true-color style. It can be loaded from
   `~/.config/sedi/theme.properties` or from `--theme`. `Theme.PLAIN` uses `~~` and `__` markers instead of colors.
-  Syntax coloring is heuristic and works on words: a capitalized word is a type, a word followed by `(` is a method.
+  Syntax coloring comes from `analysis.SyntaxRoles`: names get their roles (type, method, field, constant) from the
+  elements javac resolved them to, literals (numbers, strings, characters, booleans, `null`) from their trees, and only
+  comments and reserved keywords are found in the text. The names of declared types, methods and fields are bold
+  `declaration`s; their usages are not.
 
 Names javac could not resolve are shown white on red, so code that does not compile is visible but does not break
 the analysis.
@@ -417,8 +420,6 @@ Tests are JUnit 4. `GitTestHelper` creates throwaway repositories with an initia
 - **String-based rendering pipeline.** Printers return `String`s with ANSI codes and embedded line-number markers,
   which `LineNumbers` parses back. A small structured line model (number, marker, styled spans) would remove the
   re-parsing, make tests independent of styling, and could also drive the planned web UI (phase 4).
-- **Heuristic syntax coloring.** `Theme` guesses roles from words. The attributed trees are already available, so
-  coloring could use real token and element kinds.
 - **Identity maps keyed by javac `Tree`s** are used throughout `BodyChanges` and the printers. This works, but it
   ties the result to live javac objects, which stay valid only while the `DiffAstAnalyzer` is open. Copying what
   reporting needs out of the trees would let the analysis outlive the compiler.

@@ -689,6 +689,6 @@ final class BodyDiff {
 
     private SourceText sourceText(CompilationUnitInfo unit) {
         return new SourceText(unit.compilationUnit(), unit.trees().getSourcePositions(),
-                texts.computeIfAbsent(unit, BodyDiff::text));
+                texts.computeIfAbsent(unit, BodyDiff::text), null);
     }
 }

@@ -39,17 +39,17 @@ enum Css {
     REMOVE_MARK,
     /** The {@code ~} of a changed line, the {@code ~} or {@code →} starting the title of a changed file. */
     CHANGE_MARK,
-    /** Java keywords, including modifiers, primitive types and literals like {@code null}. */
+    /** Java keywords, including modifiers and primitive types. */
     KEYWORD,
-    /** Names starting with a capital letter. */
+    /** Names of types. */
     TYPE,
-    /** Names followed by a parenthesis. */
+    /** Names of methods and constructors. */
     METHOD,
-    /** String and character literals. */
-    STRING,
-    /** Number literals. */
-    NUMBER,
-    /** Names in capitals, like {@code MAX_VALUE}. */
+    /** Names of fields which are not constants. */
+    FIELD,
+    /** Literals: numbers, strings, characters, booleans and {@code null}. */
+    LITERAL,
+    /** Names of static final fields and enum constants. */
     CONSTANT,
     /** Annotations. */
     ANNOTATION,
@@ -64,7 +64,7 @@ enum Css {
      * now; its title tells what it was.
      */
     RENAMED,
-    /** The name of a declared type, method or field. */
+    /** The name of a declared type, method or field, around the span of its role. */
     DECLARATION,
     /** Section headings. */
     HEADING,
@@ -104,10 +104,10 @@ enum Css {
         return cssClass;
     }
 
-    /** Whether the class is one of the syntax highlighting, see {@link Highlighter}. */
+    /** Whether the class is one of the syntax highlighting, see {@link Syntax}. */
     boolean isHighlight() {
         return switch (this) {
-            case KEYWORD, TYPE, METHOD, STRING, NUMBER, CONSTANT, ANNOTATION -> true;
+            case KEYWORD, TYPE, METHOD, FIELD, LITERAL, CONSTANT, ANNOTATION -> true;
             default -> false;
         };
     }

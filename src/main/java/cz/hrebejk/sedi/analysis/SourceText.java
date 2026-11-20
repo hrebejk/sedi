@@ -21,8 +21,9 @@ import java.util.List;
  * @param unit      the compilation unit
  * @param positions the positions of its trees
  * @param text      its source text
+ * @param roles     the syntax roles of the text, {@code null} if not needed
  */
-record SourceText(CompilationUnitTree unit, SourcePositions positions, String text) {
+record SourceText(CompilationUnitTree unit, SourcePositions positions, String text, SyntaxRoles roles) {
 
     /** The line where the tree starts, {@code 0} if it has no position. */
     long line(Tree tree) {
@@ -37,14 +38,39 @@ record SourceText(CompilationUnitTree unit, SourcePositions positions, String te
      * @return the text, {@code null} if the tree has no place in the source
      */
     String text(Tree tree) {
+        List<SyntaxRoles.Run> runs = textRuns(tree);
+        return runs == null ? null : join(runs);
+    }
+
+    /** Like {@link #text(Tree)}, in runs of the same syntax role. */
+    List<SyntaxRoles.Run> textRuns(Tree tree) {
         long start = tree == null ? -1 : positions.getStartPosition(unit, tree);
         long end = tree == null ? -1 : positions.getEndPosition(unit, tree);
         if (start < 0 || end <= start || end > text.length()) {
             return null;
         }
         int lineStart = text.lastIndexOf('\n', (int) start - 1) + 1;
-        String indent = text.substring(lineStart, (int) start).replaceAll("[^\t]", " ");
-        return indent + text.substring((int) start, (int) end);
+        SyntaxRoles.Runs runs = new SyntaxRoles.Runs();
+        for (int i = lineStart; i < end; i++) {
+            char c = text.charAt(i);
+            if (i < start) {
+                runs.add(c == '\t' ? c : ' ', null, false);
+            } else {
+                add(runs, i);
+            }
+        }
+        return runs.build();
+    }
+
+    private void add(SyntaxRoles.Runs runs, int position) {
+        runs.add(text.charAt(position), roles == null ? null : roles.role(position),
+                roles != null && roles.isDeclaration(position));
+    }
+
+    private static String join(List<SyntaxRoles.Run> runs) {
+        StringBuilder sb = new StringBuilder();
+        runs.forEach(r -> sb.append(r.text()));
+        return sb.toString();
     }
 
     /**
@@ -54,12 +80,19 @@ record SourceText(CompilationUnitTree unit, SourcePositions positions, String te
      * @return the text, {@code null} if the tree has no place in the source
      */
     String oneLine(Tree tree) {
+        List<SyntaxRoles.Run> runs = oneLineRuns(tree);
+        return runs == null ? null : join(runs);
+    }
+
+    /** Like {@link #oneLine(Tree)}, in runs of the same syntax role. */
+    List<SyntaxRoles.Run> oneLineRuns(Tree tree) {
         long start = tree == null ? -1 : positions.getStartPosition(unit, tree);
         long end = tree == null ? -1 : positions.getEndPosition(unit, tree);
         if (start < 0 || end <= start || end > text.length()) {
             return null;
         }
-        StringBuilder out = new StringBuilder();
+        SyntaxRoles.Runs out = new SyntaxRoles.Runs();
+        boolean any = false;
         boolean space = false;
         int i = (int) start;
         while (i < end) {
@@ -78,10 +111,11 @@ record SourceText(CompilationUnitTree unit, SourcePositions positions, String te
                 space = true;
                 i++;
             } else {
-                if (space && !out.isEmpty()) {
-                    out.append(' ');
+                if (space && any) {
+                    out.add(' ', null, false);
                 }
                 space = false;
+                any = true;
                 if (c == '"' || c == '\'') {
                     int literal = i;
                     i++;
@@ -89,14 +123,16 @@ record SourceText(CompilationUnitTree unit, SourcePositions positions, String te
                         i += text.charAt(i) == '\\' ? 2 : 1;
                     }
                     i = (int) Math.min(i + 1, end);
-                    out.append(text, literal, i);
+                    for (int j = literal; j < i; j++) {
+                        add(out, j);
+                    }
                 } else {
-                    out.append(c);
+                    add(out, i);
                     i++;
                 }
             }
         }
-        return out.toString();
+        return out.build();
     }
 
     /**

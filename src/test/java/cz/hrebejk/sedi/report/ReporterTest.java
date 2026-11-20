@@ -582,7 +582,8 @@ public class ReporterTest extends TestCase {
                                 decl("a"))),
                         separator(),
                         fileTitle('~', name("R.java")),
-                        line('~', "  ", code("public record ", decl("R"), "( int a, ", added("long c"), ", String b )"))),
+                        line('~', "  ", code("public record ", decl("R"), "( int ", decl("a"), ", ",
+                                added("long ", decl("c")), ", String ", decl("b"), " )"))),
                         new Reporter(new ReportOptions(ChangeLevel.API)).report(analyzer.analyzeChanges()));
             }
         }
@@ -1074,13 +1075,13 @@ public class ReporterTest extends TestCase {
                 blank(),
                 fileTitle('~', name("Foo.java")),
                 line(' ', "  ", code("public class ", decl("Foo"))),
-                line('+', "  ", tree("├── "), code("void added() {")),
+                line('+', "  ", tree("├── "), code("void ", decl("added"), "() {")),
                 line('+', "  ", tree("│   "), code("  ", comment("/* two"))),
                 line('+', "  ", tree("│   "), code(comment("     lines */"))),
                 line('+', "  ", tree("│   "), code("  run();")),
                 line('+', "  ", tree("│   "), code("}")),
-                line('+', "  ", tree("└── "), code("static class In {")),
-                line('+', "      ", code("  int f;")),
+                line('+', "  ", tree("└── "), code("static class ", decl("In"), " {")),
+                line('+', "      ", code("  int ", decl("f"), ";")),
                 line('+', "      ", code("}"))),
                 wholeReport(new ReportOptions(ChangeLevel.API), true));
     }
@@ -1094,7 +1095,7 @@ public class ReporterTest extends TestCase {
                 blank(),
                 fileTitle('~', name("Foo.java")),
                 line(' ', "  ", code("public class ", decl("Foo"))),
-                line('-', "  ", tree("└── "), code("int gone() {")),
+                line('-', "  ", tree("└── "), code("int ", decl("gone"), "() {")),
                 line('-', "      ", code("  return 1;")),
                 line('-', "      ", code("}"))),
                 wholeReport(options, true));
@@ -1103,7 +1104,7 @@ public class ReporterTest extends TestCase {
     /** Tests that in the report of a file the whole source replaces the signature of an added member. */
     public void testWholeInFileReport() throws Exception {
         List<HTML> lines = lines(wholeReport(new ReportOptions(ChangeLevel.IMPLEMENTATION), false));
-        assertContains(line('+', "  ", tree("├── "), code("void added() {")), lines);
+        assertContains(line('+', "  ", tree("├── "), code("void ", decl("added"), "() {")), lines);
         assertContains(line('+', "  ", tree("│   "), code("  run();")), lines);
         assertContains(line('-', "  ", tree("├── "), code(strike("int ", decl("gone"), "()"))), lines);
         assertEquals(markup(lines), 1, texts(lines).stream().filter(l -> l.contains("added()")).count());
@@ -1156,10 +1157,10 @@ public class ReporterTest extends TestCase {
                 heading("Implementation changes"),
                 blank(),
                 fileTitle('+', name("Values.java"), " ", pkg("b")),
-                line('+', "  ", code("public class Values {")),
-                line('+', "  ", code("  public static class Color {")),
+                line('+', "  ", code("public class ", decl("Values"), " {")),
+                line('+', "  ", code("  public static class ", decl("Color"), " {")),
                 line(' ', "  ", code(note("\u2026 moved from a.Color (4 lines)"))),
-                line('+', "  ", code("  public int v;")),
+                line('+', "  ", code("  public int ", decl("v"), ";")),
                 line('+', "  ", code("}"))),
                 movedTypeReport(ChangeLevel.IMPLEMENTATION));
     }
@@ -1170,15 +1171,15 @@ public class ReporterTest extends TestCase {
                 heading("Implementation changes"),
                 blank(),
                 fileTitle('+', name("Values.java"), " ", pkg("b")),
-                line('+', "  ", code("public class Values {")),
-                line('+', "  ", code("  public static class Color {")),
+                line('+', "  ", code("public class ", decl("Values"), " {")),
+                line('+', "  ", code("  public static class ", decl("Color"), " {")),
                 HTML.DIV(
                         line(' ', "  ", code(note("\u2026 moved from a.Color (4 lines)"))),
-                        line(' ', "  ", code("    public int r;")),
-                        line(' ', "  ", code("    public int g() { return r; }")),
-                        line(' ', "  ", code("    public void b() { }")),
+                        line(' ', "  ", code("    public int ", decl("r"), ";")),
+                        line(' ', "  ", code("    public int ", decl("g"), "() { return r; }")),
+                        line(' ', "  ", code("    public void ", decl("b"), "() { }")),
                         line(' ', "  ", code("  }"))).clazz(Css.ELIDED.cssClass()),
-                line('+', "  ", code("  public int v;")),
+                line('+', "  ", code("  public int ", decl("v"), ";")),
                 line('+', "  ", code("}"))),
                 movedTypeReport(ChangeLevel.IMPLEMENTATION,
                         new ReportOptions(ChangeLevel.IMPORTS).withFoldContext(true)));

@@ -105,7 +105,8 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
         } catch (java.io.IOException e) {
             source = "";
         }
-        sourceText = new SourceText(compilationUnit, trees.getSourcePositions(), source);
+        sourceText = new SourceText(compilationUnit, trees.getSourcePositions(), source,
+                SyntaxRoles.of(trees, compilationUnit, source, compilationUnit));
         HashContext context = new HashContext(rootNode);
         scan(compilationUnit, context);
         return rootNode;

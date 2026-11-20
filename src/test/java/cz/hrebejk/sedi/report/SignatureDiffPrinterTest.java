@@ -188,7 +188,8 @@ public class SignatureDiffPrinterTest extends TestCase {
     /** The old text is a span struck through, the new one a span marked as added; the code in it is highlighted. */
     public void testStrike() throws Exception {
         ElementPair pair = pairs("int f;", "long f;").get(0);
-        assertHtmlExact(line('~', code(strike("int"), " ", added(span(Css.KEYWORD, "long")), " ", decl("f"))),
+        assertHtmlExact(line('~', code(strike("int"), " ", added(span(Css.KEYWORD, "long")), " ",
+                        decl(span(Css.FIELD, "f")))),
                 unnumbered(new SignatureDiffPrinter().format(pair, "T")));
     }
 
@@ -197,6 +198,7 @@ public class SignatureDiffPrinterTest extends TestCase {
         List<HTML> lines = pairs("", "int fresh;").stream()
                 .<HTML>map(p -> unnumbered(new SignatureDiffPrinter().format(p, "T"))).toList();
         assertEquals(1, lines.size());
-        assertHtmlExact(line('+', code(span(Css.KEYWORD, "int"), " ", decl("fresh"))), lines.getFirst());
+        assertHtmlExact(line('+', code(span(Css.KEYWORD, "int"), " ", decl(span(Css.FIELD, "fresh")))),
+                lines.getFirst());
     }
 }

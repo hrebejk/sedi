@@ -110,7 +110,7 @@ public class Main implements Callable<Integer> {
     private boolean noLineNumbers;
 
     @Option(names = "--theme", paramLabel = "<file>",
-            description = "Properties file with the colors, keyed by role (keyword, type, method, string, number, "
+            description = "Properties file with the colors, keyed by role (keyword, type, method, field, literal, "
                     + "constant, annotation, comment, strike, replacement, added, removed, added_mark, removed_mark, declaration, heading, heading_mark, changed_mark, "
                     + "title, package, tag, error, line_number, tree, note, no_changes, level), "
                     + "e.g. keyword=#82aaff bold, added=bg:#1e3a2a. Attributes: #rrggbb, bg:#rrggbb, bold, "
