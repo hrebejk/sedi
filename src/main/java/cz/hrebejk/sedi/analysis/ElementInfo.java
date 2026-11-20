@@ -39,6 +39,8 @@ public class ElementInfo {
     private final Map<ChangeCategory, MessageDigest> messageDigests;
     private final List<ElementInfo> children;
     private final Map<Facet, MessageDigest> facetDigests;
+    /** The attributes added to the digests of the facets, in the order added. */
+    private final Map<Facet, List<String>> facetValues = new EnumMap<>(Facet.class);
     private int paramCount;
     private String elementId;
     private List<String> javadoc = List.of();
@@ -122,8 +124,19 @@ public class ElementInfo {
             synchronized (md) {
                 md.update(attribute.getBytes(StandardCharsets.UTF_8));
                 md.update((byte) 0);
+                facetValues.computeIfAbsent(facet, f -> new ArrayList<>()).add(attribute);
             }
         }
+    }
+
+    /**
+     * Returns the attributes the hash of the facet was computed from, like the names of the thrown types.
+     *
+     * @param facet the facet
+     * @return the attributes in the order added, empty if there are none
+     */
+    List<String> getFacetValues(Facet facet) {
+        return facetValues.getOrDefault(facet, List.of());
     }
 
     /**

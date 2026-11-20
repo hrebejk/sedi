@@ -22,6 +22,7 @@ import javax.lang.model.element.Name;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.TypeParameterElement;
 import javax.lang.model.element.VariableElement;
+import javax.lang.model.type.TypeKind;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.HashSet;
@@ -330,6 +331,11 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
         if (el instanceof TypeElement typeEl) {
             updateAllCategories(context, "FQN:" + typeText(typeEl.getQualifiedName()));
             updateTypeParams(typeNode, typeEl.getTypeParameters());
+            if (typeEl.getSuperclass().getKind() == TypeKind.DECLARED
+                    && !typeText(typeEl.getSuperclass()).equals("java.lang.Object")) {
+                typeNode.updateFacet(Facet.SUPERTYPES, typeText(typeEl.getSuperclass()));
+            }
+            typeEl.getInterfaces().forEach(i -> typeNode.updateFacet(Facet.SUPERTYPES, typeText(i)));
         }
         updateCommonFacets(typeNode, className, node.getModifiers());
 
@@ -406,8 +412,11 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
                 // Not a member of its own: the component is a part of the signature of the record.
                 ElementInfo record = context.getCurrentNode();
                 String name = node.getName().toString();
-                updateAttribute(record, "COMPONENT:" + name,
-                        "COMPONENT:" + oldName(trees.getElement(path), name));
+                Element component = trees.getElement(path);
+                updateAttribute(record, "COMPONENT:" + name, "COMPONENT:" + oldName(component, name));
+                if (component != null) {
+                    record.updateFacet(Facet.COMPONENTS, typeText(component.asType()) + " " + oldName(component, name));
+                }
                 scan(node.getModifiers(), context);
                 scan(node.getType(), context);
                 return null;

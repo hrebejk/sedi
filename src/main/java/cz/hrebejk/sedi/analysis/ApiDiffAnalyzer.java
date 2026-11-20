@@ -310,11 +310,15 @@ final class ApiDiffAnalyzer {
             ApiChanges primary = v.oldPrimary() == null ? null
                     : changes(v.oldPrimary(), v.newPrimary(), v.newPrimary().getName(),
                     Visibility.isExposed(v.newPrimary(), true, false),
-                    new ElementPair(v.oldPrimary(), v.newPrimary(), Set.of()), sources, moves);
+                    new ElementPair(v.oldPrimary(), v.newPrimary(), Set.of()), sources, moves,
+                    Compatibility.check(new ElementPair(v.oldPrimary(), v.newPrimary(),
+                            MemberMatcher.changedFacets(v.oldPrimary(), v.newPrimary())),
+                            v.oldRoot(), v.newRoot(), true));
             files.add(new FileAnalysis(diff, oldUnit, newUnit, oldRoots.get(i), newRoot, v.oldPrimary(),
                     v.newPrimary(), className(oldUnit, diff.getOldPath()), className(newUnit, diff.getNewPath()),
                     packageName(oldUnit), packageName(newUnit), primary,
-                    changes(v.oldRoot(), v.newRoot(), "", true, null, sources, moves), importChanges(oldUnit, newUnit)));
+                    changes(v.oldRoot(), v.newRoot(), "", true, null, sources, moves, Set.of()),
+                    importChanges(oldUnit, newUnit)));
         }
         return new DiffAnalysis(files, renames);
     }
@@ -386,12 +390,15 @@ final class ApiDiffAnalyzer {
          * Adds the implementation and the cosmetic change of the body of a member present in both versions, if it
          * has them; the cosmetic change of an unchanged signature too.
          *
-         * @param signatureChanged whether the signature changed, so it is an API change already
+         * @param signatureChanged  whether the signature changed, so it is an API change already
+         * @param incompatibilities how the implementation change breaks the clients, like a changed constant
          */
-        void addBodyChanges(List<MemberChange> changes, ElementPair pair, boolean publicApi, boolean signatureChanged) {
+        void addBodyChanges(List<MemberChange> changes, ElementPair pair, boolean publicApi, boolean signatureChanged,
+                            Set<Incompatibility> incompatibilities) {
             BodyDiff.Result body = BodyDiff.diff(pair.oldElement(), pair.newElement(), oldUnit, newUnit);
             if (bodyChanged(pair) || body.implementation() != null) {
-                changes.add(new MemberChange(pair, ChangeLevel.IMPLEMENTATION, publicApi, body.implementation()));
+                changes.add(new MemberChange(pair, ChangeLevel.IMPLEMENTATION, publicApi, body.implementation(),
+                        incompatibilities));
             }
             if (body.cosmetic() != null || !signatureChanged && signatureDiffers(pair)) {
                 changes.add(new MemberChange(pair, ChangeLevel.COSMETIC, publicApi, body.cosmetic()));
@@ -403,10 +410,13 @@ final class ApiDiffAnalyzer {
      * Pairs the members of two versions of a container and classifies their changes, then descends into the
      * types present in both.
      *
-     * @param exposed whether the container is a part of the public API
+     * @param exposed           whether the container is a part of the public API
+     * @param incompatibilities how the change of the container itself breaks the clients, see
+     *                          {@link ApiChanges#incompatibilities()}
      */
     private static ApiChanges changes(ElementInfo oldContainer, ElementInfo newContainer, String typeName,
-                                      boolean exposed, ElementPair typePair, Sources sources, Moves moves) {
+                                      boolean exposed, ElementPair typePair, Sources sources, Moves moves,
+                                      Set<Incompatibility> incompatibilities) {
         MemberMatcher.Matches matches = MemberMatcher.matchAll(oldContainer, newContainer);
         boolean inInterface = Visibility.isInterface(newContainer);
         List<MemberChange> changes = new ArrayList<>();
@@ -432,9 +442,10 @@ final class ApiDiffAnalyzer {
             changed.add(pair);
             ElementInfo shown = pair.isRemoved() ? pair.oldElement() : pair.newElement();
             boolean publicApi = Visibility.isExposed(shown, exposed, inInterface);
-            changes.add(new MemberChange(pair, ChangeLevel.API, publicApi));
+            changes.add(new MemberChange(pair, ChangeLevel.API, publicApi, null,
+                    Compatibility.check(pair, oldContainer, newContainer, exposed)));
             if (!pair.isAdded() && !pair.isRemoved() && isCode(pair)) {
-                sources.addBodyChanges(changes, pair, publicApi, true);
+                sources.addBodyChanges(changes, pair, publicApi, true, Set.of());
             }
         }
         for (ElementPair pair : matches.unchanged()) {
@@ -444,7 +455,8 @@ final class ApiDiffAnalyzer {
                 changes.add(new MemberChange(pair, ChangeLevel.API, publicApi));
             }
             if (isCode(pair)) {
-                sources.addBodyChanges(changes, pair, publicApi, false);
+                sources.addBodyChanges(changes, pair, publicApi, false,
+                        Compatibility.check(pair, oldContainer, newContainer, exposed));
             }
         }
         ElementPair self = new ElementPair(oldContainer, newContainer, Set.of());
@@ -456,9 +468,10 @@ final class ApiDiffAnalyzer {
         for (ElementPair type : MemberMatcher.nestedTypes(oldContainer, newContainer, changed)) {
             nested.add(changes(type.oldElement(), type.newElement(), type.newElement().getName(),
                     Visibility.isExposed(type.newElement(), exposed, inInterface), type,
-                    movedSources.getOrDefault(type, sources), moves));
+                    movedSources.getOrDefault(type, sources), moves,
+                    Compatibility.check(type, oldContainer, newContainer, exposed)));
         }
-        return new ApiChanges(typeName, exposed, typePair, changes, nested);
+        return new ApiChanges(typeName, exposed, typePair, changes, nested, incompatibilities);
     }
 
     /** The pair of the old and the new version of a moved type, the new one knowing where it moved from. */
@@ -487,14 +500,15 @@ final class ApiDiffAnalyzer {
             Located from = moves.from(child);
             if (from != null) {
                 ElementPair pair = moved(from, child);
-                changes.add(new MemberChange(pair, ChangeLevel.API, childExposed));
+                Set<Incompatibility> incompatibilities = Compatibility.check(pair, null, type, exposed);
+                changes.add(new MemberChange(pair, ChangeLevel.API, childExposed, null, incompatibilities));
                 nested.add(changes(from.type(), child, child.getName(), childExposed, pair,
-                        new Sources(from.unit(), sources.newUnit()), moves));
+                        new Sources(from.unit(), sources.newUnit()), moves, incompatibilities));
             } else if (moves.hasTargetsIn(child)) {
                 nested.add(movedInto(new ElementPair(null, child, Set.of()), childExposed, sources, moves));
             }
         }
-        return new ApiChanges(type.getName(), exposed, added, changes, nested);
+        return new ApiChanges(type.getName(), exposed, added, changes, nested, Set.of());
     }
 
     private static boolean isType(ElementPair pair) {

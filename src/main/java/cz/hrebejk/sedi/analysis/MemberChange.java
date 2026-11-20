@@ -8,6 +8,8 @@
  */
 package cz.hrebejk.sedi.analysis;
 
+import java.util.Set;
+
 /**
  * One reported change of a member or type.
  *
@@ -17,8 +19,22 @@ package cz.hrebejk.sedi.analysis;
  * @param body      what changed in the body, for {@link ChangeLevel#IMPLEMENTATION} and {@link ChangeLevel#COSMETIC}
  *                  changes of methods and fields; {@code null} if not known or, for a cosmetic change, if only the
  *                  signature changed
+ * @param incompatibilities how the change breaks or may break the clients of the public API, empty if it does not
  */
-public record MemberChange(ElementPair pair, ChangeLevel level, boolean publicApi, BodyChanges body) {
+public record MemberChange(ElementPair pair, ChangeLevel level, boolean publicApi, BodyChanges body,
+                           Set<Incompatibility> incompatibilities) {
+
+    /**
+     * Creates a change which does not break the clients.
+     *
+     * @param pair      the old and new version of the member
+     * @param level     the importance of the change
+     * @param publicApi {@code true} if the member is visible outside of the package
+     * @param body      what changed in the body, see {@link #body()}
+     */
+    public MemberChange(ElementPair pair, ChangeLevel level, boolean publicApi, BodyChanges body) {
+        this(pair, level, publicApi, body, Set.of());
+    }
 
     /**
      * Creates a change without the details of the body.
@@ -29,6 +45,24 @@ public record MemberChange(ElementPair pair, ChangeLevel level, boolean publicAp
      */
     public MemberChange(ElementPair pair, ChangeLevel level, boolean publicApi) {
         this(pair, level, publicApi, null);
+    }
+
+    /**
+     * Returns whether the change certainly breaks some clients of the public API.
+     *
+     * @return {@code true} if one of the {@link #incompatibilities()} is breaking
+     */
+    public boolean isBreaking() {
+        return incompatibilities.stream().anyMatch(Incompatibility::isBreaking);
+    }
+
+    /**
+     * Returns whether the change may break some clients of the public API, but certainly breaks none.
+     *
+     * @return {@code true} if there are incompatibilities and none of them is breaking
+     */
+    public boolean isRisky() {
+        return !incompatibilities.isEmpty() && !isBreaking();
     }
 
     /**

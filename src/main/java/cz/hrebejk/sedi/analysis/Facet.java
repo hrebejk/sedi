@@ -26,5 +26,9 @@ public enum Facet {
     /** Parameter types of a method; parameter names are deliberately not included. */
     PARAM_TYPES,
     /** Type parameters including their bounds. */
-    TYPE_PARAMS
+    TYPE_PARAMS,
+    /** The superclass, unless it is {@code java.lang.Object}, and the implemented or extended interfaces of a type. */
+    SUPERTYPES,
+    /** The types and the names of the components of a record, in their order. */
+    COMPONENTS
 }

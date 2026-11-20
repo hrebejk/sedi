@@ -9,6 +9,7 @@
 package cz.hrebejk.sedi.analysis;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * The changes found in one container of members: the file itself or a type.
@@ -18,9 +19,11 @@ import java.util.List;
  * @param type     the old and new version of the type, {@code null} for the top level of a file
  * @param changes  the changes of the members, in all the levels except imports
  * @param nested   the changes of the types present in both versions, which are nested in the container
+ * @param incompatibilities how the change of the type itself breaks or may break the clients of the public API,
+ *                 empty if it does not or for the top level of a file
  */
 public record ApiChanges(String typeName, boolean exposed, ElementPair type, List<MemberChange> changes,
-                         List<ApiChanges> nested) {
+                         List<ApiChanges> nested, Set<Incompatibility> incompatibilities) {
 
     /**
      * Returns the added, removed and changed members, which are the changes of the {@link ChangeLevel#API} level.

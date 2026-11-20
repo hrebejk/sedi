@@ -34,12 +34,7 @@ public final class Visibility {
      * @return {@code true} if the element can be used from outside of its package
      */
     public static boolean isExposed(ElementInfo element, boolean containerExposed, boolean inInterface) {
-        ModifiersTree modifiers = switch (element.getOriginalTree()) {
-            case ClassTree c -> c.getModifiers();
-            case MethodTree m -> m.getModifiers();
-            case VariableTree v -> v.getModifiers();
-            case null, default -> null;
-        };
+        ModifiersTree modifiers = modifiers(element);
         if (!containerExposed) {
             return false;
         }
@@ -50,6 +45,21 @@ public final class Visibility {
             return true;
         }
         return inInterface && !modifiers.getFlags().contains(Modifier.PRIVATE);
+    }
+
+    /**
+     * Returns the modifiers as written in the source of the element.
+     *
+     * @param element the element
+     * @return the modifiers, {@code null} if the element has none, like a compilation unit
+     */
+    static ModifiersTree modifiers(ElementInfo element) {
+        return switch (element.getOriginalTree()) {
+            case ClassTree c -> c.getModifiers();
+            case MethodTree m -> m.getModifiers();
+            case VariableTree v -> v.getModifiers();
+            case null, default -> null;
+        };
     }
 
     /**
