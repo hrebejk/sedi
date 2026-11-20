@@ -191,6 +191,36 @@ public class MavenProjectTest extends TestCase {
         }
     }
 
+    /** Modules forming a cycle, an aggregator listing its own aggregator, are each read once instead of endlessly. */
+    public void testModuleCycle() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("pom.xml", aggregatorPom("t", "root", "a"));
+            helper.writeFile("a/pom.xml", """
+                    <project>
+                      <modelVersion>4.0.0</modelVersion>
+                      <parent><groupId>t</groupId><artifactId>root</artifactId><version>1</version></parent>
+                      <artifactId>a</artifactId>
+                      <packaging>pom</packaging>
+                      <modules><module>..</module><module>b</module></modules>
+                    </project>
+                    """);
+            helper.writeFile("a/b/pom.xml", """
+                    <project>
+                      <modelVersion>4.0.0</modelVersion>
+                      <parent><groupId>t</groupId><artifactId>a</artifactId><version>1</version></parent>
+                      <artifactId>b</artifactId>
+                    </project>
+                    """);
+            helper.writeFile("a/b/src/main/java/b/B.java", "package b;\npublic class B {}\n");
+
+            List<MavenProject.Module> modules = MavenProject.load(helper.getRepositoryPath());
+
+            assertEquals(1, modules.size());
+            assertEquals("a/b", modules.getFirst().dir());
+            assertEquals(List.of("a/b/src/main/java"), modules.getFirst().roots());
+        }
+    }
+
     /** A project without source directories is one module whose source root is the project directory. */
     public void testNoSourceDirectories() throws Exception {
         try (GitTestHelper helper = new GitTestHelper()) {

@@ -41,6 +41,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -97,7 +98,7 @@ public final class MavenProject {
     public static List<Module> load(Path projectDir) throws IOException {
         Path base = projectDir.toAbsolutePath().normalize();
         Map<String, Pom> reactor = new LinkedHashMap<>();
-        collect(base, reactor);
+        collect(base, reactor, new HashSet<>());
         Resolver resolver = new Resolver(reactor);
 
         List<Module> modules = new ArrayList<>();
@@ -131,14 +132,20 @@ public final class MavenProject {
         return new Module(relative(base, pom.dir()), roots, List.copyOf(sourceRoots), classpath);
     }
 
-    /** Adds the POM in the directory and, recursively, those of its modules. */
-    private static void collect(Path dir, Map<String, Pom> reactor) throws IOException {
+    /**
+     * Adds the POM in the directory and, recursively, those of its modules. A directory already visited is
+     * skipped, so modules forming a cycle (which Maven rejects) or listed twice are read once.
+     */
+    private static void collect(Path dir, Map<String, Pom> reactor, Set<Path> visited) throws IOException {
+        if (!visited.add(dir)) {
+            return;
+        }
         Model model = buildEffectiveModel(dir.resolve(POM));
         reactor.putIfAbsent(model.getGroupId() + ":" + model.getArtifactId(), new Pom(dir, model));
         for (String module : model.getModules()) {
             Path moduleDir = dir.resolve(module).normalize();
             // A module may name its POM file instead of its directory.
-            collect(Files.isRegularFile(moduleDir) ? moduleDir.getParent() : moduleDir, reactor);
+            collect(Files.isRegularFile(moduleDir) ? moduleDir.getParent() : moduleDir, reactor, visited);
         }
     }
 
