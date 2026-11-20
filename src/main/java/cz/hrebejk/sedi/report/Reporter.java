@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BiPredicate;
+import java.util.function.Predicate;
 
 /**
  * Renders a {@link DiffAnalysis} as HTML, as configured by {@link ReportOptions}. Changes are grouped either by
@@ -201,24 +202,43 @@ public final class Reporter {
      */
     public int countChanged(DiffAnalysis analysis, ChangeLevel level) {
         boolean hideJavadoc = options.javadocContext() == ReportOptions.NO_JAVADOC;
+        return count(analysis, change -> (level == null || change.level() == level)
+                && !(hideJavadoc && change.isJavadocOnly()));
+    }
+
+    /**
+     * Counts the added, or the removed, types and members of the files the report shows, those whose whole source
+     * the implementation changes show, see {@link ReportOptions#showAdditions()} and
+     * {@link ReportOptions#showDeletions()}.
+     *
+     * @param analysis the analyzed diff
+     * @param added    {@code true} to count the added elements, {@code false} the removed ones
+     * @return the number of the added or the removed types and members
+     */
+    public int countWhole(DiffAnalysis analysis, boolean added) {
+        return count(analysis, change -> change.level() == ChangeLevel.API
+                && (added ? change.pair().isAdded() : change.pair().isRemoved()));
+    }
+
+    /** Counts the elements of the changes the filter accepts, in the files the report shows, each element once. */
+    private int count(DiffAnalysis analysis, Predicate<MemberChange> filter) {
         Set<ElementPair> changed = new HashSet<>();
         for (FileAnalysis file : sorted(analysis)) {
             for (ApiChanges changes : file.oldPrimary() == null ? List.of(file.rootChanges())
                     : List.of(file.primaryChanges(), file.rootChanges())) {
-                collectChanged(changes, level, hideJavadoc, changed);
+                collect(changes, filter, changed);
             }
         }
         return changed.size();
     }
 
-    private static void collectChanged(ApiChanges changes, ChangeLevel level, boolean hideJavadoc,
-                                       Set<ElementPair> changed) {
+    private static void collect(ApiChanges changes, Predicate<MemberChange> filter, Set<ElementPair> changed) {
         for (MemberChange change : changes.changes()) {
-            if ((level == null || change.level() == level) && !(hideJavadoc && change.isJavadocOnly())) {
+            if (filter.test(change)) {
                 changed.add(change.pair());
             }
         }
-        changes.nested().forEach(nested -> collectChanged(nested, level, hideJavadoc, changed));
+        changes.nested().forEach(nested -> collect(nested, filter, changed));
     }
 
     /** The files to report, sorted by package and class; the tests are left out unless they are shown. */

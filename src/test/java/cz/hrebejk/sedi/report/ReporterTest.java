@@ -818,6 +818,23 @@ public class ReporterTest extends TestCase {
         }
     }
 
+    /** Tests that countWhole counts the added and the removed types and members. */
+    public void testCountWhole() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", "public class Foo {\n  int a;\n  void m() { }\n}\n");
+            helper.commit("init");
+            helper.writeFile("Foo.java", "public class Foo {\n  int b;\n  int c;\n  void m() { }\n}\n");
+            helper.writeFile("Bar.java", "public class Bar {\n}\n");
+
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                var analysis = analyzer.analyzeChanges();
+                Reporter reporter = new Reporter(new ReportOptions(ChangeLevel.IMPORTS));
+                assertEquals(3, reporter.countWhole(analysis, true));
+                assertEquals(1, reporter.countWhole(analysis, false));
+            }
+        }
+    }
+
     /**
      * Tests that the changes of the files under {@code src/test/} are left out of every view when the tests are
      * hidden, and shown by default.

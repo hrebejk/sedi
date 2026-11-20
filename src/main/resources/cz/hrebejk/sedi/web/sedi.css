@@ -101,6 +101,13 @@ body {
   color: #eceff4;
 }
 
+/* The signs showing the added and removed elements with the implementation changes, close to its button. */
+.toolbar button[data-key="+"], .toolbar button[data-key="-"] {
+  margin-left: -3px;
+  padding: 3px 6px;
+  font-weight: 700;
+}
+
 /* How many elements changed in the level of a button. */
 .toolbar button .count {
   display: inline-block;

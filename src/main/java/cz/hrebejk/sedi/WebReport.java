@@ -199,11 +199,13 @@ final class WebReport {
                             + "import changes",
                     "a", "API", "Only the API changes",
                     "i", "Implementation", "Only the implementation changes",
+                    "+", "Added", "Show or hide the whole source of the added types and members with the "
+                            + "implementation changes; the badge says how many were added",
+                    "-", "Removed", "Show or hide the whole source of the removed types and members with the "
+                            + "implementation changes; the badge says how many were removed",
                     "c", "Cosmetic", "Only the cosmetic changes: formatting, comments, javadoc",
                     "m", "Imports", "Only the changed imports",
                     "d", "Javadoc", "The javadoc shown: none, 3 lines around the changes, whole",
-                    "+", "Additions", "Show or hide the whole source of the added types and members",
-                    "-", "Deletions", "Show or hide the whole source of the removed types and members",
                     "t", "Tests", "Show or hide the changes of the tests",
                     "h", "?", "This help; a click on the tool bar brings the report back"),
             HTML.Tag("h2", HTML.Text("Folding")),
@@ -309,16 +311,17 @@ final class WebReport {
                     analysis, ChangeLevel.API));
             items.add(withCount(button('i', "Implementation", "Only the implementation changes",
                     only == ChangeLevel.IMPLEMENTATION), analysis, ChangeLevel.IMPLEMENTATION));
+            // Next to the implementation, as the whole source of the added and removed elements is shown with it.
+            items.add(withWholeCount(button('+', "+", "Show or hide the whole source of the added types and "
+                    + "members with the implementation changes", options.showAdditions()), analysis, true));
+            items.add(withWholeCount(button('-', "\u2212", "Show or hide the whole source of the removed types and "
+                    + "members with the implementation changes", options.showDeletions()), analysis, false));
             items.add(withCount(button('c', "Cosmetic", "Only the cosmetic changes", only == ChangeLevel.COSMETIC),
                     analysis, ChangeLevel.COSMETIC));
             items.add(button('m', "Imports", "Only the changed imports", only == ChangeLevel.IMPORTS));
             items.add(separator());
             items.add(button('d', "Javadoc: " + javadoc(options.javadocContext()),
                     "Javadoc: none, lines around the changes, whole", options.javadocContext() != ReportOptions.NO_JAVADOC));
-            items.add(button('+', "Additions", "The whole source of the added types and members",
-                    options.showAdditions()));
-            items.add(button('-', "Deletions", "The whole source of the removed types and members",
-                    options.showDeletions()));
             items.add(button('t', "Tests", "The changes of the tests", options.showTests()));
             items.add(HTML.SPAN(title).clazz("title"));
             // The second line of the bar: where in the report the page is scrolled to, see sedi.js.
@@ -328,16 +331,18 @@ final class WebReport {
 
         /**
          * A button of the tool bar pressed also by the key; its id is the key, see {@link #onEvent}. The key is
-         * underlined in the label, where it first appears, or put in front of it.
+         * underlined in the label, where it first appears, or put in front of it; a label of just a sign, such as
+         * the key itself, is left as it is.
          */
         private static HTML.Tag button(char key, String label, String hint, boolean active) {
             int at = label.toLowerCase(Locale.ROOT).indexOf(Character.toLowerCase(key));
-            if (at < 0) {
+            if (at < 0 && label.length() > 1) {
                 label = key + " " + label;
                 at = 0;
             }
-            HTML.Tag tag = HTML.Tag("button", HTML.Text(label.substring(0, at)),
-                            HTML.Tag("u", HTML.Text(label.substring(at, at + 1))), HTML.Text(label.substring(at + 1)))
+            HTML.Tag tag = (label.length() == 1 ? HTML.Tag("button", HTML.Text(label))
+                    : HTML.Tag("button", HTML.Text(label.substring(0, at)),
+                            HTML.Tag("u", HTML.Text(label.substring(at, at + 1))), HTML.Text(label.substring(at + 1))))
                     .id(String.valueOf(key))
                     .attr("data-key", String.valueOf(key))
                     .attr("title", hint + " (" + key + ")")
@@ -356,6 +361,18 @@ final class WebReport {
                 return button;
             }
             int count = view.reporter().countChanged(analysis, level);
+            return button.children(HTML.SPAN(String.valueOf(count)).clazz(count == 0 ? "count none" : "count"));
+        }
+
+        /**
+         * The button with a badge of how many elements were added, or removed, see {@link Reporter#countWhole};
+         * without it while there is no analysis.
+         */
+        private HTML.Tag withWholeCount(HTML.Tag button, DiffAnalysis analysis, boolean added) {
+            if (analysis == null) {
+                return button;
+            }
+            int count = view.reporter().countWhole(analysis, added);
             return button.children(HTML.SPAN(String.valueOf(count)).clazz(count == 0 ? "count none" : "count"));
         }
 

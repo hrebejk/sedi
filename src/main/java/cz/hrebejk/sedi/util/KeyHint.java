@@ -12,7 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The one line hint of the keys of the interactive mode, such as {@code [a] api  [i] impl  ...  [h] help}. The line
+ * The one line hint of the keys of the interactive mode, such as {@code [a] api  [i] impl  [+]  [-]  ...  [h] help}. The line
  * is made to fit the width of the terminal: labels are shortened first, then keys are dropped and replaced by
  * {@code …}. The help key is always the last item.
  */
@@ -29,11 +29,12 @@ public final class KeyHint {
             new Item('l', "all", "all"),
             new Item('a', "api", "api"),
             new Item('i', "impl", "impl"),
+            // No labels: they show the added and removed elements with the implementation changes.
+            new Item('+', "", ""),
+            new Item('-', "", ""),
             new Item('c', "cosmetic", "cos"),
             new Item('m', "imports", "imp"),
             new Item('d', "javadoc", "doc"),
-            new Item('+', "added", "add"),
-            new Item('-', "removed", "rem"),
             new Item('t', "tests", "test"),
             new Item('q', "quit", "quit"));
     private static final Item HELP = new Item('h', "help", "help");
@@ -78,8 +79,9 @@ public final class KeyHint {
 
     private static String format(Item item, boolean colored, boolean shortLabels) {
         String label = shortLabels ? item.shortLabel() : item.label();
+        String text = label.isEmpty() ? "" : " " + label;
         return colored
-                ? REVERSE + " " + item.key() + " " + NORMAL + " " + label
-                : "[" + item.key() + "] " + label;
+                ? REVERSE + " " + item.key() + " " + NORMAL + text
+                : "[" + item.key() + "]" + text;
     }
 }
