@@ -89,12 +89,33 @@ public class DiffAstAnalyzer implements AutoCloseable {
      * @throws IllegalArgumentException if the score is not between 0 and 100
      */
     public DiffAstAnalyzer(Path repositoryPath, AstLoader astLoader, int renameScore) {
+        this(repositoryPath, astLoader, renameScore, List.of());
+    }
+
+    /**
+     * Creates a new DiffAstAnalyzer which attributes the sources using the given loader and finds the classes of
+     * the project in the given source roots.
+     *
+     * @param repositoryPath path to the Git repository
+     * @param astLoader      loader used to parse and attribute the old and new versions of files
+     * @param renameScore    the least similarity, in percent (0 - 100), of an added and a deleted file for git to
+     *                       report them as a rename
+     * @param sourceRoots    repository relative ({@code /} separated) source roots, {@code ""} stands for the
+     *                       repository root; when empty, the roots are found as by
+     *                       {@link #DiffAstAnalyzer(Path, AstLoader)}
+     * @throws IllegalArgumentException if the score is not between 0 and 100
+     */
+    public DiffAstAnalyzer(Path repositoryPath, AstLoader astLoader, int renameScore, List<String> sourceRoots) {
         this.inspector = new GitInspector(repositoryPath, renameScore);
         this.repositoryPath = repositoryPath;
         this.astLoader = astLoader;
-        List<String> roots = CONVENTIONAL_ROOTS.stream()
-                .filter(root -> Files.isDirectory(repositoryPath.resolve(root))).toList();
-        this.sourceRoots = roots.isEmpty() ? List.of("") : roots;
+        if (sourceRoots.isEmpty()) {
+            List<String> roots = CONVENTIONAL_ROOTS.stream()
+                    .filter(root -> Files.isDirectory(repositoryPath.resolve(root))).toList();
+            this.sourceRoots = roots.isEmpty() ? List.of("") : roots;
+        } else {
+            this.sourceRoots = List.copyOf(sourceRoots);
+        }
     }
 
     /**

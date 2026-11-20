@@ -14,6 +14,7 @@ import junit.framework.TestCase;
 import cz.hrebejk.sedi.compilation.AstLoader;
 import cz.hrebejk.sedi.compilation.CompilationUnitInfo;
 import cz.hrebejk.sedi.compilation.SourceFileProvider;
+import cz.hrebejk.sedi.util.GitInspector;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -112,6 +113,24 @@ public class DiffAstAnalyzerTest extends TestCase {
                 assertSame(fileNamed(first, "A.java").oldRoot(), fileNamed(second, "A.java").oldRoot());
                 assertEquals(List.of("IMPLEMENTATION:helper"), levels(fileNamed(second, "A.java")));
                 assertEquals(List.of("IMPLEMENTATION:use"), levels(fileNamed(second, "B.java")));
+            }
+        }
+    }
+
+    /**
+     * The classes of the project are found in the given source roots, so a call of a renamed method from another
+     * file is resolved and is only a cosmetic change.
+     */
+    public void testGivenSourceRoots() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("src/p/A.java", A_OLD);
+            helper.writeFile("src/p/B.java", b("helper", 0));
+            helper.commit("init");
+            helper.writeFile("src/p/A.java", A_NEW);
+            helper.writeFile("src/p/B.java", b("assist", 0));
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath(), new AstLoader(),
+                    GitInspector.DEFAULT_RENAME_SCORE, List.of("src"))) {
+                assertEquals(List.of("COSMETIC:use"), levels(fileNamed(analyzer.analyzeChanges(), "B.java")));
             }
         }
     }

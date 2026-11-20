@@ -30,9 +30,12 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.function.Predicate;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -117,7 +120,19 @@ public class Main implements Callable<Integer> {
                     + "underline, strike, none (default: ~/.config/sedi/theme.properties if it exists).")
     private Path themeFile;
 
+    @Option(names = {"-cp", "--classpath"}, paramLabel = "<path>",
+            description = "Jars and class directories the sources are compiled against, separated by '${sys:path.separator}', instead of the dependencies of pom.xml. May be repeated.")
+    private List<String> classpathOption = List.of();
+
+    @Option(names = "--sourcepath", paramLabel = "<path>",
+            description = "Source roots of the project, separated by '${sys:path.separator}', relative to "
+                    + "--dir or absolute within it (default: src/main/java and src/test/java if present, else "
+                    + "--dir itself). May be repeated.")
+    private List<String> sourcepathOption = List.of();
+
     private List<Path> classpath = List.of();
+
+    private List<String> sourceRoots = List.of();
 
     private AstLoader astLoader = new AstLoader();
 
@@ -164,8 +179,17 @@ public class Main implements Callable<Integer> {
             return 2;
         }
         projectDir = projectDir.toAbsolutePath().normalize();
+        try {
+            sourceRoots = sourceRoots(sourcepathOption);
+        } catch (IllegalArgumentException e) {
+            System.err.println(e.getMessage());
+            return 2;
+        }
         Path pom = projectDir.resolve("pom.xml");
-        if (Files.isRegularFile(pom)) {
+        if (!classpathOption.isEmpty()) {
+            classpath = split(classpathOption).stream().map(Path::of).toList();
+            astLoader = new AstLoader(classpath);
+        } else if (Files.isRegularFile(pom)) {
             classpath = MavenClasspath.resolve(projectDir);
             astLoader = new AstLoader(classpath);
         } else {
@@ -211,7 +235,7 @@ public class Main implements Callable<Integer> {
             }
         }
         // One analyzer for the whole session, so the old versions are compiled only once.
-        try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader, renameScore)) {
+        try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader, renameScore, sourceRoots)) {
             Session.Analysis analysis = commit == null ? analyzer::analyzeChanges
                     : filter -> analyzer.analyzeCommit(commit, filter);
             if (commit != null && !comparesWorkingCopy()) {
@@ -231,6 +255,31 @@ public class Main implements Callable<Integer> {
         }
     }
 
+    /** The entries of path options, each of which may hold several separated by {@link File#pathSeparator}. */
+    private static List<String> split(List<String> values) {
+        return values.stream()
+                .flatMap(value -> Arrays.stream(value.split(Pattern.quote(File.pathSeparator))))
+                .filter(entry -> !entry.isEmpty())
+                .toList();
+    }
+
+    /**
+     * The {@code --sourcepath} entries as {@code /} separated paths relative to the project directory.
+     *
+     * @throws IllegalArgumentException if an entry is not within the project directory
+     */
+    private List<String> sourceRoots(List<String> values) {
+        List<String> roots = new ArrayList<>();
+        for (String entry : split(values)) {
+            Path root = projectDir.resolve(entry).normalize();
+            if (!root.startsWith(projectDir)) {
+                throw new IllegalArgumentException("--sourcepath entry is not within " + projectDir + ": " + entry);
+            }
+            roots.add(projectDir.relativize(root).toString().replace(File.separatorChar, '/'));
+        }
+        return roots;
+    }
+
     /** Shows the diff in the browser until the process is stopped, see {@link #web}. */
     private int web() {
         StyleSheet styleSheet;
@@ -245,7 +294,7 @@ public class Main implements Callable<Integer> {
                 !hideAdditions, showDeletions, !hideTests, true));
         String title = projectDir.getFileName() + " " + (commit == null ? "working copy" : commit);
         WebReport report = new WebReport(reporter, title);
-        try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader, renameScore)) {
+        try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader, renameScore, sourceRoots)) {
             int actualPort;
             try {
                 actualPort = report.start(port, styleSheet).port();
@@ -317,7 +366,7 @@ public class Main implements Callable<Integer> {
 
     /** Prints the API changes of the selected commit and returns the process exit code. */
     private int reportCommit(Reporter reporter, ConsoleHtmlRenderer renderer) {
-        try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader, renameScore)) {
+        try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader, renameScore, sourceRoots)) {
             renderer.lines(reporter.report(analyzer.analyzeCommit(commit, path -> path.endsWith(".java"))))
                     .forEach(System.out::println);
             return 0;
