@@ -320,7 +320,7 @@ final class ApiDiffAnalyzer {
                     changes(v.oldRoot(), v.newRoot(), "", true, null, sources, moves, Set.of()),
                     importChanges(oldUnit, newUnit)));
         }
-        return new DiffAnalysis(files, renames);
+        return new DiffAnalysis(files, renames, null);
     }
 
     /** Collects the removed and the added types of the containers of a file, see {@link Unpaired}. */

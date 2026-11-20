@@ -8,6 +8,8 @@
  */
 package cz.hrebejk.sedi.analysis;
 
+import cz.hrebejk.sedi.util.GitInspector;
+
 import java.util.List;
 
 /**
@@ -15,6 +17,8 @@ import java.util.List;
  *
  * @param files   the changed files
  * @param renames the renamed types, fields and methods of all the files
+ * @param range   the compared versions, the new commit {@code null} for the working copy; {@code null} if the
+ *                units were not read from a repository
  */
-public record DiffAnalysis(List<FileAnalysis> files, Renames renames) {
+public record DiffAnalysis(List<FileAnalysis> files, Renames renames, GitInspector.Range range) {
 }

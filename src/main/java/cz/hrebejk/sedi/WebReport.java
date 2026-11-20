@@ -40,7 +40,8 @@ import java.util.function.Predicate;
 final class WebReport {
 
     private final Reporter reporter;
-    private final String title;
+    private final String project;
+    private final String rev;
     /** The open pages; a page left by the browser goes away with the session of the server. */
     private final Set<WebSession> sessions = Collections.synchronizedSet(Collections.newSetFromMap(new WeakHashMap<>()));
 
@@ -51,11 +52,29 @@ final class WebReport {
 
     /**
      * @param reporter renders the analysis as the options of the command line say
-     * @param title    what is compared, shown in the tool bar and as the title of the page
+     * @param project  the name of the project, shown in the tool bar and as the title of the page
+     * @param rev      the revision compared as the command line gives it, {@code null} for the working copy
      */
-    WebReport(Reporter reporter, String title) {
+    WebReport(Reporter reporter, String project, String rev) {
         this.reporter = reporter;
-        this.title = title;
+        this.project = project;
+        this.rev = rev;
+    }
+
+    /**
+     * What the pages show: the revision of the command line; without one the working copy, or {@code HEAD} once
+     * the changes of the working copy were committed and the last commit is shown instead.
+     */
+    private String revision() {
+        if (rev != null) {
+            return rev;
+        }
+        DiffAnalysis analysis;
+        synchronized (lock) {
+            analysis = last;
+        }
+        return analysis != null && analysis.range() != null && analysis.range().newCommit() != null
+                ? "HEAD" : "working copy";
     }
 
     /**
@@ -70,7 +89,7 @@ final class WebReport {
             sessions.add(session);
             return new Page();
         })
-                .title("sedi " + title)
+                .title("sedi " + project + " " + (rev == null ? "working copy" : rev))
                 .styleSheet(styleSheet)
                 .resources(WebReport.class, "web")
                 .styleSheet("sedi.css")
@@ -334,7 +353,7 @@ final class WebReport {
             items.add(button('d', "Javadoc: " + javadoc(options.javadocContext()),
                     "Javadoc: none, lines around the changes, whole", options.javadocContext() != ReportOptions.NO_JAVADOC));
             items.add(button('t', "Tests", "The changes of the tests", options.showTests()));
-            items.add(HTML.SPAN(title).clazz("title"));
+            items.add(HTML.SPAN(HTML.Text(project + " "), HTML.SPAN(revision()).clazz("revision")).clazz("title"));
             // The second line of the bar: where in the report the page is scrolled to, see sedi.js.
             items.add(new HTML.Tag(SPY_COMPONENT));
             return HTML.DIV().children(items).clazz(TOOLBAR);

@@ -293,7 +293,7 @@ public class Main implements Callable<Integer> {
         Reporter reporter = new Reporter(new ReportOptions(level, bodyContext, javadocContext, !noLineNumbers,
                 !hideAdditions, showDeletions, !hideTests, true));
         String title = projectDir.getFileName() + " " + (commit == null ? "working copy" : commit);
-        WebReport report = new WebReport(reporter, title);
+        WebReport report = new WebReport(reporter, projectDir.getFileName().toString(), commit);
         try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(projectDir, astLoader, renameScore, sourceRoots)) {
             int actualPort;
             try {

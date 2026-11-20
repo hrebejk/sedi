@@ -192,7 +192,8 @@ public class DiffAstAnalyzer implements AutoCloseable {
                 .filter(d -> accepted.test(d) || d.getOldPath().endsWith(".java") || d.getNewPath().endsWith(".java"))
                 .toList();
         DiffAnalysis all = analyzeAll(diffs, range);
-        return new DiffAnalysis(all.files().stream().filter(f -> accepted.test(f.diff())).toList(), all.renames());
+        return new DiffAnalysis(all.files().stream().filter(f -> accepted.test(f.diff())).toList(), all.renames(),
+                range);
     }
 
     private DiffAnalysis analyzeAll(List<DiffEntry> diffs, GitInspector.Range range) throws IOException {

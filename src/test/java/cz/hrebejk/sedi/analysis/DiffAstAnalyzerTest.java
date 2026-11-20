@@ -15,6 +15,7 @@ import cz.hrebejk.sedi.compilation.AstLoader;
 import cz.hrebejk.sedi.compilation.CompilationUnitInfo;
 import cz.hrebejk.sedi.compilation.SourceFileProvider;
 import cz.hrebejk.sedi.util.GitInspector;
+import org.eclipse.jgit.revwalk.RevCommit;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -174,6 +175,23 @@ public class DiffAstAnalyzerTest extends TestCase {
 
                 assertEquals(List.of("src/main/java/p/B.java"), loader.loads.get(2));
                 assertEquals(List.of("COSMETIC:use"), levels(fileNamed(second, "B.java")));
+            }
+        }
+    }
+
+    /**
+     * The range of a dirty working copy ends with the working copy; once everything is committed, it is the last
+     * commit.
+     */
+    public void testRangeOfChanges() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("src/main/java/p/A.java", A_OLD);
+            helper.commit("init");
+            helper.writeFile("src/main/java/p/A.java", A_NEW);
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                assertNull(analyzer.analyzeChanges().range().newCommit());
+                RevCommit head = helper.commit("rename");
+                assertEquals(head.getId(), analyzer.analyzeChanges().range().newCommit());
             }
         }
     }

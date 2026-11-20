@@ -53,6 +53,7 @@
   --active: #3e5470;
   --active-border: #88c0d0;
   --failure: #bf616a;
+  --revision: #ebcb8b;
 }
 
 body {
@@ -150,6 +151,13 @@ body {
 .toolbar .title {
   margin-left: auto;
   color: var(--dim);
+}
+
+/* What is compared: the working copy, HEAD or the revision of the command line. */
+.toolbar .title .revision {
+  font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  font-variant-ligatures: none;
+  color: var(--revision);
 }
 
 /* The second line of the tool bar, see sedi.js: the javadoc of an element of it, if shown, and under it the
