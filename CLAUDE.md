@@ -116,13 +116,11 @@ necessary. The levels, from most to least important:
 
 Whitespace changes are never reported.
 
+API changes which break the clients of the public API (source or binary) are
+badged ⚠, those which may break them ⓘ (see `Compatibility`).
+
 ### Ideas not implemented yet
 
-- **Badge backwards incompatible API changes.** A change in a public class or
-  interface which is backward incompatible would be marked with a badge, e.g.
-  adding a method to an interface which does not restrict the implementors,
-  adding a method to a non-final class, removing a method, widening a return
-  type or narrowing a parameter type.
 - **Rating changes.** Changes which make the API more strict would be rated
   positive, changes which make it less strict or are incompatible negative.
   A rating could be computed for the whole diff.
@@ -138,7 +136,7 @@ Whitespace changes are never reported.
 | 3: watching the folder, picocli, console  | Done, with an interactive console mode                         |
 | 4: web server                             | Done (`--web`)                                                 |
 | 5: refactoring recognition POC            | Renames and type moves only                                    |
-| 6: backward incompatibilities and rating  | Not started; facet hashes and the `publicApi` flag can be used |
+| 6: backward incompatibilities and rating  | Incompatibility badges done; rating not started                |
 
 ## Out of scope
 
@@ -276,8 +274,9 @@ javac-synthesized trees (default constructors, canonical record constructors, �
 
 Besides the digests each element has:
 
-- **`Facet` hashes** (`MODIFIERS`, `ANNOTATIONS`, `THROWS`, `NAME`, `RETURN_TYPE`, `PARAM_TYPES`, `TYPE_PARAMS`), for
-  pairing and to say which part of a signature changed.
+- **`Facet` hashes** (`MODIFIERS`, `ANNOTATIONS`, `THROWS`, `NAME`, `RETURN_TYPE`, `PARAM_TYPES`, `TYPE_PARAMS`,
+  `SUPERTYPES`, `COMPONENTS`), for pairing, to say which part of a signature changed, and, with their values, to
+  decide compatibility.
 - **An element id** (`ElementIds`) from javac's resolved `Element`, such as `p.Type#method(int,java.lang.String)`,
   the same for a declaration and every reference to it.
 - **`NodeInfo` trees** for the body and signature, used by `BodyDiff` and `CosmeticDiff`.
@@ -325,6 +324,11 @@ whose type was renamed don't change these hashes.
   `IMPLEMENTATION` change of the type.
 - `BodyDiff` finds cosmetic marks, or the signature differs only cosmetically → `COSMETIC`.
 - `Visibility.isExposed` sets `publicApi`: public or protected, or an interface member, inside an exposed container.
+- `Compatibility.check` sets `incompatibilities` (`Incompatibility`, breaking or risky) for elements of the public API:
+  from the changed `Facet`s, their values (`ElementInfo.getFacetValues`, e.g. thrown types, supertypes, record
+  components) and the modifiers of the trees. Types are compared as written, without subtype checks. A changed
+  constant is the only incompatibility of an `IMPLEMENTATION` change. A type's own one is also in
+  `ApiChanges.incompatibilities`.
 
 One member can appear at several levels. Member renames are shown in the API section but never make a body count as
 changed.
@@ -345,9 +349,11 @@ as `Renamed` or `Edited`.
 
 ```
 DiffAnalysis(files: List<FileAnalysis>, renames: Renames)
+MemberChange(pair, level, publicApi, body, incompatibilities: Set<Incompatibility>)
 FileAnalysis(diff, oldUnit, newUnit, oldRoot, newRoot, oldPrimary, newPrimary,
              class and package names, primaryChanges, rootChanges: ApiChanges, importChanges)
-ApiChanges(typeName, exposed, type: ElementPair, changes: List<MemberChange>, nested: List<ApiChanges>)
+ApiChanges(typeName, exposed, type: ElementPair, changes: List<MemberChange>, nested: List<ApiChanges>,
+           incompatibilities: Set<Incompatibility>)
 ```
 
 `analyze` always analyzes **all** changed Java files, so renames are found everywhere, then keeps only the files the
@@ -375,7 +381,8 @@ The printers produce `Line`s made of `Fragment`s, marked up by `Markup` with `Cs
 - **`ReportStyles`** builds the fleck `StyleSheet` from a palette or a `--theme` properties file;
   `ReportStyles.plain()` uses `~~`/`__` markers instead of colors.
 
-Names javac could not resolve are shown white on red. Renamed or moved names outside the API section are `.renamed`
+Names javac could not resolve are shown white on red. `Markup.incompatible` appends the ⚠/ⓘ badge (`.breaking`,
+`.risky`) with the reasons as its `title` to a declaration or type heading. Renamed or moved names outside the API section are `.renamed`
 spans with a `title` of `old → new`.
 
 ## Key principles
@@ -408,6 +415,8 @@ holds sample sources for each kind of change. `ChangeClassificationTest`, `Membe
 - **Local and anonymous classes** are not modeled as elements (see `todo.md`).
 - **Imports** are a set difference; `LinkedList` → `ArrayList` is not paired (see `todo.md`).
 - **Javadoc** is compared as text lines although `DocTrees` is loaded.
+- **Compatibility** has no subtype checks (a narrower return type is breaking too), does not tell checked from
+  unchecked exceptions, and ignores inheritance and overrides.
 - **Diagnostics are thrown away**, so the user does not learn why names are red.
 - **Large classes**: `Reporter` (~1100 lines), `AstPrinter` (~1000), `BodyDiff`, `SignatureDiffPrinter`,
   `ElementHashCalculator` (~650–700). `FileAnalysis` has 14 components.

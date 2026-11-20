@@ -21,6 +21,13 @@ and go down the levels as far as you need to. A method renamed together with all
 section; the call sites show up only as cosmetic changes. Code that does not compile is still analyzed, and the
 names javac cannot resolve are shown in red.
 
+API changes of the public API that break existing clients (they no longer compile, or no longer link when already
+compiled) are marked with ⚠: e.g. a removed or renamed member, reduced visibility, a changed parameter, return or
+field type, an added checked exception, `final` or `abstract` added, an abstract method added to an interface. Changes
+that only *may* break clients are marked with ⓘ: a method added to a class clients can extend, a default method or
+an enum constant added, an exception removed from `throws`, a changed constant (clients keep the inlined old value).
+Types are compared as written, without subtype checks, so e.g. a narrower return type is ⚠ too.
+
 ## Building
 
 You need Java 25 or newer and Maven.
@@ -102,6 +109,7 @@ The counts next to the buttons tell how many changes each level has. In the repo
 - While you scroll, a line under the toolbar shows which file and element you are in; a click on it scrolls back to
   the start of that element. Resting the mouse on an element there shows its javadoc.
 - Hovering a renamed name shows `old → new`.
+- Hovering ⚠ or ⓘ lists how the change breaks or may break the clients of the API.
 - Line markers: `+` added, `-` removed, `~` changed, `→` moved or renamed file.
 
 Each page keeps its own view, so you can have several tabs open on different levels.
