@@ -51,6 +51,7 @@ final class Session {
             "Keys",
             "",
             "  a        show only the API changes",
+            "  p        API changes: all, or only of the public and protected types and members",
             "  i        show only the implementation changes",
             "  +        show or hide, with the implementation changes, the whole source of the added types and members",
             "  -        show or hide, with the implementation changes, the whole source of the removed types and members",

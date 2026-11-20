@@ -24,10 +24,13 @@ import cz.hrebejk.sedi.analysis.ChangeLevel;
  * @param showTests      whether the changes of the test sources, the files under {@code src/test/}, are shown
  * @param foldContext    whether the unchanged lines of a body collapsed to a note are kept too, in a
  *                       {@linkplain Css#ELIDED fold} behind the note, for a page which can expand them
+ * @param publicOnly     whether the API changes are only those of the public API, see
+ *                       {@link cz.hrebejk.sedi.analysis.MemberChange#publicApi()}, or also those of the private and
+ *                       package private types and members
  */
 public record ReportOptions(ChangeLevel maxLevel, int bodyContext, int javadocContext,
                             boolean lineNumbers, boolean showAdditions, boolean showDeletions, boolean showTests,
-                            boolean foldContext) {
+                            boolean foldContext, boolean publicOnly) {
 
     /** The {@link #bodyContext()} showing all the unchanged lines of a changed body. */
     public static final int WHOLE_BODY = -1;
@@ -43,6 +46,24 @@ public record ReportOptions(ChangeLevel maxLevel, int bodyContext, int javadocCo
 
     /** The default of {@link #javadocContext()}: no javadoc. */
     public static final int DEFAULT_JAVADOC_CONTEXT = NO_JAVADOC;
+
+    /**
+     * Creates options showing the API changes of the private and package private types and members too.
+     *
+     * @param maxLevel       the least important level of changes to show
+     * @param bodyContext    the most unchanged lines of a body shown in a row
+     * @param javadocContext the unchanged javadoc lines shown around a change of a javadoc
+     * @param lineNumbers    whether to show the numbers of the lines of the source on the left
+     * @param showAdditions  whether the implementation changes show the whole source of the added types and members
+     * @param showDeletions  whether the implementation changes show the whole source of the removed types and members
+     * @param showTests      whether the changes of the test sources are shown
+     * @param foldContext    whether the unchanged lines collapsed to a note are kept behind it
+     */
+    public ReportOptions(ChangeLevel maxLevel, int bodyContext, int javadocContext, boolean lineNumbers,
+                         boolean showAdditions, boolean showDeletions, boolean showTests, boolean foldContext) {
+        this(maxLevel, bodyContext, javadocContext, lineNumbers, showAdditions, showDeletions, showTests, foldContext,
+                false);
+    }
 
     /**
      * Creates options which collapse a long run of unchanged lines to a note alone.
@@ -93,7 +114,7 @@ public record ReportOptions(ChangeLevel maxLevel, int bodyContext, int javadocCo
      */
     public ReportOptions withJavadocContext(int javadocContext) {
         return new ReportOptions(maxLevel, bodyContext, javadocContext, lineNumbers, showAdditions, showDeletions, showTests,
-                foldContext);
+                foldContext, publicOnly);
     }
 
     /**
@@ -104,7 +125,7 @@ public record ReportOptions(ChangeLevel maxLevel, int bodyContext, int javadocCo
      */
     public ReportOptions withAdditions(boolean show) {
         return new ReportOptions(maxLevel, bodyContext, javadocContext, lineNumbers, show, showDeletions, showTests,
-                foldContext);
+                foldContext, publicOnly);
     }
 
     /**
@@ -115,7 +136,7 @@ public record ReportOptions(ChangeLevel maxLevel, int bodyContext, int javadocCo
      */
     public ReportOptions withDeletions(boolean show) {
         return new ReportOptions(maxLevel, bodyContext, javadocContext, lineNumbers, showAdditions, show, showTests,
-                foldContext);
+                foldContext, publicOnly);
     }
 
     /**
@@ -126,7 +147,19 @@ public record ReportOptions(ChangeLevel maxLevel, int bodyContext, int javadocCo
      */
     public ReportOptions withTests(boolean show) {
         return new ReportOptions(maxLevel, bodyContext, javadocContext, lineNumbers, showAdditions, showDeletions, show,
-                foldContext);
+                foldContext, publicOnly);
+    }
+
+    /**
+     * Returns these options showing only the API changes of the public API, or also those of the private and
+     * package private types and members.
+     *
+     * @param only whether to show only the public API
+     * @return the new options
+     */
+    public ReportOptions withPublicOnly(boolean only) {
+        return new ReportOptions(maxLevel, bodyContext, javadocContext, lineNumbers, showAdditions, showDeletions,
+                showTests, foldContext, only);
     }
 
     /**
@@ -137,7 +170,7 @@ public record ReportOptions(ChangeLevel maxLevel, int bodyContext, int javadocCo
      */
     public ReportOptions withFoldContext(boolean fold) {
         return new ReportOptions(maxLevel, bodyContext, javadocContext, lineNumbers, showAdditions, showDeletions,
-                showTests, fold);
+                showTests, fold, publicOnly);
     }
 
     /**

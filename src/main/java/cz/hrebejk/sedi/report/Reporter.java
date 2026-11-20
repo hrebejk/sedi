@@ -122,6 +122,16 @@ public final class Reporter {
     }
 
     /**
+     * Returns a reporter like this one showing only the API changes of the public API, or not.
+     *
+     * @param only see {@link ReportOptions#publicOnly()}
+     * @return the new reporter
+     */
+    public Reporter withPublicOnly(boolean only) {
+        return new Reporter(options.withPublicOnly(only), width);
+    }
+
+    /**
      * Returns a reporter like this one keeping the unchanged lines of a body collapsed to a note behind it, or not.
      *
      * @param fold see {@link ReportOptions#foldContext()}
@@ -203,7 +213,7 @@ public final class Reporter {
     public int countChanged(DiffAnalysis analysis, ChangeLevel level) {
         boolean hideJavadoc = options.javadocContext() == ReportOptions.NO_JAVADOC;
         return count(analysis, change -> (level == null || change.level() == level)
-                && !(hideJavadoc && change.isJavadocOnly()));
+                && !(hideJavadoc && change.isJavadocOnly()) && (change.level() != ChangeLevel.API || isShownApi(change)));
     }
 
     /**
@@ -218,6 +228,14 @@ public final class Reporter {
     public int countWhole(DiffAnalysis analysis, boolean added) {
         return count(analysis, change -> change.level() == ChangeLevel.API
                 && (added ? change.pair().isAdded() : change.pair().isRemoved()));
+    }
+
+    /**
+     * Whether the API change is shown: any of them, or only one of the public API, see
+     * {@link ReportOptions#publicOnly()}.
+     */
+    private boolean isShownApi(MemberChange change) {
+        return change.level() == ChangeLevel.API && (!options.publicOnly() || change.publicApi());
     }
 
     /** Counts the elements of the changes the filter accepts, in the files the report shows, each element once. */
@@ -372,7 +390,7 @@ public final class Reporter {
 
     /** The API changes of the types of a file, the top level types added or removed left out. */
     private List<Line> apiChangeLines(FileAnalysis file) {
-        return lines(file, (container, c) -> c.level() == ChangeLevel.API && !isListedApart(container, c),
+        return lines(file, (container, c) -> isShownApi(c) && !isListedApart(container, c),
                 true, false, true, false);
     }
 
@@ -424,6 +442,10 @@ public final class Reporter {
                 }
                 // The types moved here to the top level of the file.
                 types.addAll(apiChangeLines(file));
+                if (types.isEmpty() && options.publicOnly()) {
+                    // No type of the file is a part of the public API.
+                    continue;
+                }
                 List<Line> list = new ArrayList<>();
                 addFile(list, file, types, true);
                 parts.add(list);
@@ -439,7 +461,8 @@ public final class Reporter {
         }
         List<Line> names = new ArrayList<>();
         for (FileAnalysis file : files) {
-            if (file.diff().getChangeType() == DiffEntry.ChangeType.DELETE && !isAllMoved(file)) {
+            if (file.diff().getChangeType() == DiffEntry.ChangeType.DELETE && !isAllMoved(file)
+                    && (!options.publicOnly() || removed.stream().anyMatch(type -> type.file() == file))) {
                 names.add(fileTitle(file));
             }
         }
@@ -453,7 +476,7 @@ public final class Reporter {
         for (FileAnalysis file : files) {
             if (file.diff().getChangeType() == DiffEntry.ChangeType.RENAME) {
                 List<Line> renamed = new ArrayList<>();
-                addFile(renamed, file, lines(file, (container, c) -> c.level() == ChangeLevel.API
+                addFile(renamed, file, lines(file, (container, c) -> isShownApi(c)
                         && !isListedApart(container, c), true, false, true, false), true);
                 parts.add(renamed);
             }
@@ -492,10 +515,10 @@ public final class Reporter {
                 && (pair.isAdded() ? pair.newElement() : pair.oldElement()).getNodeType() == ElementInfo.NodeType.TYPE;
     }
 
-    /** Collects the added and removed top level types of the file. */
-    private static void collectTypes(FileAnalysis file, List<TypeRef> added, List<TypeRef> removed) {
+    /** Collects the added and removed top level types of the file whose API changes are shown. */
+    private void collectTypes(FileAnalysis file, List<TypeRef> added, List<TypeRef> removed) {
         for (MemberChange change : file.rootChanges().changes()) {
-            if (change.level() == ChangeLevel.API && isTypeAddedOrRemoved(change)) {
+            if (isShownApi(change) && isTypeAddedOrRemoved(change)) {
                 if (change.pair().isRemoved()) {
                     removed.add(new TypeRef(file, change.pair().oldElement()));
                 } else {
@@ -515,8 +538,9 @@ public final class Reporter {
     }
 
     /**
-     * The members of an added type which are a part of the public API, and the types nested in it,
-     * without the {@code +} as all of them are new. A type moved there is shown with its changes instead.
+     * The members of an added type, only those which are a part of the public API if only it is shown, see
+     * {@link ReportOptions#publicOnly()}, and the types nested in it, without the {@code +} as all of them are new.
+     * A type moved there is shown with its changes instead.
      *
      * @param moved the changes of the types moved into the type, {@code null} if none moved there
      */
@@ -524,11 +548,11 @@ public final class Reporter {
         boolean inInterface = Visibility.isInterface(type);
         List<Node> nodes = new ArrayList<>();
         for (ElementInfo member : type.getChildren()) {
-            if (Visibility.isExposed(member, true, inInterface)) {
+            if (!options.publicOnly() || Visibility.isExposed(member, true, inInterface)) {
                 ApiChanges nested = nestedOf(moved, member);
                 nodes.add(nested != null && !nested.type().isAdded()
                         ? typeNode(nested.type(), type.getName(), true,
-                                render(nested, (container, c) -> c.level() == ChangeLevel.API, false, true, false))
+                                render(nested, (container, c) -> isShownApi(c), false, true, false))
                         : addedNode(member, type.getName(), nested));
             }
         }

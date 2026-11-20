@@ -590,10 +590,56 @@ public class ReporterTest extends TestCase {
     }
 
     /**
-     * Tests that the API changes list the public API of the new types, the names of the deleted ones and then
+     * Tests that the API changes list the members of the new types, the names of the deleted ones and then
      * the changes of the other types, a removed nested type among the members of its outer type.
      */
     public void testApiStructure() throws Exception {
+        assertLines(List.of(
+                heading("API changes"),
+                blank(),
+                fileTitle('+', name("New.java"), " ", pkg("b")),
+                line(' ', "  ", code("public class ", decl("New"))),
+                line(' ', "  ", tree("├── "), code("public ", decl("New"), "( int i )")),
+                line(' ', "  ", tree("├── "), code("private int ", decl("hidden"))),
+                line(' ', "  ", tree("└── "), code("public void ", decl("m"), "()")),
+                separator(),
+                fileTitle('-', strike("Old.java"), " ", strike("a")),
+                separator(),
+                fileTitle('~', name("Foo.java"), " ", pkg("a")),
+                line(' ', "  ", code("public class ", decl("Foo"))),
+                line('~', "  ", tree("├── "), code(strike("int"), " ", added("long"), " ", decl("a"))),
+                line('-', "  ", tree("├── "), code(strike("class ", decl("Gone")))),
+                line('+', "  ", tree("└── "), code("public static class ", decl("Fresh"))),
+                line(' ', "      ", tree("├── "), code("public int ", decl("x"))),
+                line(' ', "      ", tree("├── "), code("private int ", decl("y"))),
+                line(' ', "      ", tree("└── "), code("protected void ", decl("m"), "()"))),
+                apiStructure(new ReportOptions(ChangeLevel.API)));
+    }
+
+    /**
+     * Tests that only the public API changes leave out the private and package private types and members: the
+     * deleted package private type, the changed package private field, the removed package private nested type
+     * and the private members of the added types.
+     */
+    public void testApiStructurePublicOnly() throws Exception {
+        assertLines(List.of(
+                heading("API changes"),
+                blank(),
+                fileTitle('+', name("New.java"), " ", pkg("b")),
+                line(' ', "  ", code("public class ", decl("New"))),
+                line(' ', "  ", tree("├── "), code("public ", decl("New"), "( int i )")),
+                line(' ', "  ", tree("└── "), code("public void ", decl("m"), "()")),
+                separator(),
+                fileTitle('~', name("Foo.java"), " ", pkg("a")),
+                line(' ', "  ", code("public class ", decl("Foo"))),
+                line('+', "  ", tree("└── "), code("public static class ", decl("Fresh"))),
+                line(' ', "      ", tree("├── "), code("public int ", decl("x"))),
+                line(' ', "      ", tree("└── "), code("protected void ", decl("m"), "()"))),
+                apiStructure(new ReportOptions(ChangeLevel.API).withPublicOnly(true)));
+    }
+
+    /** The report of the changes of {@link #testApiStructure}. */
+    private static HTML.Tag apiStructure(ReportOptions options) throws Exception {
         try (GitTestHelper helper = new GitTestHelper()) {
             helper.writeFile("a/Foo.java", "package a;\npublic class Foo {\n  int a;\n  class Gone { }\n}\n");
             helper.writeFile("a/Old.java", "package a;\nclass Old { }\n");
@@ -604,25 +650,7 @@ public class ReporterTest extends TestCase {
             helper.writeFile("b/New.java", "package b;\npublic class New {\n  public New(int i) { }\n"
                     + "  private int hidden;\n  public void m() { }\n}\n");
             try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
-                assertLines(List.of(
-                        heading("API changes"),
-                        blank(),
-                        fileTitle('+', name("New.java"), " ", pkg("b")),
-                        line(' ', "  ", code("public class ", decl("New"))),
-                        line(' ', "  ", tree("├── "), code("public ", decl("New"), "( int i )")),
-                        line(' ', "  ", tree("└── "), code("public void ", decl("m"), "()")),
-                        separator(),
-                        fileTitle('-', strike("Old.java"), " ", strike("a")),
-                        separator(),
-                        fileTitle('~', name("Foo.java"), " ", pkg("a")),
-                        line(' ', "  ", code("public class ", decl("Foo"))),
-                        line('~', "  ", tree("├── "), code(strike("int"), " ", added("long"), " ", decl("a"))),
-                        line('-', "  ", tree("├── "), code(strike("class ", decl("Gone")))),
-                        line('+', "  ", tree("└── "), code("public static class ", decl("Fresh"))),
-                        line(' ', "      ", tree("├── "), code("public int ", decl("x"))),
-                        line(' ', "      ", tree("└── "), code("protected void ", decl("m"), "()"))),
-                        new Reporter(new ReportOptions(ChangeLevel.API))
-                                .report(analyzer.analyzeChanges()));
+                return new Reporter(options).report(analyzer.analyzeChanges());
             }
         }
     }
@@ -814,6 +842,10 @@ public class ReporterTest extends TestCase {
                 assertEquals(1, reporter.countChanged(analysis, ChangeLevel.IMPLEMENTATION));
                 assertEquals(1, reporter.countChanged(analysis, ChangeLevel.COSMETIC));
                 assertEquals(3, reporter.countChanged(analysis, null));
+                // The changed members are package private.
+                Reporter publicOnly = reporter.withPublicOnly(true);
+                assertEquals(0, publicOnly.countChanged(analysis, ChangeLevel.API));
+                assertEquals(1, publicOnly.countChanged(analysis, ChangeLevel.IMPLEMENTATION));
             }
         }
     }

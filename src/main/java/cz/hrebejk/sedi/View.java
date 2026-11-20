@@ -16,7 +16,8 @@ import org.maraboo.fleck.html.HTML;
 
 /**
  * What of an analysis is shown, as the keys change it: the keys {@code a i c m} show only the changes of one
- * category, {@code l} all the changes by file and category, {@code d} cycles the javadoc shown, {@code +} and
+ * category, {@code l} all the changes by file and category, {@code p} switches between all the API changes and
+ * those of the public API only, {@code d} cycles the javadoc shown, {@code +} and
  * {@code -} show or hide the whole source of the added and the removed types and members and {@code t} shows or
  * hides the tests. At first the changes are shown as the options of the command line say.
  *
@@ -63,6 +64,7 @@ record View(Reporter reporter, ChangeLevel only, boolean byFile) {
                 case ReportOptions.WHOLE_JAVADOC -> ReportOptions.NO_JAVADOC;
                 default -> ReportOptions.WHOLE_JAVADOC;
             }));
+            case 'p' -> with(reporter.withPublicOnly(!options.publicOnly()));
             case '+' -> with(reporter.withAdditions(!options.showAdditions()));
             case '-' -> with(reporter.withDeletions(!options.showDeletions()));
             case 't' -> with(reporter.withTests(!options.showTests()));

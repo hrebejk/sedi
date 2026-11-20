@@ -12,7 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The one line hint of the keys of the interactive mode, such as {@code [a] api  [i] impl  [+]  [-]  ...  [h] help}. The line
+ * The one line hint of the keys of the interactive mode, such as {@code [a] api  [p] public  [i] impl  [+]  [-]  ...  [h] help}. The line
  * is made to fit the width of the terminal: labels are shortened first, then keys are dropped and replaced by
  * {@code …}. The help key is always the last item.
  */
@@ -28,6 +28,7 @@ public final class KeyHint {
     private static final List<Item> ITEMS = List.of(
             new Item('l', "all", "all"),
             new Item('a', "api", "api"),
+            new Item('p', "public", "pub"),
             new Item('i', "impl", "impl"),
             // No labels: they show the added and removed elements with the implementation changes.
             new Item('+', "", ""),

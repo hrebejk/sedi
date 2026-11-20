@@ -198,6 +198,9 @@ final class WebReport {
                     "l", "All", "All the changes by file; under each file its API, implementation, cosmetic and "
                             + "import changes",
                     "a", "API", "Only the API changes",
+                    "p", "\uD83D\uDD12\uFE0E \uD83D\uDD13\uFE0E", "All the API changes (\uD83D\uDD12\uFE0E), or only "
+                            + "those of the public API (\uD83D\uDD13\uFE0E): of the public and protected types and "
+                            + "members, the members of interfaces included",
                     "i", "Implementation", "Only the implementation changes",
                     "+", "Added", "Show or hide the whole source of the added types and members with the "
                             + "implementation changes; the badge says how many were added",
@@ -309,6 +312,14 @@ final class WebReport {
             items.add(separator());
             items.add(withCount(button('a', "API", "Only the API changes", only == ChangeLevel.API),
                     analysis, ChangeLevel.API));
+            // Next to the API, as it chooses which of its changes are shown; the lock, as the text variant.
+            items.add(button('p', options.publicOnly() ? "\uD83D\uDD13\uFE0E" : "\uD83D\uDD12\uFE0E",
+                    options.publicOnly()
+                            ? "Showing only the public API changes, of the public and protected types and members; "
+                                    + "show all of them"
+                            : "Showing all the API changes, also of the private and package private types and members; "
+                                    + "show only the public ones",
+                    options.publicOnly()));
             items.add(withCount(button('i', "Implementation", "Only the implementation changes",
                     only == ChangeLevel.IMPLEMENTATION), analysis, ChangeLevel.IMPLEMENTATION));
             // Next to the implementation, as the whole source of the added and removed elements is shown with it.
@@ -331,16 +342,17 @@ final class WebReport {
 
         /**
          * A button of the tool bar pressed also by the key; its id is the key, see {@link #onEvent}. The key is
-         * underlined in the label, where it first appears, or put in front of it; a label of just a sign, such as
+         * underlined in the label, where it first appears, or put in front of it; a label of signs alone, such as
          * the key itself, is left as it is.
          */
         private static HTML.Tag button(char key, String label, String hint, boolean active) {
+            boolean signs = label.codePoints().noneMatch(Character::isLetter);
             int at = label.toLowerCase(Locale.ROOT).indexOf(Character.toLowerCase(key));
-            if (at < 0 && label.length() > 1) {
+            if (at < 0 && !signs) {
                 label = key + " " + label;
                 at = 0;
             }
-            HTML.Tag tag = (label.length() == 1 ? HTML.Tag("button", HTML.Text(label))
+            HTML.Tag tag = (signs ? HTML.Tag("button", HTML.Text(label))
                     : HTML.Tag("button", HTML.Text(label.substring(0, at)),
                             HTML.Tag("u", HTML.Text(label.substring(at, at + 1))), HTML.Text(label.substring(at + 1))))
                     .id(String.valueOf(key))

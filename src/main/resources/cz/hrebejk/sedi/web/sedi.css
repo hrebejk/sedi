@@ -101,8 +101,9 @@ body {
   color: #eceff4;
 }
 
-/* The signs showing the added and removed elements with the implementation changes, close to its button. */
-.toolbar button[data-key="+"], .toolbar button[data-key="-"] {
+/* The signs next to the buttons of the levels they change: the public API of the API, the added and removed
+   elements of the implementation. */
+.toolbar button[data-key="p"], .toolbar button[data-key="+"], .toolbar button[data-key="-"] {
   margin-left: -3px;
   padding: 3px 6px;
   font-weight: 700;

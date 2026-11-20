@@ -21,12 +21,12 @@ public class KeyHintTest extends TestCase {
 
     /** Tests that everything is shown when there is room. */
     public void testFull() {
-        assertEquals("[l] all  [a] api  [i] impl  [+]  [-]  [c] cosmetic  [m] imports  [d] javadoc  [t] tests  [q] quit  [h] help", KeyHint.render(200, false));
+        assertEquals("[l] all  [a] api  [p] public  [i] impl  [+]  [-]  [c] cosmetic  [m] imports  [d] javadoc  [t] tests  [q] quit  [h] help", KeyHint.render(200, false));
     }
 
     /** Tests that labels are shortened before items are dropped. */
     public void testShortLabels() {
-        assertEquals("[l] all  [a] api  [i] impl  [+]  [-]  [c] cos  [m] imp  [d] doc  [t] test  [q] quit  [h] help", KeyHint.render(100, false));
+        assertEquals("[l] all  [a] api  [p] pub  [i] impl  [+]  [-]  [c] cos  [m] imp  [d] doc  [t] test  [q] quit  [h] help", KeyHint.render(110, false));
     }
 
     /** Tests that items are dropped, marked with an ellipsis, and that help stays last. */

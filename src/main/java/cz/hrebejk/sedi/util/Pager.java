@@ -19,8 +19,8 @@ import java.util.function.IntSupplier;
  */
 public final class Pager {
 
-    /** The keys that interrupt paging and are handed to the caller: the categories, all the changes, javadoc, additions, deletions, tests and help. */
-    public static final String HOT_KEYS = "laicmd+-th";
+    /** The keys that interrupt paging and are handed to the caller: the categories, all the changes, public API, javadoc, additions, deletions, tests and help. */
+    public static final String HOT_KEYS = "lapicmd+-th";
 
     /** How showing the lines ended. */
     public enum Kind {
