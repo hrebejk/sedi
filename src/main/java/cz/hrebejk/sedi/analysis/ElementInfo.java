@@ -13,6 +13,7 @@ import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 
+import javax.lang.model.element.Element;
 import javax.lang.model.element.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -43,6 +44,8 @@ public class ElementInfo {
     private final Map<Facet, List<String>> facetValues = new EnumMap<>(Facet.class);
     private int paramCount;
     private String elementId;
+    /** The element javac resolved this node to, valid while its javac task is. */
+    private Element element;
     private List<String> javadoc = List.of();
     /** The line of the first line of the javadoc, {@code 0} if not known. */
     private long javadocLine;
@@ -228,12 +231,22 @@ public class ElementInfo {
     }
 
     /**
-     * Sets the identity of the element javac resolved this node to.
+     * Returns the element javac resolved this node to; valid only while the analyzer which made it is open.
      *
-     * @param elementId the id, may be {@code null}
+     * @return the element, {@code null} if it could not be resolved
      */
-    void setElementId(String elementId) {
-        this.elementId = elementId;
+    Element getElement() {
+        return element;
+    }
+
+    /**
+     * Sets the element javac resolved this node to, and its {@link #getElementId() id}.
+     *
+     * @param element the element, may be {@code null}
+     */
+    void setElement(Element element) {
+        this.element = element;
+        this.elementId = ElementIds.of(element);
     }
 
     /**

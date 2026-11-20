@@ -26,7 +26,9 @@ compiled) are marked with ⚠: e.g. a removed or renamed member, reduced visibil
 field type, an added checked exception, `final` or `abstract` added, an abstract method added to an interface. Changes
 that only *may* break clients are marked with ⓘ: a method added to a class clients can extend, a default method or
 an enum constant added, an exception removed from `throws`, a changed constant (clients keep the inlined old value).
-Types are compared as written, without subtype checks, so e.g. a narrower return type is ⚠ too.
+Inheritance is taken into account: removing an override or pulling a method up into a superclass is not a removal,
+adding an override is not a new method, and the public methods of a package-private class count if a public class
+inherits them. Types are compared as written, without subtype checks, so e.g. a narrower return type is ⚠ too.
 
 ## Building
 

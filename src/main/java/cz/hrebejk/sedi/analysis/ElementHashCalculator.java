@@ -320,7 +320,7 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
 
         context.setCurrentNode(typeNode);
         Element el = trees.getElement(getCurrentPath());
-        typeNode.setElementId(ElementIds.of(el));
+        typeNode.setElement(el);
         typeNode.setJavadoc(trees.getDocComment(getCurrentPath()));
         setLines(typeNode, node, node.getModifiers());
         updateAllCategories(context, "KIND:" + node.getKind());
@@ -366,7 +366,7 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
 
             context.setCurrentNode(methodNode);
             Element el = trees.getElement(getCurrentPath());
-            methodNode.setElementId(ElementIds.of(el));
+            methodNode.setElement(el);
             methodNode.setJavadoc(trees.getDocComment(getCurrentPath()));
             setLines(methodNode, node, node.getModifiers());
             updateAllCategories(context, "KIND:" + node.getKind());
@@ -429,7 +429,7 @@ class ElementHashCalculator extends TreePathScanner<Void, HashContext> {
 
             context.setCurrentNode(varNode);
             Element el = trees.getElement(getCurrentPath());
-            varNode.setElementId(ElementIds.of(el));
+            varNode.setElement(el);
             varNode.setJavadoc(trees.getDocComment(getCurrentPath()));
             setLines(varNode, node, node.getModifiers());
             updateAttribute(varNode, "KIND:" + node.getKind());

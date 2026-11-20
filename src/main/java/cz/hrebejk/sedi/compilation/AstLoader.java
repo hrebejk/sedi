@@ -115,7 +115,8 @@ public class AstLoader {
 
             List<CompilationUnitInfo> result = new ArrayList<>();
             for (JavaFileObject file : files) {
-                result.add(new CompilationUnitInfo(units.get(file.toUri()), trees, docTrees));
+                result.add(new CompilationUnitInfo(units.get(file.toUri()), trees, docTrees,
+                        javacTask.getElements(), javacTask.getTypes()));
             }
             return result;
         }

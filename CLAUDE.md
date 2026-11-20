@@ -324,9 +324,12 @@ whose type was renamed don't change these hashes.
   `IMPLEMENTATION` change of the type.
 - `BodyDiff` finds cosmetic marks, or the signature differs only cosmetically → `COSMETIC`.
 - `Visibility.isExposed` sets `publicApi`: public or protected, or an interface member, inside an exposed container.
-- `Compatibility.check` sets `incompatibilities` (`Incompatibility`, breaking or risky) for elements of the public API:
-  from the changed `Facet`s, their values (`ElementInfo.getFacetValues`, e.g. thrown types, supertypes, record
-  components) and the modifiers of the trees. Types are compared as written, without subtype checks. A changed
+- `Compatibility` (one per container) sets `incompatibilities` (`Incompatibility`, breaking or risky) for elements
+  of the public API: from the changed `Facet`s, their values (`ElementInfo.getFacetValues`, e.g. thrown types,
+  supertypes, record components) and the modifiers of the trees. Types are compared as written, without subtype
+  checks. Inheritance is asked javac (`CompilationUnitInfo.elements()`/`types()`): a removed member still inherited
+  is no removal, a supertype still inherited indirectly is not removed, an added override adds nothing, and the
+  public members of a type outside the public API count if a public type in its package inherits them. A changed
   constant is the only incompatibility of an `IMPLEMENTATION` change. A type's own one is also in
   `ApiChanges.incompatibilities`.
 
@@ -415,8 +418,9 @@ holds sample sources for each kind of change. `ChangeClassificationTest`, `Membe
 - **Local and anonymous classes** are not modeled as elements (see `todo.md`).
 - **Imports** are a set difference; `LinkedList` → `ArrayList` is not paired (see `todo.md`).
 - **Javadoc** is compared as text lines although `DocTrees` is loaded.
-- **Compatibility** has no subtype checks (a narrower return type is breaking too), does not tell checked from
-  unchecked exceptions, and ignores inheritance and overrides.
+- **Compatibility** has no subtype checks (a narrower return type is breaking too) and does not tell checked from
+  unchecked exceptions. It looks at inheritance through javac's `Element`s kept in `ElementInfo`, so those, like
+  the trees, are valid only while the `DiffAstAnalyzer` is open.
 - **Diagnostics are thrown away**, so the user does not learn why names are red.
 - **Large classes**: `Reporter` (~1100 lines), `AstPrinter` (~1000), `BodyDiff`, `SignatureDiffPrinter`,
   `ElementHashCalculator` (~650–700). `FileAnalysis` has 14 components.

@@ -12,16 +12,23 @@ import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.DocTrees;
 import com.sun.source.util.Trees;
 
+import javax.lang.model.util.Elements;
+import javax.lang.model.util.Types;
+
 /**
- * Container for a compilation unit and its associated Trees and DocTrees.
+ * Container for a compilation unit and the utilities of the javac task it comes from.
  *
  * @param compilationUnit the parsed CompilationUnitTree
  * @param trees             the attributed Trees instance
  * @param docTrees          the attributed DocTrees instance
+ * @param elements          the elements of the task, e.g. to find inherited members
+ * @param types             the types of the task, e.g. to find supertypes
  */
 public record CompilationUnitInfo(
         CompilationUnitTree compilationUnit,
         Trees trees,
-        DocTrees docTrees
+        DocTrees docTrees,
+        Elements elements,
+        Types types
 ) {
 }

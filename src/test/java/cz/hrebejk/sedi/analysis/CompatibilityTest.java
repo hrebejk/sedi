@@ -467,4 +467,202 @@ public class CompatibilityTest {
         assertCompatible(analyze("package p; public class Foo { public Foo() { } public void m() { } }",
                 "package p; public class Foo { public void m() { } }"));
     }
+
+    // ---------------------------------------------------------------------------------------------- inheritance
+
+    private static final String BASE_RUN = "package p; public class Base { public void run() { } }";
+
+    /** The only API change of the named member which was added ({@code true}) or removed ({@code false}). */
+    private static MemberChange change(DiffAnalysis analysis, String name, boolean added) {
+        List<MemberChange> found = allChanges(analysis).stream()
+                .filter(c -> c.level() == ChangeLevel.API && name.equals(name(c))
+                        && (added ? c.pair().isAdded() : c.pair().isRemoved()))
+                .distinct().toList();
+        assertEquals("changes of " + name + " in " + describe(analysis), 1, found.size());
+        return found.getFirst();
+    }
+
+    @Test
+    public void removedOverrideStillInheritedIsCompatible() throws Exception {
+        assertCompatible(analyze(
+                Map.of("p/Base.java", BASE_RUN,
+                        "p/Foo.java", "package p; public class Foo extends Base { public void run() { }"
+                                + " public void a() { } }"),
+                Map.of("p/Base.java", BASE_RUN,
+                        "p/Foo.java", "package p; public class Foo extends Base { public void a() { } }")));
+    }
+
+    @Test
+    public void removedToStringOverrideIsCompatible() throws Exception {
+        assertCompatible(analyze(
+                "package p; public class Foo { public String toString() { return \"\"; } public void a() { } }",
+                "package p; public class Foo { public void a() { } }"));
+    }
+
+    /**
+     * The method is still there for the clients of {@code Foo}, inherited from {@code Base}. For {@code Base} it is
+     * a new method of an extensible class, so a subclass a client wrote elsewhere may already have one like it.
+     */
+    @Test
+    public void methodPulledUpToSuperclass() throws Exception {
+        DiffAnalysis a = analyze(
+                Map.of("p/Base.java", "package p; public class Base { public void b() { } }",
+                        "p/Foo.java", "package p; public class Foo extends Base { public void m() { }"
+                                + " public void a() { } }"),
+                Map.of("p/Base.java", "package p; public class Base { public void b() { } public void m() { } }",
+                        "p/Foo.java", "package p; public class Foo extends Base { public void a() { } }"));
+        assertEquals(Set.of(), change(a, "m", false).incompatibilities());
+        assertEquals(set(METHOD_ADDED), change(a, "m", true).incompatibilities());
+    }
+
+    @Test
+    public void removedOverrideOfAbstractMethod() throws Exception {
+        String base = "package p; public abstract class Base { public abstract void run(); }";
+        assertEquals(set(ABSTRACT_ADDED), of(analyze(
+                Map.of("p/Base.java", base,
+                        "p/Foo.java", "package p; public abstract class Foo extends Base { public void run() { }"
+                                + " public void a() { } }"),
+                Map.of("p/Base.java", base,
+                        "p/Foo.java", "package p; public abstract class Foo extends Base { public void a() { } }")),
+                "run"));
+    }
+
+    @Test
+    public void removedOverrideOfLessVisibleMethod() throws Exception {
+        String base = "package p; public class Base { protected void run() { } }";
+        assertEquals(set(VISIBILITY_REDUCED), of(analyze(
+                Map.of("p/Base.java", base,
+                        "p/Foo.java", "package p; public class Foo extends Base { public void run() { }"
+                                + " public void a() { } }"),
+                Map.of("p/Base.java", base,
+                        "p/Foo.java", "package p; public class Foo extends Base { public void a() { } }")),
+                "run"));
+    }
+
+    /** The clients call {@code Foo.get()} returning {@code String}, which the inherited one does not. */
+    @Test
+    public void removedCovariantOverride() throws Exception {
+        String base = "package p; public class Base { public Object get() { return null; } }";
+        assertEquals(set(REMOVED), of(analyze(
+                Map.of("p/Base.java", base,
+                        "p/Foo.java", "package p; public class Foo extends Base { public String get() { return \"\"; }"
+                                + " public void a() { } }"),
+                Map.of("p/Base.java", base,
+                        "p/Foo.java", "package p; public class Foo extends Base { public void a() { } }")),
+                "get"));
+    }
+
+    @Test
+    public void removedInterfaceMethodStillInSuperinterfaceIsCompatible() throws Exception {
+        String sup = "package p; public interface Sup { void run(); }";
+        assertCompatible(analyze(
+                Map.of("p/Sup.java", sup,
+                        "p/Foo.java", "package p; public interface Foo extends Sup { void run(); void a(); }"),
+                Map.of("p/Sup.java", sup,
+                        "p/Foo.java", "package p; public interface Foo extends Sup { void a(); }")));
+    }
+
+    @Test
+    public void redundantSupertypeRemovedIsCompatible() throws Exception {
+        String base = "package p; public class Base implements Runnable { public void run() { } }";
+        assertCompatible(analyze(
+                Map.of("p/Base.java", base,
+                        "p/Foo.java", "package p; public class Foo extends Base implements Runnable { }"),
+                Map.of("p/Base.java", base,
+                        "p/Foo.java", "package p; public class Foo extends Base { }")));
+    }
+
+    @Test
+    public void supertypeNotInheritedOtherwiseRemoved() throws Exception {
+        String base = "package p; public class Base { public void run() { } }";
+        assertEquals(set(SUPERTYPE_REMOVED), of(analyze(
+                Map.of("p/Base.java", base,
+                        "p/Foo.java", "package p; public class Foo extends Base implements Runnable { }"),
+                Map.of("p/Base.java", base,
+                        "p/Foo.java", "package p; public class Foo extends Base { }")),
+                "Foo"));
+    }
+
+    @Test
+    public void addedOverridesAreNotNewMethods() throws Exception {
+        DiffAnalysis a = analyze(
+                Map.of("p/Base.java", BASE_RUN,
+                        "p/Foo.java", "package p; public class Foo extends Base { public void a() { } }"),
+                Map.of("p/Base.java", BASE_RUN,
+                        "p/Foo.java", "package p; public class Foo extends Base { public void a() { }"
+                                + " public void run() { } public String toString() { return \"\"; }"
+                                + " public void b() { } }"));
+        assertEquals(Set.of(), of(a, "run"));
+        assertEquals(Set.of(), of(a, "toString"));
+        assertEquals(set(METHOD_ADDED), of(a, "b"));
+    }
+
+    @Test
+    public void interfaceRedeclaringToStringIsCompatible() throws Exception {
+        assertCompatible(analyze("package p; public interface Foo { void a(); }",
+                "package p; public interface Foo { void a(); String toString(); }"));
+    }
+
+    @Test
+    public void interfaceRedeclaringDefaultMethodAsAbstract() throws Exception {
+        String sup = "package p; public interface Sup { default void m() { } }";
+        assertEquals(set(ABSTRACT_METHOD_ADDED), of(analyze(
+                Map.of("p/Sup.java", sup, "p/Foo.java", "package p; public interface Foo extends Sup { void a(); }"),
+                Map.of("p/Sup.java", sup,
+                        "p/Foo.java", "package p; public interface Foo extends Sup { void a(); void m(); }")),
+                "m"));
+    }
+
+    /** Analyzes a change of the package private {@code p/Base.java} next to the unchanged {@code p/Foo.java}. */
+    private static DiffAnalysis analyzeBase(String foo, String before, String after) throws Exception {
+        return analyze(Map.of("p/Foo.java", foo, "p/Base.java", before),
+                Map.of("p/Foo.java", foo, "p/Base.java", after));
+    }
+
+    private static final String FOO_EXTENDS_BASE = "package p; public class Foo extends Base { }";
+
+    @Test
+    public void methodRemovedFromPackagePrivateBaseOfPublicClass() throws Exception {
+        assertEquals(set(REMOVED), of(analyzeBase(FOO_EXTENDS_BASE,
+                "package p; class Base { public void m() { } public void k() { } }",
+                "package p; class Base { public void k() { } }"), "m"));
+    }
+
+    @Test
+    public void returnTypeChangedInPackagePrivateBaseOfPublicClass() throws Exception {
+        assertEquals(set(TYPE_CHANGED), of(analyzeBase(FOO_EXTENDS_BASE,
+                "package p; class Base { public void m() { } }",
+                "package p; class Base { public int m() { return 1; } }"), "m"));
+    }
+
+    @Test
+    public void methodAddedToPackagePrivateBaseOfExtensiblePublicClass() throws Exception {
+        assertEquals(set(METHOD_ADDED), of(analyzeBase(FOO_EXTENDS_BASE,
+                "package p; class Base { public void k() { } }",
+                "package p; class Base { public void k() { } public void m() { } }"), "m"));
+    }
+
+    @Test
+    public void methodAddedToPackagePrivateBaseOfFinalPublicClassIsCompatible() throws Exception {
+        assertCompatible(analyzeBase("package p; public final class Foo extends Base { }",
+                "package p; class Base { public void k() { } }",
+                "package p; class Base { public void k() { } public void m() { } }"));
+    }
+
+    @Test
+    public void packagePrivateBaseWithoutPublicSubclassIsCompatible() throws Exception {
+        assertCompatible(analyzeBase("package p; public class Foo { }",
+                "package p; class Base { public void m() { } public void k() { } }",
+                "package p; class Base { public int k() { return 1; } public void n() { } }"));
+    }
+
+    @Test
+    public void methodRemovedFromPackagePrivateNestedBase() throws Exception {
+        assertEquals(set(REMOVED), of(analyze(
+                Map.of("p/Outer.java", "package p; public class Outer {"
+                        + " static class Base { public void m() { } public void k() { } }"
+                        + " public static class Sub extends Base { } }"),
+                Map.of("p/Outer.java", "package p; public class Outer { static class Base { public void k() { } }"
+                        + " public static class Sub extends Base { } }")), "m"));
+    }
 }

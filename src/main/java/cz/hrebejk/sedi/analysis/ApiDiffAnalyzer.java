@@ -311,9 +311,9 @@ final class ApiDiffAnalyzer {
                     : changes(v.oldPrimary(), v.newPrimary(), v.newPrimary().getName(),
                     Visibility.isExposed(v.newPrimary(), true, false),
                     new ElementPair(v.oldPrimary(), v.newPrimary(), Set.of()), sources, moves,
-                    Compatibility.check(new ElementPair(v.oldPrimary(), v.newPrimary(),
-                            MemberMatcher.changedFacets(v.oldPrimary(), v.newPrimary())),
-                            v.oldRoot(), v.newRoot(), true));
+                    new Compatibility(v.oldRoot(), v.newRoot(), true, oldUnit, newUnit)
+                            .check(new ElementPair(v.oldPrimary(), v.newPrimary(),
+                                    MemberMatcher.changedFacets(v.oldPrimary(), v.newPrimary()))));
             files.add(new FileAnalysis(diff, oldUnit, newUnit, oldRoots.get(i), newRoot, v.oldPrimary(),
                     v.newPrimary(), className(oldUnit, diff.getOldPath()), className(newUnit, diff.getNewPath()),
                     packageName(oldUnit), packageName(newUnit), primary,
@@ -419,6 +419,8 @@ final class ApiDiffAnalyzer {
                                       Set<Incompatibility> incompatibilities) {
         MemberMatcher.Matches matches = MemberMatcher.matchAll(oldContainer, newContainer);
         boolean inInterface = Visibility.isInterface(newContainer);
+        Compatibility compatibility = new Compatibility(oldContainer, newContainer, exposed, sources.oldUnit(),
+                sources.newUnit());
         List<MemberChange> changes = new ArrayList<>();
         List<ElementPair> changed = new ArrayList<>();
         // The moved types are diffed with the file their old version is in.
@@ -443,7 +445,7 @@ final class ApiDiffAnalyzer {
             ElementInfo shown = pair.isRemoved() ? pair.oldElement() : pair.newElement();
             boolean publicApi = Visibility.isExposed(shown, exposed, inInterface);
             changes.add(new MemberChange(pair, ChangeLevel.API, publicApi, null,
-                    Compatibility.check(pair, oldContainer, newContainer, exposed)));
+                    compatibility.check(pair)));
             if (!pair.isAdded() && !pair.isRemoved() && isCode(pair)) {
                 sources.addBodyChanges(changes, pair, publicApi, true, Set.of());
             }
@@ -456,10 +458,10 @@ final class ApiDiffAnalyzer {
             }
             if (isCode(pair)) {
                 sources.addBodyChanges(changes, pair, publicApi, false,
-                        Compatibility.check(pair, oldContainer, newContainer, exposed));
+                        compatibility.check(pair));
             } else {
                 // A type of the same signature can still break the clients, if its package changed.
-                Set<Incompatibility> moved = Compatibility.check(pair, oldContainer, newContainer, exposed);
+                Set<Incompatibility> moved = compatibility.check(pair);
                 if (!moved.isEmpty()) {
                     changes.add(new MemberChange(pair, ChangeLevel.API, publicApi, null, moved));
                 }
@@ -475,7 +477,7 @@ final class ApiDiffAnalyzer {
             nested.add(changes(type.oldElement(), type.newElement(), type.newElement().getName(),
                     Visibility.isExposed(type.newElement(), exposed, inInterface), type,
                     movedSources.getOrDefault(type, sources), moves,
-                    Compatibility.check(type, oldContainer, newContainer, exposed)));
+                    compatibility.check(type)));
         }
         return new ApiChanges(typeName, exposed, typePair, changes, nested, incompatibilities);
     }
@@ -506,7 +508,8 @@ final class ApiDiffAnalyzer {
             Located from = moves.from(child);
             if (from != null) {
                 ElementPair pair = moved(from, child);
-                Set<Incompatibility> incompatibilities = Compatibility.check(pair, null, type, exposed);
+                Set<Incompatibility> incompatibilities =
+                        new Compatibility(null, type, exposed, null, sources.newUnit()).check(pair);
                 changes.add(new MemberChange(pair, ChangeLevel.API, childExposed, null, incompatibilities));
                 nested.add(changes(from.type(), child, child.getName(), childExposed, pair,
                         new Sources(from.unit(), sources.newUnit()), moves, incompatibilities));
