@@ -27,7 +27,9 @@ import java.util.function.Consumer;
 
 /**
  * Watches a directory tree and reports batches of changed {@code .java} files. Events arriving
- * in quick succession are merged into one batch. Hidden directories and {@code target} are ignored.
+ * in quick succession are merged into one batch. Hidden directories and {@code target} are ignored,
+ * except the refs of a {@code .git} directory in the root: a commit changes {@code .git/HEAD} or a
+ * file under {@code .git/refs}, which are reported too.
  */
 public final class DirectoryWatcher implements AutoCloseable {
 
@@ -35,6 +37,8 @@ public final class DirectoryWatcher implements AutoCloseable {
 
     private final WatchService service;
     private final Map<WatchKey, Path> directories = new HashMap<>();
+    /** The git directory of the root, watched for changes of its refs. */
+    private final Path gitDir;
 
     /**
      * Starts watching the tree below the root.
@@ -44,13 +48,22 @@ public final class DirectoryWatcher implements AutoCloseable {
      */
     public DirectoryWatcher(Path root) throws IOException {
         service = root.getFileSystem().newWatchService();
+        gitDir = root.resolve(".git");
         register(root);
+        if (Files.isDirectory(gitDir)) {
+            directories.put(gitDir.register(service, StandardWatchEventKinds.ENTRY_CREATE,
+                    StandardWatchEventKinds.ENTRY_MODIFY, StandardWatchEventKinds.ENTRY_DELETE), gitDir);
+            Path refs = gitDir.resolve("refs");
+            if (Files.isDirectory(refs)) {
+                register(refs);
+            }
+        }
     }
 
     /**
      * Blocks until interrupted, passing every batch of changed Java files to the listener.
      *
-     * @param listener receives absolute paths of created, modified or deleted {@code .java} files
+     * @param listener receives absolute paths of created, modified or deleted {@code .java} files and git refs
      * @throws IOException if watching fails
      */
     public void run(Consumer<Set<Path>> listener) throws IOException {
@@ -77,8 +90,11 @@ public final class DirectoryWatcher implements AutoCloseable {
             if (event.context() instanceof Path name && dir != null) {
                 Path path = dir.resolve(name);
                 if (event.kind() == StandardWatchEventKinds.ENTRY_CREATE && Files.isDirectory(path)) {
-                    register(path);
-                } else if (path.toString().endsWith(".java")) {
+                    // Of the git directory only the refs are watched, not its objects.
+                    if (!path.startsWith(gitDir) || path.startsWith(gitDir.resolve("refs"))) {
+                        register(path);
+                    }
+                } else if (path.toString().endsWith(".java") || isRef(path)) {
                     changed.add(path);
                 }
             }
@@ -86,6 +102,15 @@ public final class DirectoryWatcher implements AutoCloseable {
         if (!key.reset()) {
             directories.remove(key);
         }
+    }
+
+    /**
+     * Whether the path is {@code .git/HEAD} or a ref under {@code .git/refs}; a ref is written to a
+     * {@code .lock} file first, which is left out.
+     */
+    private boolean isRef(Path path) {
+        return path.equals(gitDir.resolve("HEAD"))
+                || path.startsWith(gitDir.resolve("refs")) && !path.toString().endsWith(".lock");
     }
 
     private void register(Path root) throws IOException {

@@ -312,9 +312,11 @@ public class Main implements Callable<Integer> {
             if (commit != null && !comparesWorkingCopy()) {
                 Thread.currentThread().join();
             }
+            // A commit changes no source but what is compared: HEAD instead of the working copy.
+            Path gitDir = projectDir.resolve(".git");
             try (DirectoryWatcher watcher = new DirectoryWatcher(projectDir)) {
                 watcher.run(changed -> {
-                    if (changed.stream().anyMatch(p -> java.test(p.toString()))) {
+                    if (changed.stream().anyMatch(p -> java.test(p.toString()) || p.startsWith(gitDir))) {
                         report.analyze(analysis, java);
                     }
                 });
