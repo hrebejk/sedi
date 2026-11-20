@@ -14,6 +14,7 @@ import junit.framework.TestCase;
 import cz.hrebejk.sedi.compilation.AstLoader;
 import cz.hrebejk.sedi.compilation.CompilationUnitInfo;
 import cz.hrebejk.sedi.compilation.SourceFileProvider;
+import cz.hrebejk.sedi.compilation.SourceModule;
 import cz.hrebejk.sedi.util.GitInspector;
 import org.eclipse.jgit.revwalk.RevCommit;
 
@@ -192,6 +193,104 @@ public class DiffAstAnalyzerTest extends TestCase {
                 assertNull(analyzer.analyzeChanges().range().newCommit());
                 RevCommit head = helper.commit("rename");
                 assertEquals(head.getId(), analyzer.analyzeChanges().range().newCommit());
+            }
+        }
+    }
+    private static final String CORE = "core/src/main/java";
+    private static final String APP = "app/src/main/java";
+
+    /** The core module, compiled only against itself, and the app module, compiled against itself and core. */
+    private static List<SourceModule> modules(AstLoader coreLoader, AstLoader appLoader) {
+        return List.of(new SourceModule(List.of(CORE), List.of(CORE), coreLoader),
+                new SourceModule(List.of(APP), List.of(APP, CORE), appLoader));
+    }
+
+    /** The number of names javac could not resolve in the new version of the file. */
+    private static int unresolved(FileAnalysis file) {
+        return unresolved(file.newRoot());
+    }
+
+    private static int unresolved(ElementInfo element) {
+        int count = element.getUnresolved().size();
+        for (ElementInfo child : element.getChildren()) {
+            count += unresolved(child);
+        }
+        return count;
+    }
+
+    /** Writes core's {@code A} and app's {@code B} calling it, and commits them. */
+    private static void writeModules(GitTestHelper helper) throws Exception {
+        helper.writeFile(CORE + "/p/A.java", A_OLD);
+        helper.writeFile(APP + "/q/B.java", appB("helper", 0));
+        helper.commit("init");
+    }
+
+    private static String appB(String call, int plus) {
+        return "package q;\nimport p.A;\npublic class B {\n  int use(A a) { return a." + call + "() + " + plus
+                + "; }\n}\n";
+    }
+
+    /** A file of a module refers to a class of a module it depends on, which javac finds and resolves. */
+    public void testModuleResolvesDependency() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            writeModules(helper);
+            helper.writeFile(APP + "/q/B.java", appB("helper", 1));
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath(),
+                    GitInspector.DEFAULT_RENAME_SCORE, modules(new AstLoader(), new AstLoader()))) {
+                FileAnalysis b = fileNamed(analyzer.analyzeChanges(), "B.java");
+                assertEquals(0, unresolved(b));
+                assertEquals(List.of("IMPLEMENTATION:use"), levels(b));
+            }
+        }
+    }
+
+    /**
+     * A method renamed in one module and its caller in another: the rename is an API change of the first, the
+     * call only a cosmetic change of the second.
+     */
+    public void testRenameAcrossModules() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            writeModules(helper);
+            helper.writeFile(CORE + "/p/A.java", A_NEW);
+            helper.writeFile(APP + "/q/B.java", appB("assist", 0));
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath(),
+                    GitInspector.DEFAULT_RENAME_SCORE, modules(new AstLoader(), new AstLoader()))) {
+                DiffAnalysis analysis = analyzer.analyzeChanges();
+                assertEquals(List.of("API:assist"), levels(fileNamed(analysis, "A.java")));
+                assertEquals(List.of("COSMETIC:use"), levels(fileNamed(analysis, "B.java")));
+            }
+        }
+    }
+
+    /** A module does not see the classes of a module depending on it: a reference to one is unresolved. */
+    public void testModulesAreIsolated() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            writeModules(helper);
+            helper.writeFile(CORE + "/p/A.java",
+                    "package p;\npublic class A {\n  public int helper() { return 1; }\n"
+                            + "  public Object app() { return new q.B(); }\n}\n");
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath(),
+                    GitInspector.DEFAULT_RENAME_SCORE, modules(new AstLoader(), new AstLoader()))) {
+                FileAnalysis a = fileNamed(analyzer.analyzeChanges(), "A.java");
+                assertTrue(unresolved(a) > 0);
+            }
+        }
+    }
+
+    /** The files of each module are compiled in a javac task of their own, by the loader of their module. */
+    public void testEachModuleIsCompiledSeparately() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            writeModules(helper);
+            helper.writeFile(CORE + "/p/A.java", A_NEW);
+            helper.writeFile(APP + "/q/B.java", appB("assist", 0));
+            RecordingLoader core = new RecordingLoader();
+            RecordingLoader app = new RecordingLoader();
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath(),
+                    GitInspector.DEFAULT_RENAME_SCORE, modules(core, app))) {
+                analyzer.analyzeChanges();
+                // The old versions, then the new ones.
+                assertEquals(List.of(List.of(CORE + "/p/A.java"), List.of(CORE + "/p/A.java")), core.loads);
+                assertEquals(List.of(List.of(APP + "/q/B.java"), List.of(APP + "/q/B.java")), app.loads);
             }
         }
     }

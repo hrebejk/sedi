@@ -17,9 +17,9 @@ import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.Repository;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
@@ -44,12 +44,10 @@ import java.util.function.Predicate;
  */
 public class DiffAstAnalyzer implements AutoCloseable {
 
-    private static final List<String> CONVENTIONAL_ROOTS = List.of("src/main/java", "src/test/java");
-
     private final Path repositoryPath;
     private final GitInspector inspector;
-    private final AstLoader astLoader;
-    private final List<String> sourceRoots;
+    /** The parts of the project compiled separately; never empty. */
+    private final List<SourceModule> modules;
     private Git git;
     /** The old commit the cached old versions are from; {@code null} also when nothing is cached. */
     private ObjectId cachedOldCommit;
@@ -106,16 +104,27 @@ public class DiffAstAnalyzer implements AutoCloseable {
      * @throws IllegalArgumentException if the score is not between 0 and 100
      */
     public DiffAstAnalyzer(Path repositoryPath, AstLoader astLoader, int renameScore, List<String> sourceRoots) {
+        this(repositoryPath, renameScore, List.of(SourceModule.of(repositoryPath, sourceRoots, astLoader)));
+    }
+
+    /**
+     * Creates a new DiffAstAnalyzer for a project made of modules compiled separately, such as the modules of a
+     * multi-module Maven project. Each changed file is compiled with the module whose own roots contain it most
+     * specifically, or with the first module if none does. Renames are still found across all the modules.
+     *
+     * @param repositoryPath path to the Git repository
+     * @param renameScore    the least similarity, in percent (0 - 100), of an added and a deleted file for git to
+     *                       report them as a rename
+     * @param modules        the modules of the project, at least one
+     * @throws IllegalArgumentException if the score is not between 0 and 100 or there are no modules
+     */
+    public DiffAstAnalyzer(Path repositoryPath, int renameScore, List<SourceModule> modules) {
+        if (modules.isEmpty()) {
+            throw new IllegalArgumentException("No modules");
+        }
         this.inspector = new GitInspector(repositoryPath, renameScore);
         this.repositoryPath = repositoryPath;
-        this.astLoader = astLoader;
-        if (sourceRoots.isEmpty()) {
-            List<String> roots = CONVENTIONAL_ROOTS.stream()
-                    .filter(root -> Files.isDirectory(repositoryPath.resolve(root))).toList();
-            this.sourceRoots = roots.isEmpty() ? List.of("") : roots;
-        } else {
-            this.sourceRoots = List.copyOf(sourceRoots);
-        }
+        this.modules = List.copyOf(modules);
     }
 
     /**
@@ -199,14 +208,16 @@ public class DiffAstAnalyzer implements AutoCloseable {
     private DiffAnalysis analyzeAll(List<DiffEntry> diffs, GitInspector.Range range) throws IOException {
         Repository repo = repository();
 
-        List<SourceFileProvider> oldProviders = new ArrayList<>();
-        List<SourceFileProvider> newProviders = new ArrayList<>();
-        if (range.oldCommit() != null) {
-            oldProviders.add(SourceFileProvider.gitTree(repo, range.oldCommit(), sourceRoots));
+        // The providers of each module, by the index of the module.
+        List<List<SourceFileProvider>> oldProviders = new ArrayList<>();
+        List<List<SourceFileProvider>> newProviders = new ArrayList<>();
+        for (SourceModule module : modules) {
+            oldProviders.add(range.oldCommit() == null ? List.of()
+                    : List.of(SourceFileProvider.gitTree(repo, range.oldCommit(), module.sourceRoots())));
+            newProviders.add(List.of(range.newCommit() == null
+                    ? SourceFileProvider.directories(repositoryPath, module.sourceRoots())
+                    : SourceFileProvider.gitTree(repo, range.newCommit(), module.sourceRoots())));
         }
-        newProviders.add(range.newCommit() == null
-                ? SourceFileProvider.directories(repositoryPath, sourceRoots)
-                : SourceFileProvider.gitTree(repo, range.newCommit(), sourceRoots));
 
         List<String> oldPaths = new ArrayList<>();
         List<String> newPaths = new ArrayList<>();
@@ -225,7 +236,7 @@ public class DiffAstAnalyzer implements AutoCloseable {
      * Loads the old versions, compiling only those not compiled by an earlier analysis of the same old commit.
      * The result has a {@code null} for every {@code null} path.
      */
-    private List<CompilationUnitInfo> loadOld(ObjectId oldCommit, List<SourceFileProvider> providers,
+    private List<CompilationUnitInfo> loadOld(ObjectId oldCommit, List<List<SourceFileProvider>> providers,
                                               List<String> paths) throws IOException {
         if (!Objects.equals(oldCommit, cachedOldCommit)) {
             oldUnits.clear();
@@ -247,15 +258,46 @@ public class DiffAstAnalyzer implements AutoCloseable {
         return result;
     }
 
-    /** Loads the files in a single compilation; the result has a {@code null} for every {@code null} path. */
-    private List<CompilationUnitInfo> load(List<SourceFileProvider> providers, List<String> paths)
+    /**
+     * Loads the files in one compilation per module, each with the providers of its module (by the index of the
+     * module); the result has a {@code null} for every {@code null} path.
+     */
+    private List<CompilationUnitInfo> load(List<List<SourceFileProvider>> providers, List<String> paths)
             throws IOException {
-        List<Path> present = paths.stream().filter(Objects::nonNull).map(Path::of).toList();
-        Iterator<CompilationUnitInfo> loaded = astLoader.load(providers, present).iterator();
-        List<CompilationUnitInfo> result = new ArrayList<>();
-        for (String path : paths) {
-            result.add(path == null ? null : loaded.next());
+        // The indexes of the paths of each module, by the index of the module.
+        List<List<Integer>> byModule = new ArrayList<>();
+        modules.forEach(m -> byModule.add(new ArrayList<>()));
+        for (int i = 0; i < paths.size(); i++) {
+            if (paths.get(i) != null) {
+                byModule.get(moduleOf(paths.get(i))).add(i);
+            }
         }
-        return result;
+        CompilationUnitInfo[] result = new CompilationUnitInfo[paths.size()];
+        for (int m = 0; m < modules.size(); m++) {
+            List<Integer> indexes = byModule.get(m);
+            if (indexes.isEmpty()) {
+                continue;
+            }
+            List<Path> present = indexes.stream().map(i -> Path.of(paths.get(i))).toList();
+            Iterator<CompilationUnitInfo> loaded = modules.get(m).loader().load(providers.get(m), present).iterator();
+            for (int i : indexes) {
+                result[i] = loaded.next();
+            }
+        }
+        return Arrays.asList(result);
+    }
+
+    /** The index of the module of the file: the one whose own roots contain it most specifically, else the first. */
+    private int moduleOf(String path) {
+        int best = 0;
+        int bestMatch = -1;
+        for (int m = 0; m < modules.size(); m++) {
+            int match = modules.get(m).match(path);
+            if (match > bestMatch) {
+                best = m;
+                bestMatch = match;
+            }
+        }
+        return best;
     }
 }
