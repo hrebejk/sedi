@@ -28,7 +28,6 @@ import org.maraboo.fleck.html.HTML;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -574,10 +573,21 @@ public final class Reporter {
 
     /**
      * An element shown in a tree: the lines above its signature, like the javadoc and the annotations, the line of
-     * the signature, the lines below it, like the body, and the elements in it; the element itself, as it is now
-     * unless it was removed.
+     * the signature, the lines below it, like the body, the elements in it, and the lines after them, like the
+     * closing brace of a type; the element itself, as it is now unless it was removed.
      */
-    private record Node(List<Line> above, Line head, List<Line> below, List<Node> children, ElementInfo element) { }
+    private record Node(List<Line> above, Line head, List<Line> below, List<Node> children, List<Line> after,
+                        ElementInfo element) {
+
+        Node(List<Line> above, Line head, List<Line> below, List<Node> children, ElementInfo element) {
+            this(above, head, below, children, List.of(), element);
+        }
+
+        /** Whether there is something under the signature to fold. */
+        boolean isFoldable() {
+            return !below.isEmpty() || !children.isEmpty() || !after.isEmpty();
+        }
+    }
 
     /** Adds a top level element, its signature indented by {@code indent}, with the tree of the elements in it. */
     private void addTree(List<Line> lines, String indent, Node node) {
@@ -586,6 +596,7 @@ public final class Reporter {
         lines.add(node.head().withPrefix(indent));
         node.below().forEach(l -> lines.add(l.withPrefix(indent)));
         addBranches(lines, Fragment.of(indent), node.children());
+        node.after().forEach(l -> lines.add(l.withPrefix(indent)));
         foldEnd(lines, node);
     }
 
@@ -594,7 +605,7 @@ public final class Reporter {
      * signature can collapse them; the javadoc and the annotations above it stay out of the fold.
      */
     private static void foldStart(List<Line> lines, Node node) {
-        if (!node.below().isEmpty() || !node.children().isEmpty()) {
+        if (node.isFoldable()) {
             lines.add(Line.elementFold(node.head().content().text(),
                     node.element().getNodeType() == ElementInfo.NodeType.TYPE, node.element().getJavadoc()));
         }
@@ -602,7 +613,7 @@ public final class Reporter {
 
     /** Ends the fold {@link #foldStart} started, if any. */
     private static void foldEnd(List<Line> lines, Node node) {
-        if (!node.below().isEmpty() || !node.children().isEmpty()) {
+        if (node.isFoldable()) {
             lines.add(Line.end());
         }
     }
@@ -619,6 +630,7 @@ public final class Reporter {
             lines.add(node.head().withPrefix(prefix.plus(branch(last ? "\u2514\u2500\u2500 " : "\u251c\u2500\u2500 "))));
             node.below().forEach(l -> lines.add(l.withPrefix(below)));
             addBranches(lines, below, node.children());
+            node.after().forEach(l -> lines.add(l.withPrefix(below)));
             foldEnd(lines, node);
         }
     }
@@ -1001,79 +1013,168 @@ public final class Reporter {
 
     /**
      * The node of an added or removed element showing its whole source, every line marked as added or removed, the
-     * javadoc of an added one above it.
+     * javadoc of an added one above it. A type is shown as a tree of its members.
      */
     private Node wholeNode(MemberChange change) {
         boolean added = change.pair().isAdded();
         ElementInfo element = added ? change.pair().newElement() : change.pair().oldElement();
-        String text = element.getSourceText();
-        if (text == null) {
+        if (element.getSourceText() == null) {
             return declarationNode(change.pair(), "", null, Markup.incompatible(change.incompatibilities()),
                     List.of(), List.of());
         }
-        List<Fragment> code = Syntax.lines(element.getSourceTextRuns());
-        char marker = added ? '+' : '-';
-        long first = element.getStartLine();
-        Map<Long, ElementInfo> moved = new HashMap<>();
-        if (added && first > 0) {
-            collectMoved(element, moved);
-        }
-        // The javadoc of a moved type moved with it.
-        Set<Long> movedJavadoc = new HashSet<>();
-        List<String> source = text.lines().toList();
-        moved.values().forEach(type -> {
-            if (type.getJavadocLine() > 0) {
-                // The javadoc line is that of its first text, the /** can be above it.
-                long start = type.getJavadocLine();
-                while (start > first && !source.get((int) (start - first)).contains("/**")) {
-                    start--;
-                }
-                for (long l = start; l < type.getStartLine(); l++) {
-                    movedJavadoc.add(l);
-                }
-            }
-        });
-        List<Line> lines = new ArrayList<>();
-        for (int i = 0; i < code.size(); i++) {
-            if (movedJavadoc.contains(first + i)) {
-                continue;
-            }
-            lines.add(Line.number(first <= 0 ? 0 : first + i, marker, code.get(i)));
-            ElementInfo type = moved.get(first + i);
-            if (type != null) {
-                // A moved type is not new code: its first line stands for it. A page can expand the rest of it, as it
-                // is, not marked as added.
-                int count = (int) type.getSourceText().lines().count();
-                int last = Math.min(i + count - 1, code.size() - 1);
-                boolean fold = options.foldContext() && last > i;
-                if (fold) {
-                    lines.add(Line.elided());
-                }
-                lines.add(Line.number(0, ' ', Markup.style(Css.NOTE,
-                        "\u2026 moved from " + type.getMovedFrom() + " (" + (count - 1) + " lines)")));
-                if (fold) {
-                    for (int j = i + 1; j <= last; j++) {
-                        lines.add(Line.number(first + j, ' ', code.get(j)));
-                    }
-                    lines.add(Line.end());
-                }
-                i = last;
-            }
-        }
-        Line head = lines.get(0).append(Markup.incompatible(change.incompatibilities()));
-        return new Node(javadocLines(change.pair()), head, lines.subList(1, lines.size()), List.of(), element);
+        Whole whole = new Whole(Syntax.lines(element.getSourceTextRuns()), element.getStartLine(), added);
+        Node node = whole.node(element, javadocLines(change.pair()), true);
+        return new Node(node.above(), node.head().append(Markup.incompatible(change.incompatibilities())),
+                node.below(), node.children(), node.after(), element);
     }
 
-    /** Collects the types moved into the type, at any depth, by their first lines. */
-    private static void collectMoved(ElementInfo type, Map<Long, ElementInfo> moved) {
-        for (ElementInfo child : type.getChildren()) {
-            if (child.getNodeType() == ElementInfo.NodeType.TYPE) {
-                if (child.getMovedFrom() != null && child.getSourceText() != null && child.getStartLine() > 0) {
-                    moved.put(child.getStartLine(), child);
-                } else {
-                    collectMoved(child, moved);
+    /**
+     * The whole source of an added or removed element, cut into the nodes of the elements in it.
+     *
+     */
+    private final class Whole {
+
+        /** The lines of the source of the element. */
+        private final List<Fragment> code;
+        /** The line of the source where the element starts, {@code 0} if not known. */
+        private final long first;
+        /** Whether the element was added, else it was removed. */
+        private final boolean added;
+
+        Whole(List<Fragment> code, long first, boolean added) {
+            this.code = code;
+            this.first = first;
+            this.added = added;
+        }
+
+        /**
+         * The node of an element of the source, or of the element itself.
+         *
+         * @param above the lines shown above its signature
+         * @param top   whether it is the element itself
+         */
+        Node node(ElementInfo element, List<Line> above, boolean top) {
+            int from = top ? 0 : index(element.getStartLine());
+            int to = top ? code.size() - 1
+                    : Math.min(from + (int) element.getSourceText().lines().count() - 1, code.size() - 1);
+            int indent = indent(from);
+            // The annotations go above the signature.
+            int declaration = first <= 0 ? from : Math.clamp(index(element.getLine()), from, to);
+            List<Line> allAbove = new ArrayList<>(above);
+            allAbove.addAll(lines(from, declaration - 1, indent, false));
+            Line head = line(declaration, indent);
+            if (!top && added && element.getMovedFrom() != null) {
+                return new Node(allAbove, head, moved(element, declaration, to, indent), List.of(), element);
+            }
+            List<ElementInfo> members = members(element, declaration, to);
+            if (members.isEmpty()) {
+                return new Node(allAbove, head, lines(declaration + 1, to, indent, false), List.of(), element);
+            }
+            // The rest of the header of the type, up to the opening brace.
+            int open = declaration;
+            while (open < to && !code.get(open).text().contains("{")) {
+                open++;
+            }
+            List<Line> below = lines(declaration + 1, open, indent, false);
+            List<Node> children = new ArrayList<>();
+            int next = open + 1;
+            for (ElementInfo member : members) {
+                int start = javadocStart(member, next);
+                // What is between the members, like comments and initializers, goes above the next one.
+                List<Line> gap = lines(next, start - 1, indent(index(member.getStartLine())), true);
+                gap.addAll(member.getMovedFrom() != null && added ? List.of() : javadoc(member));
+                children.add(node(member, gap, false));
+                next = index(member.getStartLine()) + (int) member.getSourceText().lines().count();
+            }
+            return new Node(allAbove, head, below, children, lines(next, to, indent, true), element);
+        }
+
+        /** The members with a place of their own in the lines of the type, after its first line. */
+        private List<ElementInfo> members(ElementInfo type, int from, int to) {
+            if (type.getNodeType() != ElementInfo.NodeType.TYPE || first <= 0) {
+                return List.of();
+            }
+            List<ElementInfo> members = new ArrayList<>(type.getChildren().stream()
+                    .filter(m -> m.getSourceText() != null && m.getStartLine() > 0)
+                    .sorted(Comparator.comparingLong(ElementInfo::getStartLine))
+                    .toList());
+            List<ElementInfo> result = new ArrayList<>();
+            int end = from;
+            for (ElementInfo member : members) {
+                int start = index(member.getStartLine());
+                // Enum constants or fields declared together share their lines.
+                if (start > end) {
+                    end = start + (int) member.getSourceText().lines().count() - 1;
+                    if (end <= to) {
+                        result.add(member);
+                    }
                 }
             }
+            return result;
+        }
+
+        /** The first line of the member with its javadoc, which starts after {@code next}. */
+        private int javadocStart(ElementInfo member, int next) {
+            int start = index(member.getStartLine());
+            if (member.getJavadocLine() > 0) {
+                // The javadoc line is that of its first text, the /** can be above it.
+                int line = Math.max(index(member.getJavadocLine()), next);
+                while (line > next && !code.get(line).text().contains("/**")) {
+                    line--;
+                }
+                start = Math.min(start, line);
+            }
+            return start;
+        }
+
+        /** The javadoc of a member shown above it. */
+        private List<Line> javadoc(ElementInfo member) {
+            return added ? javadoc.print(new ElementPair(null, member, Set.of())) : List.of();
+        }
+
+        /**
+         * The lines of a moved type after its first one: its first line stands for it, a page can expand the rest of
+         * it, as it is, not marked as added.
+         */
+        private List<Line> moved(ElementInfo type, int from, int to, int indent) {
+            List<Line> lines = new ArrayList<>();
+            boolean fold = options.foldContext() && to > from;
+            if (fold) {
+                lines.add(Line.elided());
+            }
+            lines.add(Line.number(0, ' ', Markup.style(Css.NOTE,
+                    "\u2026 moved from " + type.getMovedFrom() + " (" + (to - from) + " lines)")));
+            if (fold) {
+                lines.addAll(lines(from + 1, to, indent, false).stream()
+                        .map(l -> Line.number(l.number(), ' ', l.content())).toList());
+                lines.add(Line.end());
+            }
+            return lines;
+        }
+
+        /** The lines from {@code from} to {@code to}, without the indentation, the blank ones left out if asked. */
+        private List<Line> lines(int from, int to, int indent, boolean skipBlank) {
+            List<Line> lines = new ArrayList<>();
+            for (int i = Math.max(from, 0); i <= to && i < code.size(); i++) {
+                if (!(skipBlank && code.get(i).text().isBlank())) {
+                    lines.add(line(i, indent));
+                }
+            }
+            return lines;
+        }
+
+        private Line line(int index, int indent) {
+            return Line.number(first <= 0 ? 0 : first + index, added ? '+' : '-', code.get(index).dedent(indent));
+        }
+
+        /** The indentation of a line. */
+        private int indent(int index) {
+            String text = code.get(index).text();
+            return text.length() - text.stripLeading().length();
+        }
+
+        private int index(long line) {
+            return (int) (line - first);
         }
     }
 

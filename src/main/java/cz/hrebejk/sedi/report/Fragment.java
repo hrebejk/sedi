@@ -124,6 +124,25 @@ final class Fragment {
         return new Fragment(list, changed);
     }
 
+    /** The fragment without at most {@code columns} spaces at its start, as far as they are in its text nodes. */
+    Fragment dedent(int columns) {
+        List<HTML> list = new ArrayList<>(nodes);
+        int left = columns;
+        while (left > 0 && !list.isEmpty() && list.getFirst() instanceof HTML.Text t) {
+            int spaces = 0;
+            while (spaces < left && spaces < t.text.length() && t.text.charAt(spaces) == ' ') {
+                spaces++;
+            }
+            left -= spaces;
+            if (spaces < t.text.length()) {
+                list.set(0, HTML.Text(t.text.substring(spaces)));
+                break;
+            }
+            list.removeFirst();
+        }
+        return new Fragment(list, changed);
+    }
+
     /** The fragment without the white space at its end, as far as it is in its text nodes. */
     Fragment stripTrailing() {
         List<HTML> list = new ArrayList<>(nodes);

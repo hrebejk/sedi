@@ -17,6 +17,7 @@ import org.maraboo.fleck.css.Palette;
 import org.maraboo.fleck.css.StyleSheet;
 import org.maraboo.fleck.html.HTML;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
@@ -1157,9 +1158,51 @@ public class ReporterTest extends TestCase {
                 line('+', "  ", tree("│   "), code("  run();")),
                 line('+', "  ", tree("│   "), code("}")),
                 line('+', "  ", tree("└── "), code("static class ", decl("In"), " {")),
-                line('+', "      ", code("  int ", decl("f"), ";")),
+                line('+', "      ", tree("└── "), code("int ", decl("f"), ";")),
                 line('+', "      ", code("}"))),
                 wholeReport(new ReportOptions(ChangeLevel.API), true));
+    }
+
+    /**
+     * Tests that an added type is shown whole as a tree of its members, the comments and annotations above them and
+     * the blank lines between them left out, and that the type and its members with lines under them are folds.
+     */
+    public void testAddedTypeShownAsTree() throws Exception {
+        try (GitTestHelper helper = new GitTestHelper()) {
+            helper.writeFile("Foo.java", "public class Foo {\n}\n");
+            helper.commit("init");
+            helper.writeFile("Bar.java", "public class Bar\n    implements Runnable {\n\n  // one\n  int a;\n\n"
+                    + "  @Override\n  public void run() {\n    a++;\n  }\n}\n");
+            try (DiffAstAnalyzer analyzer = new DiffAstAnalyzer(helper.getRepositoryPath())) {
+                HTML.Tag report = new Reporter(new ReportOptions(ChangeLevel.API))
+                        .reportOnly(analyzer.analyzeChanges(), ChangeLevel.IMPLEMENTATION);
+                assertEquals(List.of("# Implementation changes", "", "+ Bar.java",
+                                "+   public class Bar",
+                                "+       implements Runnable {",
+                                "+   │   // one",
+                                "+   ├── int a;",
+                                "+   \u2502   @Override",
+                                "+   └── public void run() {",
+                                "+         a++;",
+                                "+       }",
+                                "+   }"),
+                        texts(lines(report)));
+                List<HTML.Tag> folds = new ArrayList<>();
+                collectFolds(report, folds);
+                assertEquals(List.of("Bar.java", "public class Bar", "public void run() {"),
+                        folds.stream().map(f -> f.attrs.get("data-name")).toList());
+            }
+        }
+    }
+
+    /** Collects the folds in the node, in the order they start. */
+    private static void collectFolds(HTML node, List<HTML.Tag> folds) {
+        if (node instanceof HTML.Tag tag) {
+            if (Css.FOLD.on(tag)) {
+                folds.add(tag);
+            }
+            tag.children.forEach(child -> collectFolds(child, folds));
+        }
     }
 
     /** Tests that the removed members are shown whole with the deletions on, and the added ones not with them off. */
@@ -1235,9 +1278,9 @@ public class ReporterTest extends TestCase {
                 blank(),
                 fileTitle('+', name("Values.java"), " ", pkg("b")),
                 line('+', "  ", code("public class ", decl("Values"), " {")),
-                line('+', "  ", code("  public static class ", decl("Color"), " {")),
-                line(' ', "  ", code(note("\u2026 moved from a.Color (4 lines)"))),
-                line('+', "  ", code("  public int ", decl("v"), ";")),
+                line('+', "  ", tree("├── "), code("public static class ", decl("Color"), " {")),
+                line(' ', "  ", tree("│   "), code(note("\u2026 moved from a.Color (4 lines)"))),
+                line('+', "  ", tree("└── "), code("public int ", decl("v"), ";")),
                 line('+', "  ", code("}"))),
                 movedTypeReport(ChangeLevel.IMPLEMENTATION));
     }
@@ -1249,14 +1292,14 @@ public class ReporterTest extends TestCase {
                 blank(),
                 fileTitle('+', name("Values.java"), " ", pkg("b")),
                 line('+', "  ", code("public class ", decl("Values"), " {")),
-                line('+', "  ", code("  public static class ", decl("Color"), " {")),
+                line('+', "  ", tree("├── "), code("public static class ", decl("Color"), " {")),
                 HTML.DIV(
-                        line(' ', "  ", code(note("\u2026 moved from a.Color (4 lines)"))),
-                        line(' ', "  ", code("    public int ", decl("r"), ";")),
-                        line(' ', "  ", code("    public int ", decl("g"), "() { return r; }")),
-                        line(' ', "  ", code("    public void ", decl("b"), "() { }")),
-                        line(' ', "  ", code("  }"))).clazz(Css.ELIDED.cssClass()),
-                line('+', "  ", code("  public int ", decl("v"), ";")),
+                        line(' ', "  ", tree("│   "), code(note("\u2026 moved from a.Color (4 lines)"))),
+                        line(' ', "  ", tree("│   "), code("  public int ", decl("r"), ";")),
+                        line(' ', "  ", tree("│   "), code("  public int ", decl("g"), "() { return r; }")),
+                        line(' ', "  ", tree("│   "), code("  public void ", decl("b"), "() { }")),
+                        line(' ', "  ", tree("│   "), code("}"))).clazz(Css.ELIDED.cssClass()),
+                line('+', "  ", tree("└── "), code("public int ", decl("v"), ";")),
                 line('+', "  ", code("}"))),
                 movedTypeReport(ChangeLevel.IMPLEMENTATION,
                         new ReportOptions(ChangeLevel.IMPORTS).withFoldContext(true)));
